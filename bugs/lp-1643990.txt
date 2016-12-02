@@ -1,0 +1,60 @@
+http://pad.lv/1643990
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1643990
+    
+=== Begin SRU Template ===
+[Impact] 
+Cloud-init's logging is inconsistent due to availability of syslog during
+boot.
+
+Cloud-init logs to /var/log/cloud-init.log by default.  It does this in
+a way that was originally designed to prefer to use syslog if it was
+available, and then fall back to writing directly to that file.
+
+Over time this has been shown to be problematic.
+a.) it relied on syslog during boot, and on some distros it wasn't
+    present.
+b.) sometimes it would not be available during cloud-init-local.service
+    and then would be during cloud-init.service.  The result was that
+    the log would have two different time stamp formats (one written
+    by rsyslog and one by python logging).
+c.) if rsyslog was used, micro seconds were not included in the log.
+d.) since the move to systemd, there has even been times when cloud-init's
+    attempt to determine if syslog was available would false-positive.
+    that would result logging not being written to the file at all.
+
+Over all, the complexity was just not found to worth the benefit.
+
+[Test Case]
+  * Launch an instance.
+  * Look at /var/log/cloud-init.log.
+    on start, the cloud-int process logs a message like
+      'Cloud-init v 0.7.8 running'
+    Look at those messages specifically.  In the example here (lxd), neither
+    cloud-init.service or cloud-init-local.service successfully logged at all.
+
+    # grep Cloud-init /var/log/cloud-init.log 
+    Dec  2 18:06:56 y2 [CLOUDINIT] util.py[DEBUG]: Cloud-init v. 0.7.8 running 'modules:config' at Fri, 02 Dec 2016 18:06:56 +0000. Up 5.0 seconds.
+    Dec  2 18:06:58 y2 [CLOUDINIT] util.py[DEBUG]: Cloud-init v. 0.7.8 running 'modules:final' at Fri, 02 Dec 2016 18:06:58 +0000. Up 7.0 seconds.
+    Dec  2 18:06:58 y2 [CLOUDINIT] util.py[DEBUG]: Cloud-init v. 0.7.8 finished at Fri, 02 Dec 2016 18:06:58 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 7.0 seconds
+
+  * update to proposed, cleanup reboot
+    # enable propose and update
+    # cleanup
+
+    sudo rm -Rf /var/log/cloud-init* /var/lib/cloud/
+    sudo reboot
+    
+  * login again and look.
+
+    This time, all messages will have the format:
+       2016-12-02 17:58:43,175 - util.py[DEBUG]: Cloud-init v. 0.7.8 running 'init-local' at Fri, 02 Dec 2016 17:58:43 +0000. Up 13.73 seconds.
+
+    And you will have one for each 'init-local', 'init', 'modules:config' and
+    modules:final.
+
+[Regression Potential] 
+Users relying on cloud-init writing entries to syslog will lose that.
+
+[Other Info]
+
+=== End SRU Template ===
