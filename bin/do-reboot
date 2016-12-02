@@ -1,0 +1,42 @@
+#!/bin/sh
+me=${0}
+PATH=${me%/*}:$PATH
+
+error() { echo "$@" 1>&2; }
+fail() { error "$@"; exit 1; }
+
+[ "$(id -u)" = "0" ] || fail "not root"
+clean=false
+keep_logs=false
+save=""
+reboot=true
+for i in "$@"; do
+   case "$i" in
+      clean) clean=true;;
+      keep?logs) keep_logs=true;;
+      save=*) save=${i#save=};;
+      no-reboot) reboot=false;;
+   esac
+done
+
+if [ -n "$save" ]; then
+   save-old-data "$save" || fail "failed save data"
+   error "saved to $save"
+fi
+
+if $clean; then
+   rm -Rf /var/lib/cloud || fail "failed clean"
+   error "cleared /var/lib/cloud"
+fi
+
+if ! $keep_logs; then
+   rm -Rf /var/log/cloud* || fail "failed remove logs"
+   error "cleared logs"
+else
+   error "kept logs"
+fi
+
+if $reboot; then
+    error "rebooting"
+    reboot
+fi

@@ -1,0 +1,93 @@
+http://pad.lv/1460715
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1460715
+    
+=== Begin SRU Template ===
+[Impact] 
+Cloud-init has function to partition disks on devices.
+Creating partitions on a disk no longer works with sfdisk as recent versions of
+sfdisk no accept the unit 'M' as input, this function is broken.
+
+[Test Case]
+1. Launch an instance with provided user-data
+
+   On Azure, this will work:
+     #cloud-config
+     disk_setup:
+       ephemeral0:
+           table_type: mbr
+           layout: [66, [33, 82]]
+           overwrite: True
+     fs_setup:
+       - device: ephemeral0.1
+         filesystem: ext4
+       - device: ephemeral0.2
+         filesystem: swap
+     mounts:
+       - ["ephemeral0.1", "/mnt2"]
+       - ["ephemeral0.2", "none", "swap", "sw", "0", "0"]
+
+   On a typical kvm openstack use:
+     #cloud-config
+     disk_setup:
+       /dev/vdb:
+           table_type: mbr
+           layout: [66, [33, 82]]
+           overwrite: True
+     fs_setup:
+       - device: /dev/vdb1
+         filesystem: ext4
+       - device: /dev/vdb2
+         filesystem: swap
+     mounts:
+       - ["/dev/vdb1", "/mnt2"]
+       - ["/dev/vdb2", "none", "swap", "sw", "0", "0"]
+
+2. Add proposed, update, and reboot as fresh instance.
+
+   # enable proposed
+   sudo apt-get -qy update && sudo apt-get -qy install cloud-init
+   sudo rm -Rf /var/lib/cloud /var/log/cloud-init* 
+   sudo sed -i '/cloudconfig/d' /etc/fstab
+   sudo reboot
+
+3. login to system and look around.
+
+   The target disk should be partitioned with 2 partitions.
+
+   $ grep [sv]db /proc/partitions 
+   253       16   41943040 vdb
+   253       17   27682406 vdb1
+   253       18   14259200 vdb2
+
+   There should entries in /etc/fstab for the configured devices
+   $ cat /etc/fstab
+   LABEL=cloudimg-rootfs   /   ext4 defaults 0 0
+   LABEL=UEFI  /boot/efi   vfat  defaults 0 0
+   /dev/vdb1   /mnt2 auto  defaults,nofail,x-systemd.requires=cloud-init.service,comment=cloudconfig  0  2
+   /dev/vdb2   none  swap  sw,comment=cloudconfig  0  0
+
+   A 'mount -a' will mount the necessary devices.
+   Note, these should ideally be already mounted, but an as-yet unidentified
+   issue (to be fixed in bug 1642383) means they are not mounted on first
+   boot.
+   $ mount -a
+   $ df -h /mnt2
+   Filesystem      Size  Used Avail Use% Mounted on
+   /dev/vdb1        26G   45M   25G   1% /mnt2
+
+   There should be swap used.
+   $ free
+             total  used         free   shared  buff/cache   available
+   Mem:    2047792  73984     1804508     3252      169300     1825896
+   Swap:  14259196      0    14259196
+
+   $ grep [vs]db2 /proc/swaps
+   /dev/vdb2      partition  14259196 0  -1
+
+
+[Regression Potential] 
+Change from using Megabytes to Sectors could have caused math errors,
+most likely with sector sizes other than 512.
+Partitioning with sfdisk was broken previously, so it wont be worse.
+
+=== End SRU Template ===
