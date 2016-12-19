@@ -1,0 +1,87 @@
+http://pad.lv/1354694
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1354694
+    
+=== Begin SRU Template ===
+[Impact] 
+A specific usage of user data to cloud-init will fail to add a user.
+
+This cloud-config:
+  #cloud-config
+  users:
+    - default
+    - name: foobar
+      gecos: "My User"
+      groups: sudo, adm
+
+Will fail with information in the cloud-init log showing:
+2016-12-19 21:39:32,713 - util.py[WARNING]: Failed to create group  adm
+2016-12-19 21:39:32,713 - util.py[DEBUG]: Failed to create group  adm
+Traceback (most recent call last):
+...
+cloudinit.util.ProcessExecutionError: Unexpected error while running command.
+Command: ['groupadd', ' adm']
+Exit code: 3
+Reason: -
+Stdout: ''
+Stderr: "groupadd: ' adm' is not a valid group name\n"
+
+While changing the last line to the following would work:
+      groups: [sudo, adm]
+
+[Test Case]
+$ cat > user-data <"EOF"
+#cloud-config
+users:
+  - default
+  - name: foobar
+    gecos: "My User"
+    groups: sudo, adm
+  - name: wark
+    groups: [sudo, adm]
+
+$ release=yakkety
+$ name="$release-1354694"
+
+$ lxc launch "ubuntu-daily:$release" "$name" \
+     "--config=user.user-data=$(cat user-data)" 
+
+$ sleep 10
+
+## Check foobar is in expected groups
+$ lxc exec $name -- groups foobar
+foobar : foobar adm sudo
+
+$ lxc exec $name -- groups wark
+wark : wark adm sudo
+
+$ lxc exec $name -- grep WARN /var/log/cloud-init.log || echo "no warn"
+no warn
+
+[Regression Potential] 
+There are 3 changes in this commit
+a.) if 'groups' entry is a string, split on "," and strip pieces
+    The most likely path to failure here is if previously a non-string
+    (possibly bytes) was being passed in and now will be ignored.
+    That seems unlikely and clearly wrong input.
+
+b.) fix and unit tests to explicitly set system=False or no_create_home=True.
+    Previously those paths did not test the value of the entry, only the
+    presense of the entry.
+    This meant that these 2 configs were the same:
+      users: {name: bob, system: True}
+    and
+      users: {name: bob, system: False}
+
+    That bug is fixed here so that 'system: False' is just explicitly
+    disabling the '--system' flag to adduser.
+
+c.) debug message cleanup:
+
+   LOG.debug("created group %s for user %s", name, group)
+   LOG.debug("created group '%s' for user '%s'", group, name)
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=ca3ae67211d907b4cfdcd685c0ae4f9530cb7da1
+
+=== End SRU Template ===
