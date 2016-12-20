@@ -1,0 +1,43 @@
+http://pad.lv/1647708
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1647708
+    
+=== Begin SRU Template ===
+[Impact] 
+An ephemeral disk will not correctly be mounted on /mnt.
+This affects Azure and other instances where an ephemeral device is
+mounted by default on /mnt. It is recreated in Azure and on OpenStack.
+
+This can be mitigated by either:
+ 1.) mount -a
+ 2.) reboot
+
+[Test Case]
+In a correctly functioning image on OpenStack or Azure, you should be
+able to:
+
+1.) Launch an instance
+2.) ssh into instance and look around
+   $ awk '$2 == "/mnt" { print $0 }' /etc/fstab
+   /dev/vdb /mnt auto defaults,nofail,x-systemd.requires=cloud-init.service,comment=cloudconfig 0 2
+
+   $ awk '$2 == "/mnt" { print $0 }' /proc/mounts
+   /dev/vdb /mnt vfat rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro 0 0
+
+   $ df -h /mnt
+   Filesystem Size Used Avail Use% Mounted on
+   /dev/vdb 40G 32K 40G 1% /mnt
+
+To check that this is functional with -proposed, after you've seen it failed
+
+3.) enable -proposed and apt-get install cloud-init
+4.) clean up and reboot as if fresh:
+    sudo rm -Rf /var/lib/cloud /var/log/cloud-init
+    sudo sed -i '/cloudconfig/d' /etc/fstab
+    sudo reboot
+
+[Regression Potential] 
+This is a regression caused by bug 1611074, so in addition to the above
+test case, we should go through the test cases shown there to see that
+those also work.
+
+=== End SRU Template ===
