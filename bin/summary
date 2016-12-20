@@ -1,0 +1,66 @@
+#!/bin/sh
+
+error() { echo "$@" 1>&2; }
+fail() { echo "$@" 1>&2; exit 1; }
+[ -d "$1" ] || fail "no dir $1"
+last_match() {
+    local f="$1" m="$2" out="" last=""
+    out=$(egrep "$m" "$f") || return 1;
+    _RET=$(echo "$out" | tail -n 1)
+}
+
+get_new() {
+   local log="$1" mode="$2"
+   last_match "$log" "\[$mode\].*new=(True|False)" || return
+   case "$_RET" in
+      *new=True) _RET="true";;
+      *new=False) _RET="false";;
+      *) error "bad $_RET"; return 1;;
+   esac
+}
+
+get_reform() {
+   last_match "$1" "reformattable=(True|False)" || return
+   case "$_RET" in
+      *=True*) _RET="true";;
+      *=False*) _RET="false";;
+      *) error "bad $_RET"; return 1;;
+   esac
+}
+
+config_ran() {
+   last_match "$1" "finish:.*config-$2 " || return
+   case "$_RET" in
+      *previously\ ran*) _RET="false";;
+      *ran\ success*) _RET="true";;
+      *) error "bad $_RET"; return 1;;
+   esac
+}
+
+dir="$1"
+log="$dir/logs/cloud-init.log"
+# new instance: 
+get_new "$log" local || _RET="not found"
+echo "new instance local: $_RET"
+get_new "$log" net || _RET="not found"
+echo "new instance net  : $_RET"
+
+# reformattable:
+get_reform "$log" || _RET="not found"
+echo "reformattable: $_RET"
+
+# disk_setup ran:
+config_ran "$log" disk_setup || _RET="not found"
+echo "disk_setup ran: $_RET"
+
+# mounts ran:
+config_ran "$log" mounts || _RET="not found"
+echo "mounts ran: $_RET"
+
+# proc-mounts
+ent=$(awk '$2 == "/mnt" { print $1, $2, $3 }' "$dir/proc-mounts")
+echo "proc-mounts:" "$ent"
+
+# /etc/fstab entry
+ent=$(awk '$2 == "/mnt" { print $1, $2, $4 }' "$dir/etc-fstab")
+echo "/etc/fstab: $ent"
