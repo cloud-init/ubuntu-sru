@@ -1,0 +1,173 @@
+#!/bin/bash
+
+CONTAINER_NAME=""
+VERBOSITY=0
+TEMP_D=""
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+Usage() {
+    cat <<EOF
+Usage: ${0##*/} [ options ] release name
+
+   create a container 'name' with proposed and provided packages.
+
+   options:
+      --publish               publish the result as an image named 'name'
+      --packages  PKGLIST     update the packages in PKGLIST
+                              either ',' or space delimited
+                              special 'all'  means all.
+                              default is 'cloud-init'
+      --install   PKGLIST     install these packages.
+EOF
+}
+
+bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
+cleanup() {
+echo "HI MOM: $CONTAINER_NAME"
+    [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
+    if [ -n "$CONTAINER_NAME" ]; then
+        lxc delete --force "$CONTAINER_NAME"
+        CONTAINER_NAME=""
+    fi
+}
+
+debug() {
+    local level=${1}; shift;
+    [ "${level}" -gt "${VERBOSITY}" ] && return
+    error "${@}"
+}
+
+enable_proposed() {
+    local rel="" line=""
+    rel=$(lsb_release -sc)
+    line=$(awk '$1 == "deb" && $2 ~ /ubuntu.com/ {
+          printf("%s %s %s-proposed main universe\n", $1, $2, rel); exit(0) };
+          ' "rel=$rel" /etc/apt/sources.list)
+    echo "$line" > "/etc/apt/sources.list.d/proposed.list" ||
+        { error "failed enabling proposed with '$line'"; return 1; }
+}
+
+chrooted() {
+    local short_opts="ho:v"
+    local long_opts="help,install:,packages:,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+
+    local cur="" next=""
+    local packages="" install=""
+
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -p|--packages) packages=${packages:+${packages},}$next; shift;;
+            -i|--install) install=${install:+${install},}$next; shift;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    if [ -z "$packages" ]; then
+        packages="cloud-init"
+    fi
+    packages=$(echo "$packages" | sed 's/,//g')
+    install=$(echo "$install" | sed 's/,//g')
+
+    enable_proposed || return
+
+    apt-get update -q || return
+
+    set -f
+    export DEBIAN_FRONTEND=noninteractive
+    if [ -n "$install" ]; then
+        debug 1 "installing: $install"
+        apt-get install --quiet --assume-yes $install </dev/null || return
+    fi
+    if [ -n "$packages" -a "$packages" != "all" ]; then
+        debug 1 "upgrading: $packages"
+        apt-get install --quiet --assume-yes --only-upgrade \
+            $packages </dev/null || return
+    elif [ "$packages" = "all" ]; then
+        debug 1 "dist-upgrading"
+        apt-get dist-upgrade --quiet --assume-yes </dev/null || return
+    fi
+
+    return 0
+}
+
+main() {
+    local short_opts="hv"
+    local long_opts="help,install:,packages:,publish,verbose"
+    local getopt_out=""
+    getopt_out=$(getopt --name "${0##*/}" \
+        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
+        eval set -- "${getopt_out}" ||
+        { bad_Usage; return; }
+
+    local cur="" next=""
+    local packages="cloud-init" install="" publish="false" vflag=""
+
+    while [ $# -ne 0 ]; do
+        cur="$1"; next="$2";
+        case "$cur" in
+            -h|--help) Usage ; exit 0;;
+            -p|--packages) packages=${packages:+${packages},}$next; shift;;
+            -P|--publish) publish=true;;
+            -i|--install) install=${install:+${install},}$next; shift;;
+            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1))
+                vflag="${vflag:--}v";;
+            --) shift; break;;
+        esac
+        shift;
+    done
+
+    [ $# -eq 0 ] && { bad_Usage "must provide release and name."; return 1; }
+    [ $# -eq 2 ] || { bad_Usage "Expected 2 args, got $# ($*)"; return; }
+    local release="$1" cname="$2" pubname="" clean=""
+    local src="ubuntu-daily:$release"
+    clean="$cname"
+
+    if [ "$publish" = "true" ]; then
+        pubname="$cname"
+        cname="${cname}-${RANDOM}${RANDOM}"
+        clean="$cname"
+    fi
+    trap cleanup EXIT
+    debug 1 "initializing container $cname"
+    lxc init "$src" "$cname" || {
+        error "failed to create $cname from $src"
+        return
+    }
+    CONTAINER_NAME="$clean"
+
+    # avoid sudo prompt
+    # https://gist.github.com/smoser/e7d368481687ab39dc08#file-mic-lxd
+    sudo mount-image-callback "lxd:$cname" --system-resolvconf mchroot -- \
+        /bin/bash -s chrooted $vflag \
+            "--packages=$packages" "--install=$install" <"$0" ||
+        return
+
+    if [ "$publish" = "true" ]; then
+        debug 1 "publishing $cname to alias $pubname"
+        lxc publish "$cname" local: "--alias=$pubname"
+    else
+        CONTAINER_NAME=""
+    fi
+
+    return 0
+}
+
+if [ "$1" = "chrooted" ]; then
+    shift
+    chrooted "$@"
+else
+    main "$@"
+fi
+
+# vi: ts=4 expandtab
