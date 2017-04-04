@@ -1,5 +1,6 @@
 #!/bin/bash
 
+set -f
 CONTAINER_NAME=""
 VERBOSITY=0
 TEMP_D=""
@@ -14,18 +15,19 @@ Usage: ${0##*/} [ options ] release name
    create a container 'name' with proposed and provided packages.
 
    options:
-      --publish               publish the result as an image named 'name'
-      --packages  PKGLIST     update the packages in PKGLIST
-                              either ',' or space delimited
-                              special 'all'  means all.
-                              default is 'cloud-init'
-      --install   PKGLIST     install these packages.
+      -i | --install PKGLIST    install these packages.
+      -u | --upgrade PKGLIST    update the packages in PKGLIST
+                                either ',' or space delimited
+                                special 'all'  means all.
+                                default is 'cloud-init'
+      -A | --add-archive A      add the apt archive via 'apt-add-repository'
+      -p | --publish            publish the result as an image named 'name'
+      -P | --proposed           enable proposed
 EOF
 }
 
 bad_Usage() { Usage 1>&2; [ $# -eq 0 ] || error "$@"; return 1; }
 cleanup() {
-echo "HI MOM: $CONTAINER_NAME"
     [ -z "${TEMP_D}" -o ! -d "${TEMP_D}" ] || rm -Rf "${TEMP_D}"
     if [ -n "$CONTAINER_NAME" ]; then
         lxc delete --force "$CONTAINER_NAME"
@@ -49,9 +51,18 @@ enable_proposed() {
         { error "failed enabling proposed with '$line'"; return 1; }
 }
 
+add_archives() {
+    local debline="" rel="$(lsb_release -sc)"
+    for debline in "$@"; do
+        debug 1 "enabling $debline"
+        debline=$(echo "$debline" | sed "s,RELEASE,$rel,")
+        apt-add-repository -y "$debline" || return
+    done
+}
+
 chrooted() {
-    local short_opts="ho:v"
-    local long_opts="help,install:,packages:,verbose"
+    local short_opts="aA:hiPu:v"
+    local long_opts="add-archive:,help,install:,proposed,upgrade:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -59,41 +70,50 @@ chrooted() {
         { bad_Usage; return; }
 
     local cur="" next=""
-    local packages="" install=""
+    local upgrade="cloud-init" install="" proposed="false" archives=""
+    archives=( )
 
+    echo "$*"
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
+            -A|--add-archive) archives[${#archives[@]}]="$next"; shift;;
             -h|--help) Usage ; exit 0;;
-            -p|--packages) packages=${packages:+${packages},}$next; shift;;
-            -i|--install) install=${install:+${install},}$next; shift;;
+            -P|--proposed) proposed=true;;
+            -p|--upgrade) 
+                if [ "$next" = "" -o "$next" = "none" ]; then
+                    upgrade=""
+                else
+                    upgrade="${upgrade:+${upgrade},}$next";
+                fi
+                shift;;
+            -u|--upgrade) upgrade=${install:+${install},}$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
         shift;
     done
 
-    if [ -z "$packages" ]; then
-        packages="cloud-init"
-    fi
-    packages=$(echo "$packages" | sed 's/,//g')
+    upgrade=$(echo "$upgrade" | sed 's/,//g')
     install=$(echo "$install" | sed 's/,//g')
 
-    enable_proposed || return
+    if [ "$proposed" = "true" ]; then
+        enable_proposed || return
+    fi
+    add_archives "${archives[@]}" || return
 
     apt-get update -q || return
 
-    set -f
     export DEBIAN_FRONTEND=noninteractive
     if [ -n "$install" ]; then
         debug 1 "installing: $install"
         apt-get install --quiet --assume-yes $install </dev/null || return
     fi
-    if [ -n "$packages" -a "$packages" != "all" ]; then
-        debug 1 "upgrading: $packages"
+    if [ -n "$upgrade" -a "$upgrade" != "all" ]; then
+        debug 1 "upgrading: $upgrade"
         apt-get install --quiet --assume-yes --only-upgrade \
-            $packages </dev/null || return
-    elif [ "$packages" = "all" ]; then
+            $upgrade </dev/null || return
+    elif [ "$upgrade" = "all" ]; then
         debug 1 "dist-upgrading"
         apt-get dist-upgrade --quiet --assume-yes </dev/null || return
     fi
@@ -102,24 +122,27 @@ chrooted() {
 }
 
 main() {
-    local short_opts="hv"
-    local long_opts="help,install:,packages:,publish,verbose"
+    local short_opts="aA:hiPpu:v"
+    local long_opts="add-archive:,help,install:,proposed,publish,upgrade:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
 
-    local cur="" next=""
-    local packages="cloud-init" install="" publish="false" vflag=""
+    local cur="" next="" publish="false" vflag="" pt=""
+    pt=( )  # pass through
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
+            # any key=value passthrough
+            -A|--add-archive|-u|--upgrade|-p|--upgrade)
+                pt=( "${pt[@]}" "$cur" "$next" ); shift;;
+            # any flag pass through.
+            -p|--proposed) pt[${#pt[@]}]="$cur";;
+            -a|--publish) publish=true;;
             -h|--help) Usage ; exit 0;;
-            -p|--packages) packages=${packages:+${packages},}$next; shift;;
-            -P|--publish) publish=true;;
-            -i|--install) install=${install:+${install},}$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1))
                 vflag="${vflag:--}v";;
             --) shift; break;;
@@ -149,9 +172,8 @@ main() {
     # avoid sudo prompt
     # https://gist.github.com/smoser/e7d368481687ab39dc08#file-mic-lxd
     sudo mount-image-callback "lxd:$cname" --system-resolvconf mchroot -- \
-        /bin/bash -s chrooted $vflag \
-            "--packages=$packages" "--install=$install" <"$0" ||
-        return
+        /bin/bash -s chrooted $vflag "${pt[@]}" < "$0" ||
+            return
 
     if [ "$publish" = "true" ]; then
         debug 1 "publishing $cname to alias $pubname"
