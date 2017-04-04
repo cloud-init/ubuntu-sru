@@ -62,7 +62,7 @@ add_archives() {
 
 chrooted() {
     local short_opts="aA:hiPu:v"
-    local long_opts="add-archive:,help,install:,proposed,upgrade:,verbose"
+    local long_opts="add-archive:,help,install:,proposed,proxy:,upgrade:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
@@ -80,14 +80,15 @@ chrooted() {
             -A|--add-archive) archives[${#archives[@]}]="$next"; shift;;
             -h|--help) Usage ; exit 0;;
             -P|--proposed) proposed=true;;
-            -p|--upgrade) 
+               --proxy) proxy=$next; shift;;
+            -u|--upgrade)
                 if [ "$next" = "" -o "$next" = "none" ]; then
                     upgrade=""
                 else
                     upgrade="${upgrade:+${upgrade},}$next";
                 fi
                 shift;;
-            -u|--upgrade) upgrade=${install:+${install},}$next; shift;;
+            -i|--install) install=${install:+${install},}$next; shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
@@ -97,6 +98,7 @@ chrooted() {
     upgrade=$(echo "$upgrade" | sed 's/,//g')
     install=$(echo "$install" | sed 's/,//g')
 
+    export http_proxy=${proxy}
     if [ "$proposed" = "true" ]; then
         enable_proposed || return
     fi
@@ -123,25 +125,25 @@ chrooted() {
 
 main() {
     local short_opts="aA:hiPpu:v"
-    local long_opts="add-archive:,help,install:,proposed,publish,upgrade:,verbose"
+    local long_opts="add-archive:,help,install:,proposed,proxy:,publish,upgrade:,verbose"
     local getopt_out=""
     getopt_out=$(getopt --name "${0##*/}" \
         --options "${short_opts}" --long "${long_opts}" -- "$@") &&
         eval set -- "${getopt_out}" ||
         { bad_Usage; return; }
 
-    local cur="" next="" publish="false" vflag="" pt=""
+    local cur="" next="" publish="false" vflag="" pt="" proxy="${http_proxy}"
     pt=( )  # pass through
 
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
             # any key=value passthrough
-            -A|--add-archive|-u|--upgrade|-p|--upgrade)
+            -A|--add-archive|-u|--upgrade|-i|--install|--proxy)
                 pt=( "${pt[@]}" "$cur" "$next" ); shift;;
             # any flag pass through.
-            -p|--proposed) pt[${#pt[@]}]="$cur";;
-            -a|--publish) publish=true;;
+            -P|--proposed) pt[${#pt[@]}]="$cur";;
+            -p|--publish) publish=true;;
             -h|--help) Usage ; exit 0;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1))
                 vflag="${vflag:--}v";;
