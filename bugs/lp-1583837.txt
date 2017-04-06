@@ -1,0 +1,33 @@
+http://pad.lv/1583837
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1583837
+    
+=== Begin SRU Template ===
+[Impact] 
+Installation of chef via 'omnibus' did not work.
+
+[Test Case]
+$ mycfg=$(cat <<EOF
+#cloud-config
+chef:
+  install_type: omnibus
+  server_url: "http://example.com/"
+  validation_name: "my-validation-name"
+EOF
+)
+
+$ lxc launch ubuntu-daily:zesty z1 "--config=user.user-data=$mycfg"
+$ sleep 10
+$ lxc file pull z1/var/log/cloud-init.log - | grep WARN
+2017-03-13 18:17:20,193 - util.py[WARNING]: Running module chef (<module 'cloudinit.config.cc_chef' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_chef.py'>) failed
+
+After the fix, we do not see any WARN in the log and also
+$ lxc file pull z1/var/log/cloud-init-output.log - | grep -i Setting
+
+[Regression Potential]
+Low, was completely broken before (no chef installed)
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=482b2746b591923
+
+=== End SRU Template ===

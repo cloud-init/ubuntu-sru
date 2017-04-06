@@ -1,0 +1,64 @@
+http://pad.lv/1675576
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1675576
+    
+=== Begin SRU Template ===
+[Impact] 
+Writing netplan configuration during cloud-init's local phase
+does not work properly.  This is because there is stale configuration
+from the default installed files in a Ubuntu core image.
+
+The change to cloud-initn was to clean those up so that it could
+invoke netplan apply.
+
+[Test Case]
+Unit tests were added that excercise this code, full functional
+test would run through ubuntu core.  To do this on ubuntu cloud images
+we will simulate.
+
+lxc-proposed-snapshot is 
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc init $ref $name
+$ cat > 00-snapd-config.yaml <<"EOF"
+# This is the initial network config.
+# It can be overwritten by cloud-init or console-conf.
+network:
+    version: 2
+    ethernets:
+        all-en:
+            match:
+                name: "en*"
+            dhcp4: true
+        all-eth:
+            match:
+                name: "eth*"
+            dhcp4: true
+EOF
+$ echo 'system_info: {network: {renderers: ["netplan"]}}' |
+   lxc file push - $name/etc/cloud/cloud.cfg.d/99-renderers.cfg
+
+$ lxc file push 00-snapd-config.yaml $name/etc/netplan/00-snapd-config.yaml
+$ lxc start $name
+
+$ sleep 10
+$ lxc exec $name ls /etc/netplan/00-snapd-config.yaml
+ls: cannot access '/etc/netplan/00-snapd-config.yaml': No such file or directory
+
+$ grep removing /var/log/cloud-init.log 
+2017-04-04 14:38:18,303 - netplan.py[DEBUG]: removing known config '/etc/netplan/00-snapd-config.yaml' and derived existing files: ['/run/systemd/network/10-netplan-all-en.network', '/run/systemd/network/10-netplan-all-eth.network', '/run/systemd/generator/netplan.stamp']
+lxc
+
+# you can see networkd set up the links with
+$ lxc exec $name ip a
+$ lxc exec $name systemctl status systemd-networkd --no-pager --full
+
+[Regression Potential] 
+This code could delete a users netplan config incorrectly.
+That is protected against the config being *exactly* as shown above,
+and also named exactly as above.
+
+=== End SRU Template ===

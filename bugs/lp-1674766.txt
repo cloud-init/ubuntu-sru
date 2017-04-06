@@ -1,0 +1,47 @@
+http://pad.lv/1674766
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1674766
+    
+=== Begin SRU Template ===
+[Impact] 
+ds-identify would not identify a BigStep system the same way that
+cloud-init would.  The result would be a warning that ds-identify
+didn't find a datasource.
+
+[Test Case]
+Launching an instance on Bigstep cloud is non-trivial for 16.04 or 16.10
+as support is not yet present in their infrastructure.
+
+So to test we will mimic Bigstep datasource.
+
+lxc-proposed-snapshot is 
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+# grab the address of lxcbr0
+$ hostaddr=$(ifconfig lxcbr0 | awk '$1 == "inet" { print $2 }')
+$ echo $hostaddr
+10.0.3.1
+
+$ echo '{"userdata_raw": null, "vendordata_raw": null, "metadata": {"local-hostname": "foohost", "instance-id": "abcdefg"}}' > bigstep.json
+$ python -m SimpleHTTPServer 9999 &
+
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc init $ref $name
+$ echo -n http://$hostaddr:9999/bigstep.json |
+   lxc file push -p - $name/var/lib/cloud/data/seed/bigstep/url
+$ echo 'datasource_list: [Bigstep, OpenStack, None]' | 
+   lxc file push -p - $name/etc/cloud/cloud.cfg.d/99-bigstep.cfg
+$ lxc start $name
+$ sleep 10
+$ lxc file pull $name/run/cloud-init/result.json -
+
+[Regression Potential] 
+Low. simply fixing a string.
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=20a628c122583e15
+
+=== End SRU Template ===

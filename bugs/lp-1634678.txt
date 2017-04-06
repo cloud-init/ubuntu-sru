@@ -1,0 +1,100 @@
+http://pad.lv/1634678
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1634678
+    
+=== Begin SRU Template ===
+[Impact] 
+On instance first boot cloud-init may create a filesystem when
+it should have re-used an existing filesystem.
+
+The example cloud-config is:
+  #cloud-config
+  fs_setup:
+      label: None
+      filesystem: ext4
+      device: /dev/xvdf
+      partition: auto
+
+
+[Test Case]
+The test case launches an instance, assuming that has an old version
+of cloud-init inside.  The user-data will not be valid for the default
+configuration of disks.  (Most openstack instances would have a
+single 'ephemeral' disk in addition to root, with an ext4 filesystem
+labelled 'ephemeral0').  We will then upgrade instance to proposed.
+And create a filesystem on /dev/vdb1 that *should* match.
+
+1. launch an instance in openstack with the following user-data.
+   |#cloud-config
+   |fs_setup:
+   |  - label: mydata
+   |    device: /dev/vdb
+   |    filesystem: ext4
+   |    partition: auto
+   |mounts:
+   |  - ["/dev/vdb1", "/mnt"]
+   
+   $ cat > my-userdata.txt <<EOF
+   #cloud-config
+   fs_setup:
+     - label: mydata
+       device: /dev/vdb
+       filesystem: ext4
+       partition: auto
+   mounts:
+     - ["/dev/vdb1", "/mnt"]
+   EOF
+
+   $ openstack server create --user-data=my-userdata.txt \
+      --key-name=brickies --flavor=m1.small .... my-test
+
+
+2. ssh in, prepare the /dev/vdb to have a partition, and upgrade
+
+  # run attached 'disk-setup'. This will partition the disk
+  # and wipe any filesystem data off, basically making it a partitioned
+  # but otherwise empty disk.
+  $ sudo ./disk-setup
+  umount: /mnt: not mounted
+  wiping /dev/vdb
+  partitioning /dev/vdb
+  /dev/vdb: PTUUID="9920db9b-a1ff-4f44-834c-8fcc42bd5821" PTTYPE="gpt"
+  /dev/vdb1: PARTUUID="1accde8d-8880-4a93-913a-61eee2e92535"
+
+
+3. enable proposed, upgrade
+4. clean out state and reboot
+   sudo rm -Rf /var/lib/cloud /var/log/cloud-init*
+   sudo sed -i '/comment=cloudconfig/d' /etc/fstab
+   sudo reboot
+
+5. ssh back in and look around.
+  
+   # cloud-init should have created a filesystem on /dev/vdb1
+   # and mounted it at /mnt.
+
+   $ grep /mnt /proc/mounts 
+   /dev/vdb1 /mnt ext4 rw,relatime,data=ordered 0 0
+
+   # and have a filesystem 'mydata'
+   $ sudo blkid /dev/vdb1
+   /dev/vdb1: LABEL="mydata" UUID="79090091-800e-4348-a7a9-8c7a26ed18f7" TYPE="ext4" PARTUUID="b8ef8d3f-acb4-4bd0-ba2d-fdfb45c2e8f0"
+
+
+   # put a file on there, then clean up and reboot.
+   # we will expect that that this time, cloud-init will just re-use
+   # the existing filesystem rather than making another.
+   $ echo hi mom | sudo tee -a /mnt/my-important-data.txt
+
+6. ssh in and expect /mnt/my-important-data.txt
+
+   $ cat /mnt/my-important-data.txt
+   hi mom
+
+[Regression Potential] 
+Potentially this could re-use a partition that the user wanted reformatted.
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=4a2b2f87ec48c2
+
+=== End SRU Template ===

@@ -1,0 +1,28 @@
+#!/bin/sh
+dev=/dev/vdb
+part=1
+label=mydata
+
+msg() { echo "$@" 1>&2; }
+fail() { echo "$@" 1>&2; exit 1; }
+
+set -e
+
+[ "$(id -u)" = "0" ] || fail "not root"
+umount /mnt || :
+msg "wiping $dev"
+# 4 of them to wipe any old filesystem data on first part
+out=$(dd if=/dev/zero of=$dev bs=1M count=4 2>&1) ||
+    fail "failed wiping $dev: $out"
+msg "partitioning $dev"
+out=$(echo "2048," | sudo sfdisk --label=gpt --force --unit=S "$dev" 2>&1) ||
+    fail "failed sfdisk $dev: $out"
+
+if [ "$1" = "mkfs" ]; then
+    msg "filesystem label $label on $dev${part}"
+    out=$(mkfs.ext4 -F "${dev}${part}" -L "$label" 2>&1) ||
+        fail "failed mkfs.ext4: $out"
+fi
+
+sleep 1
+blkid "$dev" "${dev}${part}"

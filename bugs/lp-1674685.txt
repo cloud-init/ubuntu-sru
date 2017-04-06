@@ -1,0 +1,42 @@
+http://pad.lv/1674685
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1674685
+    
+=== Begin SRU Template ===
+[Impact]
+The network device on Azure is configured via dhcp. DNS records are
+updated for the host with the dhcp's request (dyndns).
+
+Cloud-init has two operation modes on Azure.
+a.) builtin: cloud-init does negotiation with the "fabric" (cloud platform)
+    directly.
+b.) interaction with walinux-agent: cloud-init invokes walinux-agent
+    and expects it to do negotiation.
+
+The system's hostname is provided to cloud-init via info on a cdrom.
+cloud-init reads that hostname and then updates the system's hostname.
+When configured to use walinux-agent, cloud-init would then bounce
+the network device to publish this hostname change.
+
+The bug here was that this did not happen in the builtin path, and
+as a result systems would not have dns updated for their hostname.
+
+This is not a problem for xenial or yakkety as they use the
+walinuxagent path.
+
+[Test Case]
+To verify no regression
+start an instance on azure
+enable proposed, update, upgrade
+rm -Rf /var/lib/cloud /var/log/cloud-init*
+reboot
+
+[Regression Potential]
+Regression risk is very low since this code path is not used in 16.04 or
+16.10. The changed code path is only used in 17.04+. Thus the test case
+listed above is simple instance boot.
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=86715c88aab8561
+
+=== End SRU Template ===

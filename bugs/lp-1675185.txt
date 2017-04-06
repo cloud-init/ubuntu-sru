@@ -1,0 +1,71 @@
+http://pad.lv/1675185
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1675185
+    
+=== Begin SRU Template ===
+[Impact] 
+In work targeted at getting cloud-init into the Ubuntu core image,
+it was noticed that the apt_configure module would fail on Ubuntu core.
+The result was cloud-init reporting failure.
+
+The changes made were to return early if both:
+  a.) there is no 'apt' configuration provided
+  b.) there is no 'apt-get' command or the system is snappy.
+
+[Test Case]
+lxc-proposed-snapshot is 
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+
+# launch 3 containers 
+#  release-default: no apt config, no files modified. apt_configure module should run.
+#  release-corepass: no apt config, look like ubuntu core. apt_configure should not run.
+#  release-coreapt: apt config, look like ubuntu core. apt_configure should run (and will succeed because this is not core)
+
+$ apt_cfg=$(printf "#cloud-config\n%s\n" 'apt: {sources: {citest: {source: "ppa:cloud-init-dev/test-archive"}}}')
+$ lxc init $ref $release-default "--config=user.user-data=$apt_cfg"
+$ lxc init $ref $release-coreapt "--config=user.user-data=$apt_cfg"
+$ lxc init $ref $release-corepass
+
+# create a file that makes cloud-init assume this is core.
+$ for n in $release-coreapt $release-corepass; do
+   echo ubuntu-core | lxc file push --create-dirs - $n/etc/system-image/channel.ini; done
+
+# do not lock default user's passwd (LP: #1679765)
+$ for n in $names; do
+   echo "system_info:  {default_user: {lock_passwd: False}}" |
+     lxc file push - $n/etc/cloud/cloud.cfg.d/99-nolock-passwd.cfg; done
+# populate /var/lib/extrausers so that adduser --extrausers works.
+$ for n in $names; do
+   for f in passwd group gshadow subuid subgid shadow; do lxc file push --create-dirs - $n/var/lib/extrausers/$f </dev/null; done; done
+
+
+$ names="$release-default $release-corefail $release-coreapt"
+$ lxc start $names
+$ sleep 30
+
+# expect to see rendering of that file for the default and corefail cases.
+# but not for the
+$ tfile=/etc/cloud/templates/sources.list.ubuntu.tmpl; 
+$ for n in $names; do 
+   echo === $n ===; lxc exec $n grep $tfile /var/log/cloud-init.log; done
+=== xenial-default ===
+2017-04-04 16:57:09,671 - util.py[DEBUG]: Reading from /etc/cloud/templates/sources.list.ubuntu.tmpl (quiet=False)
+2017-04-04 16:57:09,672 - util.py[DEBUG]: Read 2841 bytes from /etc/cloud/templates/sources.list.ubuntu.tmpl
+=== xenial-corefail ===
+2017-04-04 16:57:09,174 - util.py[DEBUG]: Reading from /etc/cloud/templates/sources.list.ubuntu.tmpl (quiet=False)
+2017-04-04 16:57:09,174 - util.py[DEBUG]: Read 2841 bytes from /etc/cloud/templates/sources.list.ubuntu.tmpl
+=== xenial-corepass ===
+
+[Regression Potential] 
+Biggest and catastrophic failure would be for the apt-configure module
+to stop running.  That would result in no mirrors being set up and
+no archives added and such.  Such a regression would be caught in
+cloud-init's integration test.
+
+[Other Info]
+
+=== End SRU Template ===

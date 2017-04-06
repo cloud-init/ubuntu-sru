@@ -1,0 +1,62 @@
+http://pad.lv/1570325
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1570325
+    
+=== Begin SRU Template ===
+[Impact] 
+The only way to assign a hashed password to a user is to use passwd within a
+users entry like this:
+ users:
+   - name: root
+     passwd: $6$Cl....Hy$IEJciQZLxQLzkST......g.bzqf3lUl.
+
+But, if that user is already present on the system, cloud-init would skip
+setting the password.  The change was to add support for providing
+encrypted passwords to 'chpasswd' as:
+
+ chpasswd:
+   list: |
+     user:$5$eriogqzq$Dg7PxHsKGzziuEGkZgkLvacjuEFeljJ.rLf.hZqKQLA
+
+[Test Case]
+There is an integration test in cloud-init that runs though this code.
+To run that:
+
+$ git clone https://git.launchpad.net/cloud-init
+$ cd cloud-init
+
+# download the appropriate deb for cloud-init from -proposed
+$ rel=xenial
+$ pver=$(rmadison --url=ubuntu --suite=$rel-proposed cloud-init | awk '{print $3}')
+$ fname="cloud-init_${pver}_all.deb"
+$ wget "http://archive.ubuntu.com/ubuntu/pool/main/c/cloud-init/$fname"
+$ ln -sf $fname cloud-init_all.$rel.deb
+$ tox -e citest -- run -v -n $rel --deb=cloud-init_all.$rel.deb \
+   -t tests/cloud_tests/testcases/modules/set_password_list_string.py \
+   -t tests/cloud_tests/testcases/modules/set_password_list.py
+
+That will install the new cloud-init into a container and run
+with user data to excercise this new feature.
+
+[Regression Potential] 
+Some user passwords provided via chpasswd and starting with '$'
+may be interpreted as hashed passwords.
+Specifically, those matching: r'\$[1,2a,2y,5,6](\$.+){2}'
+
+In english, that regex is:
+  - starts with a '$' 
+  - followed by '1', '2a', '2y', '5', '6'
+  - followed by a $
+  - followed by 1 or more characters
+  - followed by another $
+  - followed by 1 or more characters
+
+So a total of 3 '$' and starting with one of those specific 3 or 4
+character strings.  That could definitely happen, but it is low odds, and
+also fairly low risk.  If a user hits this, they'd be unable to reach a new
+instance.
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=21632972df034
+
+=== End SRU Template ===

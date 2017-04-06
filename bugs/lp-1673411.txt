@@ -1,0 +1,77 @@
+http://pad.lv/1673411
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1673411
+    
+=== Begin cloud-init SRU Template ===
+[Impact]
+nova-lxd can provide data to instances in 2 ways:
+ a.) metadata service
+ b.) config drive
+
+The support for reading the config drive in cloud-init was never
+functional.  Nova-lxd has changed the way they're presenting the config
+drive to the guest.  Now they are doing so by populating a directory in
+the container /config-drive with the information.
+The change added to cloud-init was to extend support read config drive
+information from that directory.
+
+[Test Case]
+With a nova-lxd that contains the fix this can be fully tested
+by launching an instance with updated cloud-init and config drive
+attached.
+
+For cloud-init, the easiest way to demonstrate this is to
+create a lxc container and populate it with a '/config-drive'.
+
+lxc-proposed-snapshot is 
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+
+$ release=xenial
+$ ref=xenial-proposed
+$ name=$release-lp1673411
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc init $ref $name
+
+# lxc will create the 'NoCloud' seed, and the normal search
+# path looks there first, so remove it.
+
+$ lxc file pull $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg - |
+    sed 's/NoCloud, //' |
+    lxc file push - $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg
+
+## populate a /config-drive with attached 'make-config-drive-dir'
+## and push it to the container
+
+$ d=$(mktemp -d)
+$ make-config-drive-dir "$d" "$name"
+$ rm -Rf "$d"
+
+## start it and look around
+$ lxc start $name
+$ sleep 10
+$ lxc exec $name cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceConfigDrive [net,ver=2][source=/config-drive]",
+  "errors": []
+ }
+}
+
+
+[Regression Potential] 
+There is a potentiali false positive where a user had data in
+/config-drive and now that information is read as config drive data.
+
+That would require a directory tree like:
+  /config-drive/openstack/2???-??-??/meta_data.json
+or
+  /config-drive/openstack/latest/meta_data.json
+
+Which seems like a small likelyhood of non-contrived hit.
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=443095f4d4b6fe
+
+=== End cloud-init SRU Template ===
