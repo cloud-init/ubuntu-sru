@@ -1,8 +1,8 @@
 http://pad.lv/1675576
 https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1675576
-    
+
 === Begin SRU Template ===
-[Impact] 
+[Impact]
 Writing netplan configuration during cloud-init's local phase
 does not work properly.  This is because there is stale configuration
 from the default installed files in a Ubuntu core image.
@@ -15,7 +15,7 @@ Unit tests were added that excercise this code, full functional
 test would run through ubuntu core.  To do this on ubuntu cloud images
 we will simulate.
 
-lxc-proposed-snapshot is 
+lxc-proposed-snapshot is
   https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
 It publishes an image to lxd with proposed enabled and cloud-init upgraded.
 
@@ -39,16 +39,19 @@ network:
             dhcp4: true
 EOF
 $ echo 'system_info: {network: {renderers: ["netplan"]}}' |
-   lxc file push - $name/etc/cloud/cloud.cfg.d/99-renderers.cfg
+   lxc file push -p - $name/etc/cloud/cloud.cfg.d/99-renderers.cfg
 
-$ lxc file push 00-snapd-config.yaml $name/etc/netplan/00-snapd-config.yaml
+$ lxc file push -p 00-snapd-config.yaml $name/etc/netplan/00-snapd-config.yaml
+# xenial does not have netplan, so trick the renderer search.
+$ ( set -x; lxc file pull $name/usr/sbin/netplan - >/dev/null ||
+    echo "" | lxc file push netplan $name/usr/sbin/netplan --mode=0755 )
 $ lxc start $name
 
 $ sleep 10
 $ lxc exec $name ls /etc/netplan/00-snapd-config.yaml
 ls: cannot access '/etc/netplan/00-snapd-config.yaml': No such file or directory
 
-$ grep removing /var/log/cloud-init.log 
+$ lxc exec $name grep removing /var/log/cloud-init.log
 2017-04-04 14:38:18,303 - netplan.py[DEBUG]: removing known config '/etc/netplan/00-snapd-config.yaml' and derived existing files: ['/run/systemd/network/10-netplan-all-en.network', '/run/systemd/network/10-netplan-all-eth.network', '/run/systemd/generator/netplan.stamp']
 lxc
 
@@ -56,7 +59,7 @@ lxc
 $ lxc exec $name ip a
 $ lxc exec $name systemctl status systemd-networkd --no-pager --full
 
-[Regression Potential] 
+[Regression Potential]
 This code could delete a users netplan config incorrectly.
 That is protected against the config being *exactly* as shown above,
 and also named exactly as above.
