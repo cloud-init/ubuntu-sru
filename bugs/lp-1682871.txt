@@ -1,0 +1,33 @@
+http://pad.lv/1682871
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1682871
+    
+=== Begin SRU Template ===
+[Impact] 
+When booting with vlans provided in networking configuration, cloud-init
+can fail as it attempts to rename the vlan device to an interface.
+
+The method 'get_interfaces_by_mac' will raise a RuntimeError as it
+notices that the mac address of the vlan is the same as that of the
+nic.
+
+$ python3 -c 'from cloudinit.net import get_interfaces_by_mac; print(get_interfaces_by_mac())'
+
+[Test Case]
+get-proposed-cloudimg is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/get-proposed-snapshot
+It downloads a daily cloud image, and then creates a qcow image backed
+by that image with proposed enabled and cloud-init upgraded.
+
+$ get-proposed-cloudimg xenial
+$ MODE=vlan ./btest-launch.sh xenial-server-cloudimg-amd64-proposed.img
+... log in as ubuntu:password ...
+% python3 -c 'from cloudinit.net import get_interfaces_by_mac; print(get_interfaces_by_mac())'
+
+The above will stack trace with RuntimeException on a 4.4 kernel.
+
+[Regression Potential]
+TBD.
+
+[Other Info]
+See also bug 1669860, which showed this problem for bonds.
+=== End SRU Template ===
