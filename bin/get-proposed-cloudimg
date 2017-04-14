@@ -1,0 +1,30 @@
+#!/bin/sh
+
+rel="$1"
+arch="amd64"
+burl="http://cloud-images.ubuntu.com/daily/server"
+fname=$rel-server-cloudimg-amd64.img
+ofname="$fname"
+case "$rel" in
+    precise|trusty|xenial) ofname="$r-server-cloudimg-amd64-disk1.img"
+esac
+pfname="${fname%.img}-proposed.img"
+if [ ! -f "$fname" ]; then
+   wget "$burl/$r/current/$ofname" -O "$fname.tmp" &&
+       mv "$fname.tmp" "$fname" || break
+fi
+if [ ! -f "$pfname" ]; then
+    qemu-img create -f qcow2 -b "$fname" "$pfname.tmp" || break
+    sudo mount-image-callback --system-resolvconf "$pfname.tmp" -- \
+        mchroot sh -ec '
+            r=$(lsb_release -sc)
+            m="http://archive.ubuntu.com/ubuntu"
+            plist="/etc/apt/sources.list.d/proposed.list"
+            echo "deb $m $r-proposed main" > "$plist"
+            apt-get update -q
+            DEBIAN_FRONTEND=noninteractive apt-get -qy install cloud-init
+        ' </dev/null || break
+    mv $pfname.tmp $pfname
+fi
+
+# vi: ts=4 expandtab
