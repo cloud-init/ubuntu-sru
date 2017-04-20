@@ -9,12 +9,17 @@ case "$rel" in
     precise|trusty|xenial) ofname="$rel-server-cloudimg-amd64-disk1.img"
 esac
 pfname="${fname%.img}-proposed.img"
+raw="${fname%.img}.raw"
 if [ ! -f "$fname" ]; then
    wget "$burl/$rel/current/$ofname" -O "$fname.tmp" &&
        mv "$fname.tmp" "$fname" || exit
 fi
+if [ ! -f "$raw" ]; then
+   qemu-img convert -O raw "$fname" "$raw.tmp" &&
+       mv "$raw.tmp" "$raw" || exit
+fi
 if [ ! -f "$pfname" ]; then
-    qemu-img create -f qcow2 -b "$fname" "$pfname.tmp" || break
+    qemu-img create -f qcow2 -b "$raw" "$pfname.tmp" || break
     sudo mount-image-callback --system-resolvconf "$pfname.tmp" -- \
         mchroot sh -ec '
             r=$(lsb_release -sc)
