@@ -70,6 +70,15 @@ if [ ! -e "user-data" ]; then
 password: passw0rd
 chpasswd: { expire: False }
 ssh_pwauth: True
+
+runcmd:
+ - ['sh', '-c', 'echo ====================================']
+ - ['sh', '-c', 'echo === /proc/mounts ===; cat /proc/mounts']
+ - ['sh', '-c', 'echo === /proc/cmdline === ; cat /proc/cmdline']
+ - ['sh', '-c', 'echo === df -h ===; df -h']
+ - ['sh', '-c', 'echo === free ===; free']
+ - ['sh', '-c', 'echo ====================================']
+ - ['sh', '-c', '( sleep 10 ; poweroff )</dev/null >/dev/null 2>&1 &']
 EOF
 fi
 
