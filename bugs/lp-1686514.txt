@@ -29,8 +29,21 @@ It is more easily recreated for testing and verification by:
 
 1. launch instance on azure
 2. re-partition the ephemeral disk to look like a "clean" disk above
-3. reboot
+3. remove old logs, reboot
+   $ dir=logs-$(date +"%Y%m%d-%H%M%S");
+   $ mkdir -p $dir; mv /var/log/cloud-init* $dir
 4. ssh back in, expect that this the disk has an ext4 filesystem on it.
+   And that it is mounted on /mnt.
+
+   $ grep reformattable= /var/log/cloud-init.log
+   2017-05-12 15:14:57,125 - DataSourceAzure.py[DEBUG]: reformattable=False: partition 1 (/dev/sdb1) on device /dev/disk/cloud/azure_resource was not ntfs formatted
+
+   Or, if it was formatted, you'll see something like:
+   2017-05-12 15:17:47,021 - DataSourceAzure.py[DEBUG]: reformattable=True: partition 2 (/dev/sdb2) on device /dev/disk/cloud/azure_resource was ntfs formatted and had no important files. Safe for reformatting.
+
+   $ grep /mnt /proc/mounts 
+   /dev/sdb1 /mnt ext4 rw,relatime,data=ordered 0 0
+
 
 [Regression Potential] 
 The change makes cloud-init accept another situation when it decides
