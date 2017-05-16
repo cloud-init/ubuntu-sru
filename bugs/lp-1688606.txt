@@ -1,0 +1,75 @@
+=== Begin SRU Template ===
+[Impact]
+MAAS has an interest in booting entirely ephemerally without iscsi root.
+The package cloud-initramfs-rooturl supports booting with root coming
+from a url.
+  root=http://..../squashfs
+
+This function will be used to pxe boot into a RAM only system with no
+dependency on the network.
+
+[Test Case]
+See the attached prepare-1688606.sh. That script automates
+everything here making this much easier to test.
+
+1. make sure squashfs module is in the initramfs
+   squashfs module is not automatically added to initramfs in precise.
+   Just ensure that it is there.
+
+   $ [ "$(lsb_release -sc)" = "precise" ] &&
+      echo "manual_add_modules squashfs" |
+         sudo tee /etc/initramfs-tools/hooks/squashfs
+
+2. install cloud-initramfs-rooturl
+   sudo apt-get update
+   sudo apt-get install cloud-initramfs-rooturl
+
+3. collect the kernel and newly generated initramfs
+
+   sudo cat /boot/vmlinu?-$(uname -r) > kernel
+   cp /boot/initrd.img-$(uname -r) initrd
+
+4. Download a squashfs image or a .tar.xz image
+
+   rel="xenial"
+   burl="http://cloud-images.ubuntu.com/daily/server"
+   file="$rel-server-cloudimg-amd64-root.tar.xz"
+   file="$rel-server-cloudimg-amd64.squashfs"
+   wget "$burl/$rel/current/$file" -O "$file"
+
+5. run a web server
+   python -m SimpleHTTPServer 9999 &
+
+6. create a seed disk for cloud-init.
+
+   $ cat > my-user-data <<EOF
+   #cloud-config
+   password: passw0rd
+   chpasswd: { expire: False }
+   ssh_pwauth: True
+
+   $ echo "instance-id: $(uuidgen || echo i-abcdefg)" > my-meta-data
+   $ cloud-localds seed.img my-user-data my-meta-data
+
+7. Boot a vm using the kernel, initrd and url.
+
+   cmdline="root=http://10.0.2.2:9999/$file console=ttyS0 -v "
+   cmdline="${cmdline} overlayroot=tmpfs"
+
+   qemu-system-x86_64 -enable-kvm \
+      -device virtio-net-pci,netdev=net00 \
+      -netdev type=user,id=net00 \
+      -drive if=virtio,file=seed.img \
+      -m 1G -nographic \
+      -kernel kernel -initrd initrd \
+      -append "root=$cmdline"
+
+[Regression Potential]
+Low. This is adding a package previously not present.
+
+[Other Info]
+Related bugs:
+ * bug 1689557: replace iscsi usage in ephemeral image with rooturl
+ * bug 1689642: cloud-initramfs-rooturl should manual_add_modules squashfs
+
+=== End SRU Template ===

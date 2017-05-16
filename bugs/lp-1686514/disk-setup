@@ -1,0 +1,111 @@
+#!/bin/sh
+fmt=${1:-"ntfs1"}
+dev=${2:-/dev/vdb}
+LABEL=${LABEL:-"dos"}
+PARTS=""
+SIZE_100M="$((100*2048))"
+
+UUID_LINUX="0FC63DAF-8483-4772-8E79-3D69D8477DE4"
+UUID_MSFT_RES="E3C9E316-0B5C-4DB8-817D-F92DF00215AE"
+UUID_MSFT_DATA="eBD0A0A2-B9E5-4433-87C0-68B6B72699C7"
+DOS_LINUX=83
+DOS_NTFS=7
+
+if [ "$LABEL" = "dos" ]; then
+   TYPE_MSFT_DATA="${DOS_NTFS}"
+   TYPE_LINUX="${DOS_LINUX}"
+   TYPE_MSFT_RES="${DOS_NTFS}"
+else
+   TYPE_MSFT_DATA="${UUID_MSFT_DATA}"
+   TYPE_LINUX="${UUID_LINUX}"
+   TYPE_MSFT_RES="${UUID_MSFT_RES}"
+fi
+
+msg() { echo "$@" 1>&2; }
+rerror() { local r=$?; echo "$@" 1>&2; return $r; }
+fail() { echo "$@" 1>&2; exit 1; }
+
+set -e
+
+pt_ntfs1() {
+    local dev="$1"
+    PARTS="${dev}1"
+    do_sfdisk "$dev" "1 : start=2048, type=${TYPE_MSFT_DATA}, size=${SIZE_100M}"
+}
+pt_ntfs2() {
+    local dev="$1"
+    PARTS="${dev}1 ${dev}2"
+    do_sfdisk "$dev" "
+1 : start=2048, type=${TYPE_MSFT_RES}, size=${SIZE_100M}
+2 : type=${TYPE_MSFT_DATA}, size=${SIZE_100M}"
+}
+
+pt_linux1() {
+    local dev="$1"
+    PARTS="${dev}1"
+    do_sfdisk "$dev" "1 : start=2048, type=${TYPE_LINUX}, size=${SIZE_100M}"
+}
+
+pt_none() {
+    PARTS=""
+    msg "no disk label"
+}
+
+qrun() {
+    local out=""
+    [ "$1" = "--quiet" ] && shift || msg "$@"
+    out=$("$@" 2>&1) ||
+        { rerror "Failed[$?]: $*: $out"; return; }
+}
+mkfs_ntfs() {
+    qrun mkfs.ntfs --fast "$1"
+}
+
+mkfs_ext4() {
+    qrun mkfs.ext4 -F "$1"
+}
+
+do_sfdisk() {
+    local out="" dev="$1" data="$2" label="${3:-${LABEL}}" pdata=""
+    local cr="
+"
+    [ -n "$data" ] || data=$(cat)
+    pdata="label: $label${cr}unit: sectors$cr${data}"
+    echo "sfdisk --force $dev <<EOF"
+    echo "$pdata" | sed -e '/^$/d' -e 's/^/    /'
+    echo "EOF"
+    echo "$pdata" | qrun --quiet sfdisk --force "$dev"
+    udevadm settle
+}
+
+[ "$(id -u)" = "0" ] || fail "not root"
+umount /mnt >/dev/null 2>&1 || :
+msg "wiping $dev"
+# 4 of them to wipe any old filesystem data on first part
+qrun dd if=/dev/zero of=$dev bs=1M count=4
+udevadm settle
+
+sfile="sfdisk.in"
+case "$fmt" in
+    ntfs1)
+        pt_ntfs1 "$dev"
+        mkfs_ntfs "${dev}1"
+	;;
+    ntfs2)
+        pt_ntfs2 "$dev"
+        mkfs_ntfs "${dev}2"
+	;;
+    none)
+        pt_none "$dev"
+	;;
+    ext4)
+        pt_linux1 "$dev"
+        mkfs_ext4 "${dev}1";;
+    *) echo "unknown $fmt"; exit 1;;
+esac
+
+echo
+echo -- sfdisk --list $dev --
+sfdisk --list $dev | sed 's,^,  ,'
+echo -- blkid $dev $PARTS --
+blkid "$dev" ${PARTS} | sed 's,^,  ,'
