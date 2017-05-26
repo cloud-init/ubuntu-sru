@@ -79,10 +79,16 @@ do_sfdisk() {
 }
 
 [ "$(id -u)" = "0" ] || fail "not root"
+swapoff -a || :
 umount /mnt >/dev/null 2>&1 || :
 msg "wiping $dev"
 # 4 of them to wipe any old filesystem data on first part
-qrun dd if=/dev/zero of=$dev bs=1M count=4
+qrun --quiet python3 -c "import sys;
+buf = b'\\0' * 1024 * 1024 * 4
+with open(sys.argv[1], 'wb+') as fp:
+   fp.write(buf)
+   fp.seek(-(len(buf)), 2)
+   fp.write(buf)" "$dev"
 udevadm settle
 
 sfile="sfdisk.in"
