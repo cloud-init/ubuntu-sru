@@ -1,0 +1,78 @@
+http://pad.lv/1685944
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1685944
+    
+=== Begin SRU Template ===
+[Impact] 
+Rendering of netplan content was broken due to an incorrect
+function signature in net/netplan.py:render_network_state.
+
+The end result was that rendering of netplan configuration was
+broken in actual usage.  Note, though that no official Ubuntu images
+use this path at the current time.  Ubuntu image all use ifupdown.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, run the test case.  That would stack trace
+     as seen in the bug on prior versions of cloud-init.
+ c.) show the output.
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $name
+
+% cat > render-test.py <<"EOF"
+#!/usr/bin/python3
+import sys
+from cloudinit.net import netplan, eni, network_state
+out_d = "./out.d" if len(sys.argv) < 2 else sys.argv[1]
+
+cfg = {
+    'version': 1,
+    'config': [{'name': 'eth1', 'type': 'physical',
+               'subnets': [{'type': 'dhcp'}]}]}
+
+# Render eni and netplan to show that they both work.
+ns = network_state.parse_net_config_data(cfg)
+for renderer in netplan.Renderer(), eni.Renderer():
+    print("Rendering %s" % renderer)
+    renderer.render_network_state(ns, out_d)
+EOF
+
+$ python3 render-test.py out.d
+Rendering <cloudinit.net.netplan.Renderer object at 0x7fd197c48208>
+Rendering <cloudinit.net.eni.Renderer object at 0x7fd197c48278>
+
+$ ( cd out.d && for f in $(find . -type f); do echo == $f ==; cat $f; done )
+== ./etc/network/interfaces ==
+auto lo
+iface lo inet loopback
+
+auto eth1
+iface eth1 inet dhcp
+== ./etc/netplan/50-cloud-init.yaml ==
+network:
+    version: 2
+    ethernets:
+        eth1:
+            dhcp4: true
+== ./etc/udev/rules.d/70-persistent-net.rules ==
+
+$ dpkg-query --show cloud-init
+
+[Regression Potential] 
+This specific change has basically zero regression potential as it
+was in netplan specific path that was only previously excercised
+with test cases.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=a6572d9415e59
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+=== End SRU Template ===
