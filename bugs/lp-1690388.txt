@@ -1,0 +1,112 @@
+http://pad.lv/1690388
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1690388
+    
+=== Begin cloud-init SRU Template ===
+[Impact] 
+Virtual devices such as VLANs, bridges and bonds may require the user to set a
+specific MAC address for proper operation on networks; where the same MAC may
+be used by default by the systems due to the methods used to create them.
+
+cloud-init would not render the mac address of the vlan into its
+ifupdown/eni or netplan output.  The result is that the vlan device
+would not get the desired mac address.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has vlan mac addresses present.
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc init $ref $name
+
+## get render tool
+$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+## write a network config with vlan and mac address.
+$ cat > net-config.yaml <<"EOF"
+version: 1
+config:
+    - type: physical
+      name: eth0
+      mac_address: "fa:35:9c:85:55:00"
+      subnets: [{type: dhcp}]
+    - type: vlan
+      name: eth0.101
+      vlan_link: eth0
+      vlan_id: 101
+      mac_address: fe:35:9c:85:55:ee
+      mtu: 1500
+      subnets:
+        - type: static
+          address: 192.168.2.10/24
+EOF
+
+$ for k in eni netplan; do 
+   PYTHONPATH=$PWD python3 ./net-convert.py \
+    --network-data=net-config.yaml --kind=yaml \
+    --output-kind=$k --mac=eth0,fa:35:9c:85:55:00 \
+    --directory=out.d ; done
+
+$ cat out.d/etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+auto eth0.101
+iface eth0.101 inet static
+    address 192.168.2.10/24
+    hwaddress fe:35:9c:85:55:ee
+    mtu 1500
+    vlan-raw-device eth0
+    vlan_id 101
+
+
+$ cat out.d/etc/netplan/50-cloud-init.yaml
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: fe:35:9c:85:55:00
+            set-name: eth0
+    vlans:
+        eth0.101:
+            addresses:
+            - 192.168.2.10/24
+            id: 101
+            link: eth0
+            macaddress: fe:35:9c:85:55:ee
+
+
+## If you're running on a openstack system, you can actually take
+## this a step further and replace the system networking with the
+## newly generated config, reboot and see the vlan come up.
+## You'll need to update the 'mac_address' for eth0 in net-config.yaml
+## to match your system, then re-run the net-convert and update the
+## system.
+$ sudo cp out.d/etc/network/interfaces /etc/network/interfaces
+$ sudo cp out.d/etc/udev/rules.d/70-persistent-net.rules /etc/udev/rules.d/70-persistent-net.rules
+## drop the .rules files and update the initramfs
+$ sudo rm -f /etc/systemd/network/50-cloud-init-*
+$ sudo update-initramfs -u -k all
+$ sudo reboot
+
+
+
+[Regression Potential] 
+Fairly low chance for regression.  The mac address fields were just
+not being written, and now they will be.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=d059d480c3
+
+=== End cloud-init SRU Template ===
