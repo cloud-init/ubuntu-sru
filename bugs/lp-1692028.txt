@@ -1,0 +1,63 @@
+http://pad.lv/1692028
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1692028
+    
+=== Begin SRU Template ===
+[Impact] 
+When the 'ip_gre' module is loaded, the kernel creates two network
+devices 'gre0' and 'gretap0' that appear in all network namespaces.
+(For example, if you create an lxd container, and then load the ip_gre
+module from outside the container, the container will see 2 new
+network devices).
+The hardware address of these devices is 00:00:00:00:00 as seen below.
+   # ( cd /sys/class/net/ && grep . gre*/address )
+   gre0/address:00:00:00:00
+   gretap0/address:00:00:00:00:00:00
+
+This "duplicate" mac address caused cloud-init to raise a RuntimeError.
+
+The overall impact is that cloudinit's network rendering code will
+not work if the ip_gre module is loaded on the system.  That will
+happen in some nova-lxd environments, but also anywhere where a user
+has loaded that module and is running lxc.
+
+[Test Case]
+
+1.) load a module on your host
+    sudo modprobe ip_gre
+
+2.) Launch an instance in lxd.
+
+ $ rel=xenial
+ $ name=x1
+ $ lxc launch ubuntu-daily:$rel $name
+
+3.) see the stack trace by running 'get_interfaces_by_mac()' in the guest.
+
+ $ lxc exec $name -- \
+     python3 -c 'from cloudinit import net; print(net.get_interfaces_by_mac())'
+
+4.) upgrade instance to proposed cloud-init
+ $ lxc exec $name -- sh -c '
+    mirror=http://archive.ubuntu.com/ubuntu
+    echo deb $mirror $(lsb_release -sc)-proposed main |
+       tee /etc/apt/sources.list.d/proposed.list
+    apt-get update -q
+    apt-get install -qy cloud-init'
+ $ lxc exec $name -- dpkg-query --show cloud-init
+
+5.) see that get_interfaces_by_mac() no longer stack traces.   
+ $ lxc exec $name -- \
+     python3 -c 'from cloudinit import net; print(net.get_interfaces_by_mac())'
+
+A more complete test case is to load an image into nova-lxd with gre
+tunneling loaded on the host, but that is much more involved setup.
+
+[Regression Potential] 
+Regression potential should be pretty low.  We are simply ignoring
+network interfaces not named 'lo' that have a mac address of '00:00:00:00:00'
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=2c0655feb9
+
+=== End SRU Template ===
