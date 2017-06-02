@@ -1,0 +1,78 @@
+http://pad.lv/1692093
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1692093
+
+
+=== Begin SRU Template ===
+[Impact]
+VMs on MS Azure have an ephemeral disk attached to them.
+On first boot, cloud-init properly notices the empty ntfs filesystem and
+reformats it ext4.
+
+After deallocating the instance or moving to a new azure host,
+the filesystem reformat is logged, but isn't actually performed because
+the udev device creation may not have settled.
+
+[Test Case]
+Test cases:
+ 1. Deploy an instance VM on Azure
+ 2. Log in and ensure that the ephemeral disk is formatted and mounted to /mnt
+ 3. Via the portal you can "Redeploy" the VM to a new Azure Host (or alternatively stop and deallocate the VM for some time, and then restart/reallocate the VM).
+
+Expected Results:a
+ - Check cloud-init.log expecting to see logs from cc_disk_setup about the mount.
+ - After reallocation we expect the ephemeral disk to be formatted and mounted to /mnt.
+
+Actual Results:
+ - After reallocation /mnt is not mounted and there are errors in the cloud-init log.
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=1815c6d801933c47a01f1a94a8e689824f6797b4
+
+=== End SRU Template ===
+
+Cloud Provider: Azure
+dpkg-query -W -f='${Version}' cloud-init output: 0.7.9-90-g61eb03fe-0ubuntu1~16.04.1
+
+When the following is specified in cloud init it seems to be re-executing fs and disk setup (even though run command does not seem to re run)
+disk_setup:
+  /dev/sdc:
+      table_type: gpt
+      layout: true
+      overwrite: false
+
+fs_setup:
+- label: etcd_disk
+  filesystem: ext4
+  device: /dev/sdc1
+  extra_opts:
+    - "-F"
+    - "-E"
+    - "lazy_itable_init=1,lazy_journal_init=1"
+
+mounts:
+- - /dev/sdc1
+  - /var/lib/etcddisk
+
+From cloud-init-output.log:
+
+Cloud-init v. 0.7.9 running 'modules:final' at Mon, 15 May 2017 18:33:15 +0000. Up 64.24 seconds.
+Cloud-init v. 0.7.9 finished at Mon, 15 May 2017 18:34:46 +0000. Datasource DataSourceAzureNet [seed=/dev/sr0].  Up 155.34 seconds
+Cloud-init v. 0.7.9 running 'init-local' at Tue, 16 May 2017 01:52:37 +0000. Up 10.33 seconds.
+Cloud-init v. 0.7.9 running 'init' at Tue, 16 May 2017 01:52:39 +0000. Up 12.06 seconds.
+
+From cloud-init.log for the initial provision:
+
+2017-05-15 18:32:46,820 - cc_disk_setup.py[DEBUG]: Creating file system etcd_disk on /dev/sdc1
+2017-05-15 18:32:46,820 - cc_disk_setup.py[DEBUG]:      Using cmd: /sbin/mkfs.ext4 /dev/sdc1 -L etcd_disk -F -E lazy_itable_init=1,lazy_journal_init=1
+2017-05-15 18:32:46,820 - util.py[DEBUG]: Running command ['/sbin/mkfs.ext4', '/dev/sdc1', '-L', 'etcd_disk', '-F', '-E', 'lazy_itable_init=1,lazy_journal_init=1'] with allowed return codes [0] (shell=False, capture=True)
+2017-05-15 18:33:04,054 - util.py[DEBUG]: Creating fs for /dev/sdc1 took 17.237 seconds
+
+and after reboot (cloud-init.log)
+
+2017-05-16 01:52:40,245 - cc_disk_setup.py[DEBUG]: Creating file system etcd_disk on /dev/sdc1
+2017-05-16 01:52:40,246 - cc_disk_setup.py[DEBUG]:      Using cmd: /sbin/mkfs.ext4 /dev/sdc1 -L etcd_disk -F -E lazy_itable_init=1,lazy_journal_init=1
+2017-05-16 01:52:40,246 - util.py[DEBUG]: Running command ['/sbin/mkfs.ext4', '/dev/sdc1', '-L', 'etcd_disk', '-F', '-E', 'lazy_itable_init=1,lazy_journal_init=1'] with allowed return codes [0] (shell=False, capture=True)
+

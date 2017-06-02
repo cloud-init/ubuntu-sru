@@ -1,0 +1,39 @@
+http://pad.lv/1686514
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1686514
+    
+=== Begin SRU Template ===
+[Impact] 
+VMs on MS Azure have an ephemeral disk attached to them.  On first boot,
+the disk has a empty ntfs formated filesystem.  Cloud-init is expected
+to notice that the empty ntfs filesystem should be reformatted with
+a more linux-friendly ext4 filesystem.  This function is working as
+expected.
+
+However, the user can 'redeploy' a VM to a new azure host, or stop and
+deallocate the vm for some time and then restart/reallocate the vm.  After
+that operation, a pristine ephemeral disk is attached.  Cloud-init is
+expected to re-format this pristine ephemeral disk, but clearly not
+reformat a disk with user's data on it.  On large (L32) size VMs, azure
+presents a GPT formatted disk with 2 partitions where the second partition
+is ntfs.  Cloud-init currently does not consider disks with 2 partitions
+to be re-formattable.
+
+[Test Case]
+Test cases:
+ 1. Deploy an L32(s) VM on Azure
+ 2. Log in and ensure that the ephemeral disk is formatted and mounted to /mnt
+ 3. Via the portal you can "Redeploy" the VM to a new Azure Host (or alternatively stop and deallocate the VM for some time, and then restart/reallocate the VM).
+
+Expected Results:
+ - After reallocation we expect the ephemeral disk to be formatted and mounted to /mnt.
+
+Actual Results:
+ - After reallocation /mnt is not mounted and there are errors in the cloud-init log.
+
+[Regression Potential] 
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===

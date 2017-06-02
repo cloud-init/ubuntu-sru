@@ -1,0 +1,37 @@
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1636531
+http://pad.lv/1636531
+    
+=== Begin SRU Template ===
+[Impact]
+ Unit test updates to avoid leaking blkid calls from tests/unittests/test_datasource/test_altcloud.py.
+
+[Test Case]
+
+wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+chmod 755 lxc-proposed-snapshot
+
+
+# Create fake-blkid.sh
+cat fake-blkid.sh
+#!/bin/bash
+echo "LEAKED BLKID CALL"
+
+name=proposed-test
+for release in xenial yakkety zesty; do \
+ ref=$release-proposed;
+ lxc-proposed-snapshot --proposed --publish $release $ref;
+ lxc init $ref $name;
+ lxc start $name;
+ sleep 10;
+ lxc exec $name mv /sbin/blkid /sbin/blkid.orig;
+ lxc file push fake-flkid.sh $name/sbin/blkid
+ lxc exec $name git clone -b ubuntu/xenial https://git.launchpad.net/cloud-init 
+ tox -e py27 tests/unittests/test_datasource/test_altcloud.py | grep 'LEAKED BLKID';
+done
+ 
+[Regression Potential] 
+None. Unit test changes only
+
+[Other Info]
+
+=== End SRU Template ===
