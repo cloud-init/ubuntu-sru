@@ -1,0 +1,50 @@
+http://pad.lv/1691135
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1691135
+    
+=== Begin SRU Template ===
+[Impact] 
+When cloud-init sees 'ip=' on the kernel command line, it will take
+the networking configuration that is written by the ipconfig tool,
+and convert it into the proper network config for the system
+(/etc/network/interfaces).
+
+This works well for the 'ip=dhcp' and 'ip=dhcp6' cases, but did not
+work correctly for the "statick" path with a command line like:
+   ip=<client-ip>::<gw-ip>:<netmask>:<hostname>:device:...
+
+Cloud-init would stack trace when trying to bring up this networking
+resulting in a system that did not boot properly.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, use cloud-init's net library to convert
+     'net-eth1.cfg' into a different format, and the render that format
+     using cloud-init's trunk tool 'net-convert.py'
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $ref $name /bin/bash
+
+## get render tool
+% wget https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1691135/+attachment/4888001/+files/bug-1691135.sh -O bug-1691135.sh
+% sh ./bug-1691135.sh
+
+## if that runs to completion, then it will show the /etc/network/interfaces
+## file and the netplan etc/netplan/50-cloud-init.yaml file.
+## if it fails it will stack trace.
+
+As seen in the upstream commit, the change is in a very focused path,
+only changing something when the protocol was 'static'.
+
+[Regression Potential] 
+Potential for regression would be limited to the 'ip=' command line path.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=9d437489b
+
+=== End SRU Template ===
