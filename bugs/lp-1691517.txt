@@ -1,0 +1,38 @@
+http://pad.lv/1691517
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1691517
+    
+=== Begin SRU Template ===
+[Impact] 
+Unit tests for cloud-init did not run successfully in a centos environment.
+This is really just failure of the unit tests.
+
+The fix was to no longer expect /sbin/mkfs.ext4 but to mock the checking.
+
+[Test Case]
+Test of ubuntu package in centos is non-trivial and/or not useful.
+The proposed test case is to just run the trunk tests at the
+uploaded git commit in a lxc container (the environment that originally
+found the issue).
+
+$ lxc launch images:centos/7 c7
+$ sleep 10; # let it boot
+$ lxc exec c7 -- /bin/sh -xe <<"EOF"
+yum install --assumeyes epel-release
+yum install --assumeyes pyserial python-argparse python-cheetah python-configobj python-jinja2 python-jsonpatch python-oauthlib python-prettytable python-requests python-six python-pip PyYAML git file e2fsprogs
+pip install contextlib2 httpretty mock nose pep8 unittest2
+git clone https://git.launchpad.net/cloud-init
+cd cloud-init
+git checkout 16a7302f
+nosetests tests/unittests
+EOF
+
+
+[Regression Potential]
+No runtime regression potential.
+Unit test only changes.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=951863c21
+
+=== End SRU Template ===
