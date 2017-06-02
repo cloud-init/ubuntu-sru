@@ -1,0 +1,64 @@
+http://pad.lv/1681531
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1681531
+
+
+[Impact]
+The cloud-init datasource for DigitalOcean allows for multiple gateways on any NIC.
+
+On Ubuntu 16.04, this breaks networking.service. For 17.04 and later, Ubuntu _replaces_ the default gateway with the second gateway on 'ifup' after reboot.
+
+DigitalOcean is looking at changing the meta-data, however, this will result in another version of the meta-data JSON.
+
+[Regression Potential]
+
+Low. This change is scope to DigitalOcean only. DigitalOcean has tested this Datasource exhaustively.
+
+[TEST Cases]
+- provision on DigitalOcean with a private IP
+- reboot
+- confirm that a single route exists in /etc/network/interfaces
+
+[LOGS]
+
+----------------------------------------------------------------------------------------------
+From /var/log/cloud-init.log:
+
+2017-04-10 17:36:11,608 - util.py[DEBUG]: Running command ['ip', 'link', 'set', 'ens3', 'down'] with allowed return codes [0] (shell=False, capture=True)
+2017-04-10 17:36:11,615 - util.py[DEBUG]: Running command ['ip', 'link', 'set', 'ens3', 'name', 'eth0'] with allowed return codes [0] (shell=False, capture=True)
+2017-04-10 17:36:11,635 - util.py[DEBUG]: Running command ['ip', 'link', 'set', 'ens4', 'name', 'eth1'] with allowed return codes [0] (shell=False, capture=True)
+2017-04-10 17:36:11,651 - util.py[DEBUG]: Running command ['ip', 'link', 'set', 'eth0', 'up'] with allowed return codes [0] (shell=False, capture=True)
+2017-04-10 17:36:11,654 - stages.py[INFO]: Applying network configuration from ds bringup=False: {'version': 1, 'config': [{'name': 'eth0', 'subnets': [{'address': '138.197.88.85', 'netmask': '255.255.240.0', 'gateway': '138.197.80.1', 'type': 'static', 'control': 'auto'}, {'address': '2604:A880:0800:0010:0000:0000:2ECE:D001/64', 'gateway': '2604:A880:0800:0010:0000:0000:0000:0001', 'type': 'static', 'control': 'auto'}, {'address': '10.17.0.10', 'netmask': '255.255.0.0', 'type': 'static', 'control': 'auto'}], 'mac_address': 'ee:90:f2:c6:dc:db', 'type': 'physical'}, {'name': 'eth1', 'subnets': [{'address': '10.132.92.131', 'netmask': '255.255.0.0', 'gateway': '10.132.0.1', 'type': 'static', 'control': 'auto'}], 'mac_address': '1a:b6:7c:24:5e:cd', 'type': 'physical'}, {'address': ['2001:4860:4860::8844', '2001:4860:4860::8888', '8.8.8.8'], 'type': 'nameserver'}]}
+2017-04-10 17:36:11,668 - util.py[DEBUG]: Writing to /etc/network/interfaces.d/50-cloud-init.cfg - wb: [420] 868 bytes
+2017-04-10 17:36:11,669 - main.py[DEBUG]: [local] Exiting. datasource DataSourceDigitalOcean not in local mode.
+2017-04-10 17:36:11,674 - util.py[DEBUG]: Reading from /proc/uptime (quiet=False)
+
+----------------------------------------------------------------------------------------------
+From 'dmesg':
+Apr 10 17:36:11 ubuntu systemd[1]: Started Initial cloud-init job (pre-networking).
+Apr 10 17:36:12 ubuntu systemd[1]: Started LSB: AppArmor initialization.
+Apr 10 17:36:12 ubuntu systemd[1]: Reached target Network (Pre).
+Apr 10 17:36:12 ubuntu systemd[1]: Starting Raise network interfaces...
+Apr 10 17:36:13 ubuntu ifup[1099]: Waiting for DAD... Done
+Apr 10 17:36:13 ubuntu ifup[1099]: RTNETLINK answers: File exists
+Apr 10 17:36:13 ubuntu ifup[1099]: Failed to bring up eth1.
+
+----------------------------------------------------------------------------------------------
+$ sudo journalctl -xe -u networking
+Apr 10 17:36:12 ubuntu systemd[1]: Starting Raise network interfaces...
+-- Subject: Unit networking.service has begun start-up
+-- Defined-By: systemd
+-- Support: http://lists.freedesktop.org/mailman/listinfo/systemd-devel
+--
+-- Unit networking.service has begun starting up.
+Apr 10 17:36:13 ubuntu ifup[1099]: Waiting for DAD... Done
+Apr 10 17:36:13 ubuntu ifup[1099]: RTNETLINK answers: File exists
+Apr 10 17:36:13 ubuntu ifup[1099]: Failed to bring up eth1.
+Apr 10 17:36:13 ubuntu systemd[1]: networking.service: Main process exited, code=exited, status=1/FAILURE
+Apr 10 17:36:13 ubuntu systemd[1]: Failed to start Raise network interfaces.
+-- Subject: Unit networking.service has failed
+-- Defined-By: systemd
+-- Support: http://lists.freedesktop.org/mailman/listinfo/systemd-devel
+--
+-- Unit networking.service has failed.
+--
+

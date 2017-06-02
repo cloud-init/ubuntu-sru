@@ -1,0 +1,46 @@
+http://pad.lv/1673637
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1673637
+    
+=== Begin cloud-init SRU Template ===
+[Impact]
+Softcloud user datasource is undetected when only openstack/latest config-drive is provided.
+
+[Test Case]
+
+For cloud-init, the easiest way to demonstrate this is to
+create a lxc container and populate it with a '/config-drive' that only contains a openstack/latest path.
+
+wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+chmod 755 lxc-proposed-snapshot
+wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/tools/make-configdrive-dir
+chmod 755 make-configdrive-dir
+name=test-proposed
+
+for release in xenial yaketty zesty; do
+ ref=$release-proposed;
+ ./lxc-proposed-snapshot --proposed --publish $release $ref;
+ ./lxc init $ref $name;
+
+## populate a /config-drive with attached 'make-config-drive-dir'
+## and push it to the container
+
+ d=$(mktemp -d)
+ ./make-configdrive-dir "$d" "$name"
+ rm -Rf "$d"
+ lxc file pull $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg - |
+    sed 's/NoCloud, //' |
+    lxc file push - $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg;
+ 
+
+ lxc start $name
+ sleep 10
+ lxc exec $name cp -r /config-drive /var/lib/cloud/seed/config_drive
+ lxc exec $name rm -rf /var/lib/cloud/seed/config_drive/openstack/2015-10-15
+ lxc exec $name sudo DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep latest
+
+
+[Regression Potential] 
+
+[Other Info]
+
+=== End cloud-init SRU Template ===

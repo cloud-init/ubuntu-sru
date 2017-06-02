@@ -1,0 +1,42 @@
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1676908
+http://pad.lv/1676908
+    
+=== Begin SRU Template ===
+[Impact]
+DigitalOcean instances are unable to bind nameserves to multiple interfaces.
+
+[Test Case]
+
+wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+chmod 755 lxc-proposed-snapshot
+
+
+# create config.yaml
+cat config.yaml
+#cloud-config
+ssh_pwauth: true
+
+name=proposed-test
+for release in xenial yakkety zesty; do \
+ ref=$release-proposed;
+ lxc-proposed-snapshot --proposed --publish $release $ref;
+ lxc init $ref $name;
+ lxc start $name;
+ sleep 10;
+ lxc file pull $name/etc/ssh/sshd_config .;
+ chmod 600 sshd_config;
+ lxc file push sshd_config $name/etc/ssh/sshd_config;
+ lxc config set $name user.user-data - < config.yml;
+ lxc start;
+ sleep 10;
+ lxc exec $name ls -ltr /etc/ssh/sshd_config;  # should remain 600
+ lxc stop $name;
+ lxc delete $name;
+done
+ 
+[Regression Potential] 
+Minimal as we are now honoring file permissions if an sshd_config file exists.
+
+[Other Info]
+
+=== End SRU Template ===

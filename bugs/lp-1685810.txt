@@ -1,0 +1,40 @@
+http://pad.lv/1685810
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1685810
+    
+=== Begin SRU Template ===
+[Impact]
+Warning message for nova-lxd images in openstack clouds due to no valid datasource found.
+
+[Test Case]
+# It downloads a cloud image of a given release, and then creates a -proposed
+image with cloud-init upgraded.
+wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+chmod 755 get-proposed-image
+
+source novarc
+
+for release in xenial yakkety zesty do;
+ ref=$release-proposed;
+ lxc-proposed-snapshot --proposed --publish $release $ref;
+ lxc image export $ref .;
+ imagefile=`ls -tr *gz | tail -n 1`
+ mkdir $ref;
+ cd $ref;
+ tar -zxvf ../$imagefile;
+ cd rootfs;
+ tar zcvf $ref.tar.gz *;
+ #upload raw image to your cloud
+  openstack image create --disk-format raw --container-format bare --file $ref.tar.gz testing/$ref.tar.gz;
+  openstack server create --image testing/$ref.tar.gz --flavor=m1.tiny lxd-$release --key-name <your-key>;
+  nova floating-ip-create;
+  nova foating-ip-associate <server> <address>;
+  ssh ubuntu@<address> 'sudo DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep Found';   # single datasource: OpenStack
+done
+  
+[Regression Potential]
+Low as this only addresses the warning by correctly identifying the OpenStack cloud datasource.
+
+
+[Other Info]
+
+=== End SRU Template ===

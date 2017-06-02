@@ -1,0 +1,41 @@
+http://pad.lv/1691551
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1691551
+
+
+=== Begin SRU Template ===
+[Impact]
+Warnings are not suppressed when /var/lib/cloud/instance/warnings/.skip exists.
+
+[Test Case]
+if [ ! -f lxc-proposed-snapshot ]; then
+  wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+  chmod 755 lxc-proposed-snapshot
+fi
+
+for release in xenial yakkety zesty; do
+        ref=$release-proposed;
+        echo "$release START --------------";
+        ./lxc-proposed-snapshot --proposed --install ntp --publish $release $ref;
+        lxc init $ref test-$release;
+        lxc start test-$release;
+        sleep 10
+        # Create a warning
+        lxc exec test-$release -- sh -c 'd=/var/lib/cloud/instance/warnings/; mkdir -p $d; echo "WARNING WARNING FOO" > "$d/warn-foo"'
+        # Validate warning exists
+        echo -n "Warning should exist on login: "
+        lxc exec test-$release -- bash --login </dev/null 2>&1 | grep WARNING
+        lxc exec test-$release -- touch /var/lib/cloud/instance/warnings/.skip
+        echo -n "Warning should now be suppressed on login: "
+        lxc exec test-$release -- bash --login </dev/null 2>&1 | grep WARNING
+        echo "$release DONE --------------";
+done
+
+[Regression Potential]
+Minimal as the alternative warning suppression file works if you touch /root/.cloud-warnings.skip
+
+[Other Info]
+Upstream commit:
+ https://git.launchpad.net/cloud-init/commit/?id=66e46d8ec290737fd74f50eb8c7672d627d9b516
+
+=== End SRU Template ===
+

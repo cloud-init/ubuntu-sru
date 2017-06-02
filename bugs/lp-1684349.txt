@@ -1,0 +1,181 @@
+http://pad.lv/1684349
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1684349
+
+
+=== Begin SRU Template ===
+[Impact]
+On Openstack instances, when rendering sysconfig output, cloud-init
+would stacktrace due to a TypeError.
+This affects runtime only when rendering sysconfig networking, which
+is what is used on CentOS and RedHat systems.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+     The failed output would have 'addresses' with a format like:
+     172.19.1.34/255.255.255.0
+     The expected output would be 'cidr' format:
+     172.19.1.34/24
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $name
+
+## get render tool
+% wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+## write the network_data.json
+% cat > simple-ipv6.yaml <<EOF
+version: 1
+config:
+  - type: physical
+    name: eth0
+    subnets:
+     - type: static
+       address: "2000:192:168::5"
+       netmask: 64
+       routes:
+        - netmask: 0
+          gateway: "2000:192:168::1"
+          network: "::"
+EOF
+
+## run the converter
+% ./net-convert.py --network-data=simple-ipv6.yaml \
+     --kind=yaml --output-kind=eni --directory=out.d
+
+## check the output
+% cat out.d/etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet6 static
+    address 2000:192:168::5
+    netmask 64
+    post-up route add -A inet6 default gw 2000:192:168::1 || true
+    pre-down route del -A inet6 default gw 2000:192:168::1 || true
+
+## show the cloud-init versions
+% dpkg-query --show cloud-init
+...
+
+[Regression Potential]
+The fix here was just to make a common networking method accept
+a string input as intended rather than only an integer.
+
+The common code changes could shake out other failures in the networking
+path.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=16a7302f6a
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+=== End SRU Template ===
+
+mask2cidr error with integer value - argument of type 'int' is not iterable
+
+~~~
+def mask2cidr(mask):
+    if ':' in str(mask):
+        return ipv6mask2cidr(mask)
+    elif '.' in mask:
+        return ipv4mask2cidr(mask)
+    else:
+        return mask
+~~~
+
+is not type safe. It tries to take into account that this can be a prefix (so it does not contain ':' not '.' and then return mask. The problem is that if mask is an integer, then this returns:
+
+~~~
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site-packages/cloudinit/cmd/main.py", line 513, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python2.7/site-packages/cloudinit/cmd/main.py", line 269, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python2.7/site-packages/cloudinit/stages.py", line 641, in apply_network_config
+    return self.distro.apply_network_config(netcfg, bring_up=bring_up)
+  File "/usr/lib/python2.7/site-packages/cloudinit/distros/__init__.py", line 150, in apply_network_config
+    dev_names = self._write_network_config(netconfig)
+  File "/usr/lib/python2.7/site-packages/cloudinit/distros/rhel.py", line 59, in _write_network_config
+    ns = parse_net_config_data(netconfig)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 32, in parse_net_config_data
+    nsi.parse_config(skip_broken=skip_broken)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 205, in parse_config
+    handler(self, command)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 78, in decorator
+    return func(self, command, *args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 239, in handle_physical
+    subnet['netmask'] = mask2cidr(subnet['netmask'])
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 441, in mask2cidr
+    elif '.' in mask:
+~~~
+
+Made a modification to the code to troubleshoot this:
+~~~
+       # convert subnet ipv6 netmask to cidr as needed
+        subnets = command.get('subnets')
+        print subnets
+        if subnets:
+            for subnet in subnets:
+                if subnet['type'] == 'static':
+                    if 'netmask' in subnet and ':' in subnet['address']:
+                        subnet['netmask'] = mask2cidr(subnet['netmask'])
+                        for route in subnet.get('routes', []):
+                            if 'netmask' in route:
+                                route['netmask'] = mask2cidr(route['netmask'])
+~~~
+
+This error can be hit on RHEL when running the following 2x (don't know why 2x):
+
+ rm -Rf /var/lib/cloud/data/*  ; cloud-init --force init
+
+On the second run, this will be returned:
+~~~
+Traceback (most recent call last):
+  File "/usr/lib/python2.7/site-packages/cloudinit/cmd/main.py", line 513, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python2.7/site-packages/cloudinit/cmd/main.py", line 269, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python2.7/site-packages/cloudinit/stages.py", line 641, in apply_network_config
+    return self.distro.apply_network_config(netcfg, bring_up=bring_up)
+  File "/usr/lib/python2.7/site-packages/cloudinit/distros/__init__.py", line 150, in apply_network_config
+    dev_names = self._write_network_config(netconfig)
+  File "/usr/lib/python2.7/site-packages/cloudinit/distros/rhel.py", line 59, in _write_network_config
+    ns = parse_net_config_data(netconfig)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 32, in parse_net_config_data
+    nsi.parse_config(skip_broken=skip_broken)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 205, in parse_config
+    handler(self, command)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 78, in decorator
+    return func(self, command, *args, **kwargs)
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 239, in handle_physical
+    subnet['netmask'] = mask2cidr(subnet['netmask'])
+  File "/usr/lib/python2.7/site-packages/cloudinit/net/network_state.py", line 441, in mask2cidr
+    elif '.' in mask:
+TypeError: argument of type 'int' is not iterable
+------------------------------------------------------------
+[{u'routes': [{u'netmask': u'0.0.0.0', u'network': u'0.0.0.0', u'gateway': u'192.168.0.1'}], u'netmask': u'255.255.255.0', u'type': 'static', 'ipv4': True, 'address': u'192.168.0.11'}, {u'routes': [{u'netmask': 0, u'network': u'::', u'gateway': u'2000:192:168::1'}], u'netmask': 64, 'ipv6': True, u'type': 'static', 'address': u'2000:192:168::4'}]
+~~~
+
+not the `u'netmask': 64` integer
+
+This can be fixed by changing the code to:
+~~~
+def mask2cidr(mask):
+    if ':' in str(mask):
+        return ipv6mask2cidr(mask)
+    elif '.' in str(mask):
+        return ipv4mask2cidr(mask)
+    else:
+        return mask
+~~~

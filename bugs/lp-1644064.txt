@@ -1,0 +1,41 @@
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1644064
+http://pad.lv/1644064
+    
+=== Begin SRU Template ===
+[Impact]
+Existing security permissions on /etc/ssh/sshd_config file not honored.
+
+[Test Case]
+if [ ! -f lxc-proposed-snapshot ]; then
+  wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+  chmod 755 lxc-proposed-snapshot
+fi
+
+cat << EOF > config.yaml
+#cloud-config
+ntp:
+  pools: [1.ntp.mypool]
+  servers: [my.server.nonpool]
+EOF
+
+for release in xenial yaketty zesty; do
+        ref=$release-proposed;
+        echo "$release START --------------";
+        ./lxc-proposed-snapshot --proposed --install ntp --publish $release $ref;
+        lxc init $ref test-$release;
+        lxc config set test-$release user.user-data - < config.yaml
+        lxc start test-$release;
+        sleep 10
+        # Should not see [0-3].ubuntu.pool.n
+        lxc exec test-$release -- ntpq -p
+        echo "$release DONE --------------";
+done
+
+ 
+[Regression Potential] 
+Minimal ntp service confguration could be stale if this breaks anything.
+It is minimal regression potential as the fix only reorders the creation of /etc/ntp.conf prior to the package intall and adds a call to service ntp restart.
+
+[Other Info]
+
+=== End SRU Template ===
