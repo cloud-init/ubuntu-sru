@@ -1,0 +1,67 @@
+http://pad.lv/1690480
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1690480
+    
+=== Begin SRU Template ===
+[Impact] 
+When rendering netplan output from OpenStack network configuration format
+(network_data.json), cloud-init would not correctly represent some
+bond attributes.  The result is that those attributes are not set as
+desired.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has expected bond attributes.
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $name
+$ sleep 10
+$ lxc exec $name /bin/bash
+
+## get render tool
+% wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+% wget https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1690480/+attachment/4887940/+files/network_data.json -O network_data.json
+
+% python3 ./net-convert.py \
+    --network-data=network_data.json --kind=network_data.json \
+    --output-kind=netplan \
+    --mac=eth0,a0:36:9f:2d:93:80 --mac=eth1,a0:36:9f:2d:93:81 \
+    --directory=out.d
+
+## Now see that the 'mii-monitor-interval', 'mode', and 
+## 'transmit-hash-policy' are present in output.
+% egrep --context=5 '(mii-monitor-interval|mode|transmit-hash-policy)' \
+     out.d/etc/netplan/50-cloud-init.yaml
+        bond0:
+            interfaces:
+            - eth0
+            - eth1
+            parameters:
+                mii-monitor-interval: 100
+                mode: 802.3ad
+                transmit-hash-policy: layer3+4
+    vlans:
+        bond0.101:
+            addresses:
+            - 104.130.20.119/24
+            id: 101
+
+
+[Regression Potential] 
+Fairly low chance for regression. The bond attributes were just not
+being written and now they will be.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=910ed46124e
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+=== End SRU Template ===
