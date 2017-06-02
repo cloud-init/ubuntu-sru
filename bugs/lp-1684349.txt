@@ -1,0 +1,82 @@
+http://pad.lv/1684349
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1684349
+    
+[Impact]
+On Openstack instances, when rendering sysconfig output, cloud-init 
+would stacktrace due to a TypeError.
+This affects runtime only when rendering sysconfig networking, which
+is what is used on CentOS and RedHat systems.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+     The failed output would have 'addresses' with a format like:
+     172.19.1.34/255.255.255.0
+     The expected output would be 'cidr' format:
+     172.19.1.34/24
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $name
+
+## get render tool
+% wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+## write the network_data.json
+% cat > simple-ipv6.yaml <<EOF
+version: 1
+config:
+  - type: physical
+    name: eth0
+    subnets:
+     - type: static
+       address: "2000:192:168::5"
+       netmask: 64
+       routes:
+        - netmask: 0
+          gateway: "2000:192:168::1"
+          network: "::"
+EOF
+
+## run the converter
+% ./net-convert.py --network-data=simple-ipv6.yaml \
+     --kind=yaml --output-kind=eni --directory=out.d
+
+## check the output
+% cat out.d/etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet6 static
+    address 2000:192:168::5
+    netmask 64
+    post-up route add -A inet6 default gw 2000:192:168::1 || true
+    pre-down route del -A inet6 default gw 2000:192:168::1 || true
+
+
+## show the cloud-init versions
+% dpkg-query --show cloud-init
+...
+
+[Regression Potential] 
+The fix here was just to make a common networking method accept
+a string input as intended rather than only an integer.
+
+The common code changes could shake out other failures in the networking
+path.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=16a7302f6a
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+=== End SRU Template ===

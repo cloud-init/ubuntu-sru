@@ -1,0 +1,61 @@
+http://pad.lv/1692087
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1692087
+    
+=== Begin SRU Template ===
+[Impact] 
+The disk setup module (disk_setup) of cloud-init had several issues
+when dealing with GPT formatted devices.  The result was that the user
+didn't get expected behavior if they were requesting GPT disk labels
+or if the disk present already had a GPT label.
+
+[Test Case]
+1.) launch an instance with a second disk "/dev/vdb".
+    This can be done on openstack or azure.
+
+2.) write a config to system.
+   $ sudo tee /etc/cloud/cloud.cfg.d/disk-setup.cfg <EOF
+#cloud-config
+disk_setup:
+  /dev/vdb:
+    table_type: gpt
+    layout: [66, [33, 82]]
+    overwrite: True
+fs_setup:
+ - device: /dev/vdb
+   partition: 1
+   filesystem: ext4
+ - device: /dev/vdb
+   partition: 2
+   filesystem: swap
+mounts:
+    - ["/dev/vdb1", "/mnt"]
+EOF
+
+3. Partition the second disk with a gpt partition table.
+   download a paritioning tool and use it.
+   $ wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bugs/lp-1686514/disk-setup -O disk-setup
+   # format /dev/vdb with GPT disk label and 2 partitions.
+   $ sudo LABEL=gpt ./disk-setup ntfs2 /dev/vdb
+
+4. remove state from the instance and reboot.  We expect that the desired
+   partitioning will be done and the mount written and used on reboot.
+
+   $ sudo rm -Rf /var/lib/cloud/ /var/log/cloud-init*
+   $ sudo reboot
+
+5. ssh back in and look around
+   $ grep vdb /proc/mounts 
+   $ grep mnt /etc/fstab
+
+   $ sfdisk -l /dev/vdb
+
+6. sudo reboot
+7. ssh back in and look around.
+
+[Regression Potential] 
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=3507b59eaa4
+
+=== End SRU Template ===

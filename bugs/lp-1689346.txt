@@ -1,0 +1,98 @@
+http://pad.lv/1689346
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1689346
+    
+=== Begin SRU Template ===
+[Impact]
+On Openstack instances, cloud-init incorrectly rendered netplan
+configuration files.  The result is that networking does not work
+as expected.
+
+Note that this is not a default configuration on any Ubuntu provided images.
+Default images use ifupdown (eni) rendering which did not have this issue.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+     The failed output would have 'addresses' with a format like:
+     172.19.1.34/255.255.255.0
+     The expected output would be 'cidr' format:
+     172.19.1.34/24
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc init $ref $name
+
+## get render tool
+$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+## write the network_data.json
+$ cat >network_data.json <<EOF
+{
+ "links": [
+  {"ethernet_mac_address": "aa:ab:ac:ad:ae:00",
+   "id": "tap1a", "type": "phy", "vif_id": "1a81968a"}
+ ],
+ "networks": [
+   {"id": "network0", "ip_address": "172.19.1.34", "link": "tap1a",
+    "netmask": "255.255.255.0", "network_id": "dacd568d", "type": "ipv4",
+    "routes": [
+     {"gateway": "172.19.3.254", "netmask": "0.0.0.0",
+      "network": "0.0.0.0"}]}
+ ],
+ "services": [{"address": "172.19.0.12", "type": "dns"}]
+}
+EOF
+
+## run the converter
+$ ./net-convert.py --network-data=network_data.json \
+     --kind=network_data.json --output-kind=netplan \
+     -m eth1,aa:ab:ac:ad:ae:00 --directory=./out.d 
+
+
+## check the output
+$ cat out.d/etc/netplan/50-cloud-init.yaml
+network:
+    version: 2
+    ethernets:
+        eth1:
+            addresses:
+            - 172.19.1.34/24
+            match:
+                macaddress: aa:ab:ac:ad:ae:00
+            nameservers:
+                addresses:
+                - 172.19.0.12
+            routes:
+            -   to: 0.0.0.0/0
+                via: 172.19.3.254
+            set-name: eth1
+
+## show the cloud-init versions
+$ dpkg-query --show cloud-init
+...
+
+[Regression Potential] 
+The change is fairly safe in that it basically renders:
+  172.19.1.34/24
+instead of
+  172.19.1.34/255.255.255.0
+
+The previous rendering just plain did not work as it is not valid
+input for netplan.  So the regression path there should be low.
+
+The common code changes could shake out other failures in the networking
+path.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=16a7302f6a
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+=== End SRU Template ===

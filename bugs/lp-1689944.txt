@@ -1,0 +1,78 @@
+http://pad.lv/1689944
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1689944
+    
+=== Begin SRU Template ===
+[Impact]
+Cloud-init when running in Ubuntu core does not recognize it is
+running on a 'snappy.  As a result the snappy specific code paths are not
+taken.
+
+[Test Case]
+There are fairly extensive unit tests added to cover the code path
+that has been added to detect when system is snappy.  See the upstream
+commit link below for that.  Those tests run on package build, so
+the fact that this is in the archive means those have run.
+
+In addition to that we will:
+a.) boot an instance of Ubuntu in lxd with cloud-init from proposed
+    to verify it is not regressed.
+b.) craft an lxd instance with /etc/os-release that appears to be snappy.
+    and then verify via log inspection that it thinks it is.
+
+The test is admittedly superficial, the real end test is having cloud-init
+inside a ubuntu core image and it recognizing that it is snappy there.
+That test is much more involved.
+
+## launch an instance
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $name
+
+## let it boot
+$ sleep 10
+## check log for warnings
+$ lxc exec $name -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]",
+  "errors": []
+ }
+}
+
+$ lxc exec $name -- grep WARN /var/log/cloud-init.log || echo no warnings
+no warnings
+
+
+## write to /etc/os-release so it thinks it is Ubuntu core.
+$ lxc exec $name -- sh -c 'echo ID=ubuntu-core >> /etc/os-release'
+$ lxc exec $name -- sh -c 'd=/etc/system-image; mkdir -p $d; cd $d; echo ubuntu-core > channel.ini'
+
+## Now clear the instance state so it thinks it is first boot.
+$ lxc exec $name -- sh -c 'rm -Rf /var/log/cloud-init*'
+$ lxc exec $name -- sh -xec 'cd /var/lib/cloud; mv seed .x; rm -Rf *; mv .x seed'
++ cd /var/lib/cloud
++ mv seed .x
++ rm -Rf data handlers instance instances scripts sem
++ mv .x seed
+
+$ lxc restart $name
+$ sleep 10
+$ lxc exec $name -- grep "running on snappy" /var/log/cloud-init.log
+2017-06-01 20:53:24,346 - cc_apt_configure.py[DEBUG]: Nothing to do: No apt config and running on snappy
+
+[Regression Potential] 
+The regression potential would be
+a.) cloud-init falsely identifies it is running on snappy when it is not.
+b.) cloud-init does not recognize it is on snappy when it is.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=4bcc947301b
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+=== End SRU Template ===
