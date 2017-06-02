@@ -22,13 +22,14 @@ The basic idea below is:
 $ release=xenial
 $ ref=$release-proposed
 $ lxc-proposed-snapshot --proposed --publish $release $ref
-$ lxc init $ref $name
+$ lxc launch $ref $name
+$ lxc exec $ref $name /bin/bash
 
 ## get render tool
-$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+% wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
 
 ## write a network config with vlan and mac address.
-$ cat > net-config.yaml <<"EOF"
+% cat > net-config.yaml <<"EOF"
 version: 1
 config:
     - type: physical
@@ -46,13 +47,13 @@ config:
           address: 192.168.2.10/24
 EOF
 
-$ for k in eni netplan; do 
-   PYTHONPATH=$PWD python3 ./net-convert.py \
+% for k in eni netplan; do 
+   python3 ./net-convert.py \
     --network-data=net-config.yaml --kind=yaml \
     --output-kind=$k --mac=eth0,fa:35:9c:85:55:00 \
     --directory=out.d ; done
 
-$ cat out.d/etc/network/interfaces
+% cat out.d/etc/network/interfaces
 auto lo
 iface lo inet loopback
 
@@ -68,7 +69,7 @@ iface eth0.101 inet static
     vlan_id 101
 
 
-$ cat out.d/etc/netplan/50-cloud-init.yaml
+% cat out.d/etc/netplan/50-cloud-init.yaml
 network:
     version: 2
     ethernets:
@@ -92,12 +93,12 @@ network:
 ## You'll need to update the 'mac_address' for eth0 in net-config.yaml
 ## to match your system, then re-run the net-convert and update the
 ## system.
-$ sudo cp out.d/etc/network/interfaces /etc/network/interfaces
-$ sudo cp out.d/etc/udev/rules.d/70-persistent-net.rules /etc/udev/rules.d/70-persistent-net.rules
+% sudo cp out.d/etc/network/interfaces /etc/network/interfaces
+% sudo cp out.d/etc/udev/rules.d/70-persistent-net.rules /etc/udev/rules.d/70-persistent-net.rules
 ## drop the .rules files and update the initramfs
-$ sudo rm -f /etc/systemd/network/50-cloud-init-*
-$ sudo update-initramfs -u -k all
-$ sudo reboot
+% sudo rm -f /etc/systemd/network/50-cloud-init-*
+% sudo update-initramfs -u -k all
+% sudo reboot
 
 
 
