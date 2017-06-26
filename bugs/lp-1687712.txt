@@ -1,0 +1,74 @@
+http://pad.lv/1687712
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1687712
+
+=== Begin SRU Template ===
+[Impact]
+If the user specifies cloud-config with a 'fs_setup' entry containing
+a 'cmd', then warning will appear in cloud-init.log and expected filesystem
+will not be created.
+
+This is because cloud-init would essentially try to execute a name like:
+  "mkfs -t TYPE -L LABEL DEVICE"
+rather than a name 'mkfs' with arguments '-t', TYPE, ...
+No split was done on space.  The fix was to enable
+shell intrepretation so that the split would be done.
+
+[Test Case]
+This test case assumes a disk will be attached named '/dev/vdb'.
+You can change the 'dev=' to be 'sdb' if that will be the device name.
+The test cases boots an instance, ads proposed and then 'cleans' the
+instance, but similarly this will work if the config is provided
+in user-data.
+
+$ dev=vdb
+$ sudo tee /etc/cloud/cloud.cfg.d/disk-setup.cfg <<EOF
+#cloud-config
+disk_setup:
+  /dev/$dev:
+    table_type: gpt
+    layout: [[100, 83]]
+ 
+fs_setup:
+ - cmd: mkfs -F -t %(filesystem)s -L %(label)s %(device)s
+   filesystem: ext4
+   device: /dev/$dev
+   partition: 1
+   label: repro
+
+mounts:
+ - [/dev/${dev}1, /mnt]
+EOF
+
+$ sudo rm -Rf /var/lib/cloud /var/log/cloud-init*
+## remove the old entry in /etc/fstab, which can cause LP: #1691489
+$ sudo sed -i.dist '/comment=cloudconfig/d' /etc/fstab
+
+## wipe the disk so that we make sure we format it.
+$ sudo python3 -c "import sys;
+buf = b'\\0' * 1024 * 1024 * 8
+with open(sys.argv[1], 'wb+') as fp:
+   fp.write(buf)
+   fp.seek(-(len(buf)), 2)
+   fp.write(buf)" /dev/$dev
+
+$ sudo reboot
+
+
+## Now ssh back in, and expect to have a filesystem on /dev/vdb1
+## that is mounted at /mnt
+
+[Regression Potential]
+Regression could occur if a user had provided a string to the 'cmd'
+argument that had special shell characters in it.
+For example:
+ cmd: "/my/cmd *foo*"
+
+That would previously have executed the command "/mnt/cmd *foo*", but
+will now execute the command /mnt/cmd with argument shell filename
+expansion of *foo*
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=4f0f171c2
+
+=== End SRU Template ===
