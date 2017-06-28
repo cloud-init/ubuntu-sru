@@ -1,0 +1,50 @@
+http://pad.lv/1693361
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1693361
+
+=== Begin SRU Template ===
+[Impact]
+A cloud-config that contains packages to install (see below) or
+'package_upgrade' will run 'apt-get update'.  That can sometimes fail as a
+result of contention with the apt-daily.service that updates that information.
+
+Cloud-config showing the problem is just like:
+
+  $ cat my.yaml
+  #cloud-config
+  packages: ['hello']
+
+[Test Case]
+lxc-proposed-snapshot is 
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
+
+a.) launch an instance with proposed version of cloud-init and some user-data.
+   This is platform independent.  The test case demonstrates lxd.
+   $ printf "%s\n%s\n%s\n" "#cloud-config" "packages: ['hello']" \
+       "package_upgrade: true" > config.yaml
+   $ release=xenial
+   $ ref=proposed-$release
+   $ ./lxc-proposed-snapshot --proposed --publish $release $ref;
+
+b.) start the instance
+   $ name=$release-1693361
+   $ lxc launch my-xenial "--config=user.user-data=$(cat config.yaml)
+   $ sleep 1
+   $ lxc exec $name -- tail -f /var/log/cloud-init.log /var/log/cloud-init-output.log 
+   # watch this boot.
+
+ c.) Look for evidence of systemd failure
+   journalctl -o short-precise | grep -i break
+   journalctl -o short-precise | grep -i order
+
+[Regression Potential]
+Regression chance here is low.  Its possible that ordering dependencies
+could occur.  When that does happen, journalctl will mention it.  Unfortunately
+in such cases systemd somewhat randomly picks a service to kil so behavior
+is somewhat undefined.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=11121fe4
+
+=== End SRU Template ===
