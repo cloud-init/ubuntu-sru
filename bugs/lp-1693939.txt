@@ -1,0 +1,37 @@
+http://pad.lv/1693939
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1693939
+
+=== Begin SRU Template ===
+[Impact]
+Azure identifies itself to guests by setting providing a well known value in
+the chassis asset field of dmi data.  This is done both in Azure public cloud
+and in Azure Stack (the on-premise variant of Azure).
+
+By checking for this value cloud-init can more quickly identify whether
+or not it is running on Azure.
+
+[Test Case]
+ - Launch an instance, enable proposed, upgrade.
+ - Clean instance and re-boot
+   $ rm -Rf /var/lib/cloud /var/log/cloud-init* 
+   $ rm -f /etc/cloud/cloud.cfg.d/91_walinuxagent.cfg  # bug 1700769
+   $ reboot
+
+ - ssh back in look around
+   - check for 'WARN' in /var/log/cloud-init*
+   - look in /run/cloud-init/ds-identify.log.  It should say:
+      Found single datasource: Azure
+ 
+ - reboot, ssh back in and verify all still good.
+
+
+[Regression Potential]
+Instances running in Azure or Azure Stack that did *not* have this value
+would not be identified as Azure.  We have been told by representatives
+from Microsoft that that will not be the case.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=5fb49bac
+
+=== End SRU Template ===
