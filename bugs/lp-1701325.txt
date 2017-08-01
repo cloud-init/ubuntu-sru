@@ -3,13 +3,40 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1701325
 
 === Begin SRU Template ===
 [Impact]
+lxc containers would show warnings in /var/log/cloud-init.log.
+This was because attempts were made to read dmi information from
+inside the (unpriviledged) container.  Such attempts to read
+dmi data like /sys/class/dmi/id/product_serial would then result
+in an attempt to run dmidecode which would also fail.
 
 [Test Case]
+To test this, simply
+a.) create an lxd instance from a image with -proposed version of cloud-init
+   $ release=xenial
+   $ ref=$release-1701325
+   $ lxc-proposed-snapshot --proposed --publish $release $ref
+   $ lxc launch $ref $name
+b.) lxc exec $name -- grep WARN /var/log/cloud-init.log
 
 [Regression Potential]
+A regression caused by this change is possible on some system where 
+systemd identified the system as a container but the container platform provided
+simulated/virtualized dmi information in /sys/class/dmi/id.
+
+The check for for container is done with:
+  systemd-detect-virt --quite --container
 
 [Other Info]
 Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=4d9f24f5c3
 
+This was actually a regression of the upstream fix for bug 1691772.
+That never entered a stable Ubuntu release.  The testing here is
+actually a test against regression.
+The upstream commit for that change is at
+  https://git.launchpad.net/cloud-init/commit/?id=802e7cb2da
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
 === End SRU Template ===
