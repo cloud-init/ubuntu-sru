@@ -1,0 +1,73 @@
+#!/bin/bash
+Usage() {
+   cat <<EOF
+Usage: ${0##*/} iface address/prefix 
+
+start a dnsmasq server listening on interface iface and address provided.
+add the address to iface if not already present.
+
+if your lxdbr0 is listening on 10.75.205.1, then give:
+
+ ${0##*/} lxdbr0
+EOF
+}
+
+cleanup() {
+  [ -z "$MY_D" ] || rm -Rf "$MY_D"
+  if [ -n "$DNSMASQ_PID" -a -d "/proc/${DNSMASQ_PID}" ]; then
+     kill $DNSMASQ_PID
+  fi
+  if [ -n "$REMOVE_ADDR" ]; then
+     ip address del ${REMOVE_ADDR} dev ${BRIDGE}
+  fi
+}
+
+error() { echo "$@" 1>&2; }
+fail() { [ $# -eq 0 ] || error "$@"; exit 1; }
+
+
+[ "$1" = "-h" -o "$1" = "--help" ] && { Usage; exit 0; }
+[ $# -eq 1 -o $# -eq 2 ] || { Usage 1>&2; exit 1; }
+
+BRIDGE="$1"
+ADDR="$2"
+if [ -z "$ADDR" ]; then
+   out=$(ip address show dev "${BRIDGE}" |
+          awk '$1 == "inet" && $0 ~ /scope global/ { print $2; exit(0); }')
+   if [ -n "$out" ]; then
+      addr=${out%/*}
+      prefix=${out#*/}
+      ADDR="${addr%.*}.2/$prefix"
+      error "picked addr=${ADDR}"
+   fi
+fi
+
+[ "${ADDR#*/}" = "${ADDR}" ] && ADDR="${ADDR}/24"
+
+MY_D=$(mktemp -d)
+DNSMASQ_PID=""
+REMOVE_ADDR=""
+CONF_FILE="${MY_D}/dnsmasq.raw"
+
+trap cleanup EXIT
+
+[ "$(id -u)" = "0" ] || fail echo "not root. sorry."
+
+if ip address show dev "${BRIDGE}" | grep -q "inet ${ADDR} "; then
+   error "$BRIDGE already had $ADDR"
+else
+   ip address add "${ADDR}" dev "$BRIDGE" ||
+      fail "failed ip address add ${ADDR} dev ${BRIDGE}"
+   REMOVE_ADDR=${ADDR}
+fi
+
+touch ${CONF_FILE}
+dnsmasq --strict-order \
+   --except-interface=lo --bind-interfaces \
+   --listen-address=${ADDR%/*} \
+   --domain=mytest --server=/mytest/ \
+   "--conf-file=${CONF_FILE}" --log-facility=- \
+   --keep-in-foreground --log-queries &
+DNSMASQ_PID=$!
+
+wait
