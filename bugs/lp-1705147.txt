@@ -3,13 +3,84 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1705147
 
 === Begin SRU Template ===
 [Impact]
+cloud-init takes network configuration input in a variety of formats.
+It then applies that network configuration, including renaming devices
+based on their mac address and provided name.
+
+If the mac address provided contained upper case letters (hex values,
+so A-F) then cloud-init would fail to rename the devices and show a
+WARN message in /var/log/cloud-init.log.
+
+The warn message would look like:
+  Failed to rename devices: [nic not present] Cannot rename 
+    mac=00:16:3E:FC:3D:65 to eth0, not available.
 
 [Test Case]
+The basic idea below is:
+ a.) launch an lxd instance with proposed version of cloud-init.
+ b.) inside instance, change the provided network config to use upper case
+     for mac addresses.
+ c.) clean the system and reboot.
+ d.) check no errors in /var/log/cloud-init.log
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $name -- /bin/bash
+
+
+## inside
+% read lower < /sys/class/net/eth0/address
+% echo $lower
+00:16:3e:fc:3d:65
+
+% upper=$(echo "$lower" | tr '[a-z]' '[A-Z]')
+% sed -i.dist -e 's,\( *\)name: eth0,\1name: nic0\n\1mac_address: "'$upper'",' \
+     /var/lib/cloud/seed/nocloud-net/network-config
+% ( cd /var/lib/cloud/seed/nocloud-net/ && diff -u network-config.dist network-config )
+--- network-config.dist 2017-08-01 20:44:48.445568094 +0000
++++ network-config   2017-08-01 20:44:58.277456919 +0000
+@@ -1,7 +1,8 @@
+ version: 1
+ config:
+     - type: physical
+-      name: eth0
++      name: nic0
++      mac_address: "00:16:3E:5D:72:AE"
+       subnets:
+           - type: dhcp
+             control: auto
+
+## clean up skipping the 'seed' directory.
+% ( cd /var/lib/cloud && for i in *; do [ "$i" = "seed" ] || rm -Rf $i; done )
+% rm -Rf /var/log/cloud-init*
+% reboot
+
+## back outside, wait a bit, then
+
+% lxc exec $name -- /bin/bash
+% grep WARN /var/log/cloud-init.log || echo "no warnings"
+
+% ip addr show nic0
+90: nic0@if91: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc noqueue state UP group default qlen 1000
+    link/ether 00:16:3e:5d:72:ae brd ff:ff:ff:ff:ff:ff link-netnsid 0
+    inet 10.75.205.253/24 brd 10.75.205.255 scope global nic0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::216:3eff:fe5d:72ae/64 scope link 
+       valid_lft forever preferred_lft forever
 
 [Regression Potential]
+Regression potential here should be very low.  The fix was essentially to
+be more liberal on matching mac addresses by using '.lower()' on both values.
 
 [Other Info]
 Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=c0060fe489
+
+lxc-proposed-snapshot is
+  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/lxc-proposed-snapshot
+It publishes an image to lxd with proposed enabled and cloud-init upgraded.
 
 === End SRU Template ===
