@@ -3,13 +3,64 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1088611
 
 === Begin SRU Template ===
 [Impact]
+Prior to this fix, cloud-init attempts to detect dns redirection by doing
+dns queries for a random hostname and two invalid hostnames.  Then, if
+the result returned for the input value was the same as the response for
+the invalid query cloud-init would assume that result was also invalid.
+
+The change was to replace the random string with
+  __cloud_init_expected_not_found__
+This is a valid hostname and resolution will use the 'search' path in
+resolv.conf where the other invalid domain names would not.
 
 [Test Case]
+The test case for this consists of excercising the the 'is_resolvable_url'
+method in cloudinit.util and watching dns queries.  To do this, see the
+following steps:
+a.) start an lxc container
+   $ release=xenial
+   $ name=$release-1088611
+   $ lxc launch ubuntu-daily:$release $name
+b.) start a dnsmasq server
+   $ ./run-dnsmasq lxdbr0
+   ... 
+   === listening on 10.75.205.2/24 ===
+
+   # run-dnsmasq is attached and at
+   #  https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bugs/lp-1088611/run-dnsmasq
+
+c.) point /etc/resolv.conf at your server ip
+   $ lxc exec $name -- sh -c 'exec >/etc/resolv.conf;
+       echo nameserver 10.75.205.2; echo search foo;'
+
+d.) perform query via is_resolvable_url watch dnsmasq output, expect
+    to see the random query.
+   $ lxc exec $name -- python3 -c 'import sys;
+from cloudinit.util import is_resolvable_url; 
+print(is_resolvable_url(sys.argv[1]))' http://ubuntu.com
+
+e.) upgrade to -proposed version
+f.) perform query via is_resolvable_url, expect to *not* see random query.
 
 [Regression Potential]
+Immediate regression seems unlikely.  Effectively the change in cloud-init
+code path was simply to change a dns lookup attempt from rand() to a defined
+string.
+
+We chose a random string initially to make it difficult for a dns server to
+circumvent cloud-init's attempt to identify dns redirection.  The regression
+path really then seems to involve a dns redirection service specifically
+provding a response for '__cloud_init_expected_not_found__' that differs
+from does-not-exist.example.com.  Cloud-init could then be tricked into
+believing that a apt mirror was valid where it previously would have
+identified the dns redirection.  The failure would be seen as errors
+in package installation or 'apt-get update'.
 
 [Other Info]
 Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=42a7b34a12
+
+Original upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=1bb67be5bd
 
 === End SRU Template ===
