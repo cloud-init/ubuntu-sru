@@ -14,7 +14,41 @@ consider it as as input to the nocloud datasource in a similar way to
 what we had done in the past with the kernel command line.
 
 [Test Case]
-FIXME
+a.) download a cloud image, update its cloud-init
+
+   # see below for 'get-proposed-cloudimg'
+   $ release=xenial
+   $ get-proposed-cloudimg $release
+
+b.) boot that image with command line pointing at a 'seed'
+
+   $ img=${release}-server-cloudimg-amd64-proposed.img
+   # url has to provide '<url>/user-data' and '<url>/meta-data'
+   $ url=https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bugs/lp-1691772/
+   $ qemu-system-x86_64 -snapshot -enable-kvm -m 512 \
+      -device virtio-net-pci,netdev=net00 -netdev type=user,id=net00 \
+      -drive "file=$img,if=virtio" \
+      -smbios "type=1,serial=ds=nocloud-net;seedfrom=$url" \
+      -nographic
+
+   # note,  you can hit 'ctrl-a c' to toggle between the qemu monitor
+   # and the serial console in '-nographic' mode.
+
+c.) Log in with 'ubuntu:passw0rd' and check hostname.
+   If the above url was correctly used, then:
+     * you can log in with 'ubuntu:passw0rd'
+     * the hostname will be set to 'nocloud-guest'
+     * /run/cloud-init/result.json will show that the url has been used.
+
+   ubuntu@nocloud-guest:~$ hostname
+   nocloud-guest
+   ubuntu@nocloud-guest$ cat /run/cloud-init/result.json
+   {
+    "v1": {
+     "datasource": "DataSourceNoCloudNet [seed=dmi,https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bugs/lp-1691772/][dsmode=net]",
+     "errors": []
+    }
+   }
 
 [Regression Potential]
 The code attempts to parse the 'system-serial-number' entry in dmi data as a
@@ -29,5 +63,12 @@ new action being taken.
 [Other Info]
 Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=802e7cb2da8
+
+get-proposed-cloudimg is available at [1], it basically downloads an
+ubuntu cloud image, enables -proposed and upgrade/installs cloud-init.
+
+--
+[1] https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/tree/bin/get-proposed-cloudimg
+
 
 === End SRU Template ===
