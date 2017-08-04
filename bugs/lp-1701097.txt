@@ -3,13 +3,71 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1701097
 
 === Begin SRU Template ===
 [Impact]
+Network configuration provided to cloud-init that has an ipv6 address
+and additional manual default route will fail to bring up the routes
+correctly.
 
 [Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered ENI config to verify it looks correct.
+
+## launch an instance.
+$ release=xenial
+$ ref=$release-proposed
+$ lxc-proposed-snapshot --proposed --publish $release $ref
+$ lxc launch $ref $name
+$ lxc exec $ref $name /bin/bash
+
+## get render tool
+% wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+% cat > net-config.yaml <<"EOF"
+version: 1
+config:
+ - type: physical
+   name: eth0
+   mac_address: "c0:d6:9f:2c:e8:80"
+   subnets:
+    - type: static
+      address: "2001:1::2/64"
+      routes:
+       - gateway: "2001:4800:78ff:1b::1"
+         netmask: "::"
+         network: "::"
+EOF
+
+$ python3 ./net-convert.py \
+    --network-data=net-config.yaml --kind=yaml \
+    --output-kind=eni \
+    --mac=eth0,c0:d6:9f:2c:e8:80 \
+    --directory=out.d
+
+% cat out.d/etc/network/interfaces
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet6 static
+    address 2001:1::2/64
+    post-up route add -A inet6 default gw 2001:4800:78ff:1b::1 || true
+    pre-down route del -A inet6 default gw 2001:4800:78ff:1b::1 || true
+
+
+## The output above is the expected output.  The failure path
+## would have post-up and pre-down like:
+    post-up route add -net :: netmask :: gw 2001:4800:78ff:1b::1 || true
+    pre-down route del -net :: netmask :: gw 2001:4800:78ff:1b::1 || true
 
 [Regression Potential]
+Regressions for this change are almost certainly limited to
+rendering of ipv6 networking configuration and most likely limited
+to routing.
 
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=811ce49d7
+  https://git.launchpad.net/cloud-init/commit/?id=811ce49d74af
 
 === End SRU Template ===
