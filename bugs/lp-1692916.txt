@@ -3,10 +3,30 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1692916
 
 === Begin SRU Template ===
 [Impact]
+New feature to validate and log invalid schema warnings from cc_ntp cloud-config module.
 
 [Test Case]
+if [ ! -f lxc-proposed-snapshot ]; then
+  wget https://git.launchpad.net/~smoser/cloud-init/+git/sru-info/plain/bin/lxc-proposed-snapshot
+  chmod 755 lxc-proposed-snapshot
+fi
+cat <<EOF > 1.conf
+#cloud-config
+ntp:
+EOF
+for release in xenial zesty; do
+        ref=$release-proposed;
+        echo "$release START --------------";
+        ./lxc-proposed-snapshot --proposed --publish $release $ref;
+        lxc start test-$release;
+        lxc file push 1.conf test-$release/1.conf
+        lxc exec test-$release -- python3 /usr/lib/python3/dist-packages/cloudinit/config/schema.py -c /1.conf | grep Valid
+        lxc exec test-$release -- apt-cache depends cloud-init | grep jsonschema   # should be empty
+done
 
 [Regression Potential]
+We don't want to introduce a mandatory jsonschema dependency in older series.
+Validate that older releases can run without errors when jsonschema is *not* installed.
 
 [Other Info]
 Upstream commit at

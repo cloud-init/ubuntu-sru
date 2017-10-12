@@ -1,0 +1,48 @@
+http://pad.lv/1462693
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1462693
+
+=== Begin SRU Template ===
+[Impact]
+Chef installs didn't have facility to pin omnibus versions to avoid churn due to upstream releases.
+
+[Test Case]
+The basic idea below is:
+ a.) init an instance with proposed version of cloud-init
+ b.) update user-data for the lxc to specify known pinned chef omnibus version.
+ c.) Ensure the right version of omnibus is properly installed.
+
+
+## create chef.yml
+$ cat > chef.yml <<EOF
+#cloud-config
+chef:
+  install_type: "omnibus"
+  node_name: "your-node-name"
+  server_url: "https://bogus.host"
+  validation_name: "https://bogus.host"
+  validation_cert: "system"
+  omnibus_version: "12.3.0"
+
+EOF
+
+# Launch instance under test
+$ for release in xenial zesty;
+  do
+    ref=$release-proposed;
+    lxc-proposed-snapshot --proposed --publish $release $ref;
+    lxc init $ref $name;
+    lxc config set $name user.user-data - < chef.yml;
+    lxc start $name;
+    sleep 30; # For chef download/install/apply
+    lxc exec $name -- grep 'Unpacking chef' /var/log/cloud-init-output.log;  # expect to see version 12.3.0-X
+  done
+
+[Regression Potential]
+Regressions are limited to only environments using the chef config module which provided
+the ignored omnibus_version config key.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=f831a874021f
+
+=== End SRU Template ===

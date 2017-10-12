@@ -1,0 +1,46 @@
+http://pad.lv/1710932
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1710932
+
+=== Begin SRU Template ===
+[Impact]
+Landscape client could not properly configure /etc/landscape/client.conf in py3 environments.
+
+[Test Case]
+The basic idea below is:
+ a.) init an instance with proposed version of cloud-init
+ b.) update user-data for the lxc to specify known working landscape-client
+     config for a landscape.canonical.com account.
+ c.) Ensure  client.conf is updated appropriately and registration succeeds.
+
+cat > landscape.yml <<EOF
+#cloud-config
+landscape:
+  client:
+    log_level: "info"
+    url: "https://landscape.canonical.com/message-system"
+    ping_url: "http://landscape.canonical.com/ping"
+    computer_title: "bbsw-testlxd"
+    registration_key: "<REDACTED>"
+    account_name: "devel"
+EOF
+
+$ for release in xenial zesty;
+  do
+    ref=$release-proposed;
+    lxc-proposed-snapshot --proposed --publish $release $ref;
+    lxc init $ref $name;
+    lxc config set $name user.user-data - < landscape.yml;
+    lxc start $name;
+    sleep 30; # For landscape install/registration process
+    lxc exec $name -- grep account_name /etc/landscape/client.conf; # expect account_name = devel
+    lxc exec $name -- egrep 'Using new secure-id.*account devel' /var/log/landscape/broker.log;   # expected live registration success message
+  done
+
+[Regression Potential]
+Regressions for this sould be limited to python3 environments which formerly didn't have a working landscape config module.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=f831a874021f
+
+=== End SRU Template ===

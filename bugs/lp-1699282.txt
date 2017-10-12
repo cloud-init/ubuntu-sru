@@ -1,0 +1,61 @@
+http://pad.lv/1699282
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1699282
+
+=== Begin SRU Template ===
+[Impact]
+Puppet client could not properly configure /etc/puppet/puppet.conf in py3 environments.
+
+[Test Case]
+The basic idea below is:
+ a.) init an instance with proposed version of cloud-init
+ b.) update user-data for the lxc to specify known working puppet configuration.
+ c.) Ensure puppet.conf is updated appropriately and 'puppet apply' succeeds.
+
+
+## create puppet.yml
+$ cat > puppet.yml <<EOF
+#cloud-config
+puppet:
+  conf:
+    agent:
+      server: "puppetmaster.local"
+      certname: "%i.%f"
+# Write a simple site.pp manifest so we can validate puppet apply.
+# This manifest will emit a puppet notification about what type of server
+# we are based on hostname.
+  write_files:
+    - encoding: b64
+      content: |
+        Y2xhc3Mgd2Vic2VydmVyIHsKICBub3RpZnkgeyAnSSBhbSBhIHdlYiBzZXJ2ZXInOiB9Cn0KY2xh
+        c3MgZGF0YWJhc2VzZXJ2ZXIgewogIG5vdGlmeSB7ICdJIGFtIGEgZGF0YWJhc2Ugc2VydmVyJzog
+        fQp9CgoKbm9kZSAvXndlYi4qJC8gewogIGluY2x1ZGUgd2Vic2VydmVyCn0Kbm9kZSAvXmRiLiok
+        LyB7CiAgaW5jbHVkZSBkYXRhYmFzZXNlcnZlcgp9Cm5vZGUgZGVmYXVsdCB7CiAgbm90aWZ5IHsn
+        SSBhbSBhIGRlZmF1bHQgbm9kZSc6IH0KfQoK
+      path: /etc/puppet/manifests/site.pp
+      permissions: '0644'
+  hostname: webserver123
+  runcmd:
+    - puppet apply /etc/puppet/manifests/site.pp
+EOF
+
+# Launch instance under test
+$ for release in xenial zesty;
+  do
+    ref=$release-proposed;
+    lxc-proposed-snapshot --proposed --publish $release $ref;
+    lxc init $ref $name;
+    lxc config set $name user.user-data - < puppet.yml;
+    lxc start $name;
+    sleep 10; # For puppet install/apply
+    lxc exec $name -- egrep 'certname|server' /etc/puppet/puppet.conf;
+    lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log;   # expect to see 'I am a web server'
+  done
+
+[Regression Potential]
+Regressions for this sould be limited to python3 environments which formerly didn't have a working puppet config module.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=f831a874021f
+
+=== End SRU Template ===
