@@ -1,0 +1,34 @@
+http://pad.lv/1709180
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1709180
+
+=== Begin SRU Template ===
+[Impact]
+Logs don't contain timezone information so cloud-config changes to timezone may
+make logs appear to go backwards across time changes. This change ensures UTC is used for all logging.
+
+[Test Case]
+# create a timezone changing cloud-config
+cat >timestamp.yaml <<EOF
+#cloud-config
+timezone: Pacific/honolulu
+EOF
+
+## launch an instance and validate logs
+for release in xenial zesty; do
+  ref=$release-proposed;
+  lxc-proposed-snapshot --proposed --publish $release $ref;
+  lxc init $ref $name;
+  lxc config set $name user.user-data - < timestamp.yaml
+  sleep 10;
+  lxc exec $name -- cat /var/log/cloud-init.log  # and make sure timestamps are contiguous around timezone change
+done
+
+
+[Regression Potential]
+Minimal just log timestamp formatting changes
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=556a0220
+
+=== End SRU Template ===
