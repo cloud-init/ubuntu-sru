@@ -1,0 +1,78 @@
+http://pad.lv/1709180
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1709180
+    
+=== Begin SRU Template ===
+[Impact]
+Curtin provided network v2 configuration would not be passed through
+in cloud-init's network rendering, as a result, certain v2 params were
+dropped.
+configuration files.  The result is that networking does not work
+as expected.
+
+Note that this is not a default configuration on any Ubuntu provided images.
+Default images use ifupdown (eni) rendering which did not have this issue.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+
+## get render tool
+$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+
+
+## write the bonding.yaml version 2 network description
+$ cat >bonding.yaml <<EOF
+network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        macaddress: 52:54:00:12:34:00
+        driver: virtio
+      set-name: eth0
+    ens4:
+      match:
+        macaddress: 52:54:00:12:34:02
+        driver: e1000
+      set-name: ens4
+  bonds:
+    bond0:
+      interfaces: [eth0, ens4]
+      parameters:
+        mode: active-backup
+        mii-monitor-interval: 100
+      dhcp4: true
+EOF
+
+## launch an instance and validate
+for release in xenial zesty; do
+  ref=$release-proposed;
+  lxc-proposed-snapshot --proposed --publish $release $ref;
+  lxc launch $ref $name;
+  sleep 10;
+  lxc file push bonding.yaml $name/bonding.yaml;
+  lxc file push net-convert.py $name/net-convert.py;
+  ## run the converter
+  for k in eni netplan; do
+    lxc exec $name -- ./net-convert.py --network-data=bonding.yaml \
+       --kind=yaml --output-kind=$k \
+       -m eth1,aa:ab:ac:ad:ae:00 --directory=./out.d;
+  done;
+  lxc exec $name cat /out.d/etc/netplan/50-cloud-init.yaml;  # validate netplan configs
+  lxc exec $name cat /out.d/etc/network/interfaces; # validate ENI
+  lxc exec $name -- dpkg-query --show cloud-init;
+done
+
+
+[Regression Potential]
+The change could impact eni rendering of v2 as well as we have translation maps for version2 -> version1.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=dc2bd799
+
+=== End SRU Template ===
