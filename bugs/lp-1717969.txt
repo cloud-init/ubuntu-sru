@@ -1,0 +1,30 @@
+http://pad.lv/1715738
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1715738
+
+=== Begin SRU Template ===
+[Impact]
+Remove arbitrary task limit for cloudint-final systemd unit
+
+[Test Case]
+
+## launch an instance enabling spacewalk in cloud.cfg and validate logs
+for release in xenial zesty; do
+  ref=$release-proposed;
+  name=test-$release
+  lxc-proposed-snapshot --proposed --publish $release $ref;
+  lxc init $ref $name;
+  # Set arbitrary ubuntu systemd DefaultTaskLimit to 20
+  sudo sed -i  's/#DefaultTasksMax=/DefaultTasksMax=20/' /var/lib/lxd/containers/$name/rootfs/etc/systemd/system.conf;
+  lxc start $name;
+  lxc exec $name grep TasksMax /lib/systemd/system/cloud-final.service  # should report infinity
+done
+
+
+[Regression Potential]
+None on ubuntu as it raises the task cap for the cloud-init.final unit
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=7fd04255
+
+=== End SRU Template ===

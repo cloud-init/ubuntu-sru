@@ -1,0 +1,35 @@
+http://pad.lv/1715738
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1715738
+
+=== Begin SRU Template ===
+[Impact]
+Ntp config on UbuntuCore should install timsyncd instead of ntp
+
+[Test Case]
+# create a cloud-config with invalid module config for ubuntu
+cat >install-ntp.yaml <<EOF
+#cloud-config
+ntp:
+EOF
+
+## launch an instance enabling spacewalk in cloud.cfg and validate logs
+for release in xenial zesty; do
+  ref=$release-proposed;
+  name=test-$release
+  lxc-proposed-snapshot --proposed --publish $release $ref;
+  lxc init $ref $name;
+  lxc config set 2-$name user.user-data - < install-ntp.yaml
+  lxc start $name;
+  sleep 10;
+  lxc exec $name -- dpkg -l ntp
+done
+
+
+[Regression Potential]
+Ensure ntp cloud-config on stock ubuntu series still installs ntp package.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=5bba5db2
+
+=== End SRU Template ===

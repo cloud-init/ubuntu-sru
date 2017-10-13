@@ -1,0 +1,41 @@
+http://pad.lv/1715738
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1715738
+
+=== Begin SRU Template ===
+[Impact]
+Skipping modules based on invalid distro setting was not honored, so invalid modules could run/fail.
+
+[Test Case]
+# create a cloud-config with invalid module config for ubuntu
+cat >run-unverified-spacewalk.yaml <<EOF
+#cloud-config
+unverified_modules: [spacewalk]
+EOF
+
+## launch an instance enabling spacewalk in cloud.cfg and validate logs
+for release in xenial zesty; do
+  ref=$release-proposed;
+  name=test-$release
+  lxc-proposed-snapshot --proposed --publish $release $ref;
+  lxc init $ref $name;
+  lxc init $ref 2-$name;
+  # Add ubuntu-invalid spacewalk module to list of cloud config modules
+  sudo sed -i  's/ - byobu/ - byobu\n - spacewalk\n/' /var/lib/lxd/containers/$name/rootfs/etc/cloud/cloud.cfg;
+  sudo sed -i  's/ - byobu/ - byobu\n - spacewalk\n/' /var/lib/lxd/containers/2-$name/rootfs/etc/cloud/cloud.cfg;
+  lxc config set 2-$name user.user-data - < run-unverified-spacewalk.yaml
+  lxc start $name;
+  lxc start 2-$name;
+  sleep 10;
+  lxc exec $name -- grep 'space' # expect to see a Skip log and no 'Running config-spacewalk'
+  lxc exec 2-$name -- grep 'space' # expect no Skip log and presence of 'Running config-spacewalk'
+done
+
+
+[Regression Potential]
+Minimal just log timestamp formatting changes
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=f761f2b5
+
+=== End SRU Template ===
