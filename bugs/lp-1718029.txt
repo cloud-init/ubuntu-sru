@@ -1,0 +1,36 @@
+http://pad.lv/1717598
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1717598
+
+=== Begin SRU Template ===
+[Impact]
+Artful daily images dropped ifupdown package and as a result, no dhcp lease files exist in /var/lib/dhclient/*leases.
+Azure couldn't find the metadata service adddress from dhcp option 245 in this case.
+
+
+[Test Case]
+
+# spawn Azure instance in Xenial/zesty and confirm isc-dhclient leases are still processed correctly.
+$ ssh ubuntu@azure-xenial
+
+
+# Update to <series>-proposed and clean reboot so proposed cloud-init runs
+ubuntu@azure$ sudo vi /etc/apt/sources.list ... %s/ xenial / xenial-proposed /
+ubuntu@azure$ sudo apt update
+ubuntu@azure$ sudo apt install cloud-init
+ubuntu@azure$ dpkg-query show cloud-init
+ubuntu@azure$ sudo rm /var/lib/cloud /var/log/cloud*; sudo reboot
+# Recheck with proposed run
+$ ssh ubuntu@<azure-instance>
+ubuntu@azure-xenial$ grep 'Finding Azure endpoint from hook json...' /var/log/cloud-init.log
+ubuntu@azure-xenial$ grep 'Azure endpoint found at'  # success
+
+
+[Regression Potential]
+systemd networkd checks are done first before isc-dhclient lease parsing. On non-systemd environments, it's possible that this fix could traceback if it doesn't handle non-systemd environments. Check Azure & Cloudstack to make sure proposed doesn't regress.
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=9d2a87dc
+
+=== End SRU Template ===
