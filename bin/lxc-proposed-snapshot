@@ -171,11 +171,19 @@ main() {
     }
     CONTAINER_NAME="$clean"
 
-    # avoid sudo prompt
-    # https://gist.github.com/smoser/e7d368481687ab39dc08#file-mic-lxd
-    sudo mount-image-callback "lxd:$cname" --system-resolvconf mchroot -- \
-        /bin/bash -s chrooted $vflag "${pt[@]}" < "$0" ||
-            return
+    local lxc_ver="" cmd=""
+    lxc_ver=$(lxc --version)
+
+    if dpkg --compare-versions $lxc_ver ge 2.17; then
+        cmd=( lxc-pstart "$cname" -- )
+    else
+        # avoid sudo prompt by following doc at:
+        # https://gist.github.com/smoser/e7d368481687ab39dc08#file-mic-lxd
+        cmd=( sudo mount-image-callback "lxd:$cname" --system-resolvconf
+              mchroot -- )
+    fi
+    "${cmd[@]}" /bin/bash -s chrooted "$vflag" "${pt[@]}" < "$0" ||
+        return
 
     if [ "$publish" = "true" ]; then
         debug 1 "publishing $cname to alias $pubname"
