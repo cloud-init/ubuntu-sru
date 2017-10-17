@@ -10,19 +10,36 @@ Ntp config on UbuntuCore should install timsyncd instead of ntp
 cat >install-ntp.yaml <<EOF
 #cloud-config
 ntp:
+ pools: []
 EOF
 
-## launch an instance enabling spacewalk in cloud.cfg and validate logs
-for release in xenial zesty; do
-  ref=$release-proposed;
-  name=test-$release
-  lxc-proposed-snapshot --proposed --publish $release $ref;
-  lxc init $ref $name;
-  lxc config set 2-$name user.user-data - < install-ntp.yaml
-  lxc start $name;
-  sleep 10;
-  lxc exec $name -- dpkg -l ntp
+## create image with cloud-init from proposed.
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info &&
+   lxc-pstart $r-info \
+     sh -c 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+     lxc delete --force $r-info; done
+
+# show container info just to show versions.
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info >/dev/null 2>&1 && echo == $r-info == &&
+   lxc-pstart $r-info -- \
+      sh -xc 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+   lxc delete --force $r-info; done
+
+## launch an instance of each release and verify ntp gets installed.
+$ printf "%s\n%s\n%s\n" "#cloud-config" "ntp:" " pools: []" > my.cfg
+$ for rel in xenial zesty; do
+   n=$rel-ntp
+   lxc launch $rel-proposed $n "--config=user.user-data=$(cat my.cfg)"
+   lxc exec $n -- sh -c \
+      'while ! [ -e /run/cloud-init/result.json ]; do echo -n .; sleep 1; done; echo'
+   lxc file pull $n/var/log/cloud-init.log $n-cloud-init.log
+   lxc exec $n -- dpkg-query --show ntp
 done
+
+# check that ntp is installed.
+$ grep "apt-install.*ntp" *-ntp-cloud-init.log
 
 
 [Regression Potential]
@@ -33,3 +50,52 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=5bba5db2
 
 === End SRU Template ===
+
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info &&
+   lxc-pstart $r-info \
+     sh -c 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+     lxc delete --force $r-info; done
+
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info >/dev/null 2>&1 && echo == $r-info == &&
+   lxc-pstart $r-info -- \
+      sh -xc 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+   lxc delete --force $r-info; done
+== zesty-info ==
++ dpkg-query --show cloud-init
+cloud-init  17.1-18-gd4f70470-0ubuntu1~17.04.1
++ cat /etc/cloud/build.info
+build_name: server
+serial: 20171011
+== xenial-info ==
++ dpkg-query --show cloud-init
+cloud-init  17.1-18-gd4f70470-0ubuntu1~16.04.1
++ cat /etc/cloud/build.info
+build_name: server
+serial: 20171011
+smoser@milhouse:~/src/lxc-tools/lxc-tools$ 
+
+
+## launch an instance of each release and verify ntp gets installed.
+$ printf "%s\n%s\n%s\n" "#cloud-config" "ntp:" " pools: []" > my.cfg
+
+$ for rel in xenial zesty; do
+   n=$rel-ntp
+   lxc launch $rel-proposed $n "--config=user.user-data=$(cat my.cfg)"
+   lxc exec $n -- sh -c \
+      'while ! [ -e /run/cloud-init/result.json ]; do echo -n .; sleep 1; done; echo'
+   lxc file pull $n/var/log/cloud-init.log $n-cloud-init.log
+   lxc exec $n -- dpkg-query --show ntp
+done
+
+Creating xenial-ntp
+Starting xenial-ntp
+.......................................ntp   1:4.2.8p4+dfsg-3ubuntu5.7
+Creating zesty-ntp
+Starting zesty-ntp
+............................................................ntp   1:4.2.8p9+dfsg-2ubuntu1.2
+
+$ grep "apt-install.*ntp" *-ntp-cloud-init.log
+xenial-ntp-cloud-init.log:2017-10-17 17:24:54,715 - util.py[DEBUG]: apt-install [eatmydata apt-get --option=Dpkg::Options::=--force-confold --option=Dpkg::options::=--force-unsafe-io --assume-yes --quiet install ntp] took 4.541 seconds
+zesty-ntp-cloud-init.log:2017-10-17 17:25:57,556 - util.py[DEBUG]: apt-install [eatmydata apt-get --option=Dpkg::Options::=--force-confold --option=Dpkg::options::=--force-unsafe-io --assume-yes --quiet install ntp] took 5.539 seconds
