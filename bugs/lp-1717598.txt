@@ -7,21 +7,38 @@ Runcmd cloud-config cannot be run on gce instances due to traceback.
 
 [Test Case]
 # Create sample runcmd yaml which reproduces failure
-$ cat > runcmd.yaml <<EOF
+$ cat > userdata.yaml <<EOF
 #cloud-config
+bootcmd:
+  - "cat /proc/uptime > /run/bootcmd-works"
 runcmd:
-  - touch /tmp/cloud-init-works
+  - "cat /proc/uptime > /run/runcmd-works"
 EOF
 
 # spawn GCE instance Xenial/Zesty with the following user-data
-$ gcloud compute instances create xenial-$(date +%y%m%d-%H%M) --image <daily-xenial-image> --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=cfg
+# image-status is
+##  https://github.com/smoser/talk-simplestreams/blob/master/bin/image-status
+$ image-status gce region=us-east1
+artful   20171015    us-east1        daily-ubuntu-1710-artful-v20171015
+trusty   20171016    us-east1        daily-ubuntu-1404-trusty-v20171016
+xenial   20171011    us-east1        daily-ubuntu-1604-xenial-v20171011
+zesty    20171011    us-east1        daily-ubuntu-1704-zesty-v20171011
+
+$ name=xenial-$(date +%y%m%d-%H%M)
+$ gcloud compute instances create $name \
+   --zone=us-east1-b \
+   --image daily-ubuntu-1604-xenial-v20171011 \
+   --image-project ubuntu-os-cloud-devel \
+   --metadata-from-file user-data=user-data.yaml
 
 $ ssh ubuntu@<gce-instance>
 # Grep for Tracebacks in /var/log/cloud-init.log
 ubuntu@gce$ grep Traceback /var/log/cloud-init.log
 
 # Update to <series>-proposed
-ubunut@gce$ sudo vi /etc/apt/sources.list ... %s/ xenial / xenial-proposed /
+$ git clone https://git.launchpad.net/~smoser/cloud-init/+git/sru-info
+$ sudo ./sru-info/bin/enable-proposed
+deb http://us-east1.gce.archive.ubuntu.com/ubuntu/ xenial-proposed main universe
 ubunut@gce$ sudo apt update
 ubunut@gce$ sudo apt install cloud-init
 ubunut@gce$ dpkg-query show cloud-init
