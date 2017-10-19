@@ -1,0 +1,67 @@
+http://pad.lv/1724354
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1724354
+
+=== Begin SRU Template ===
+[Impact]
+If python3-jsonschema is not installed, then WARNING will be written
+to console log and to /var/log/cloud-init.log with certain cloud-config
+data is provided.
+
+python3-jsonschema is a soft dependency of cloud-init and specically
+not listed in 16.04 and 17.04 packaging as it was not a dependency in
+the versions of cloud-init originally released then.
+
+The WARNING is only "scary", and has no negative affect on runtime.
+
+[Test Case]
+The change for this bug modified the integration test suite so
+that WARN in /var/log/cloud-init would trigger a test failure.
+Running the integration testsuite would show this failure with
+that test now in place.
+
+A manual test can be done though as follows.
+
+$ cat > my.cfg <<EOF
+#cloud-config
+bootcmd:
+  - "cat /proc/uptime > /run/bootcmd-works"
+runcmd:
+  - "cat /proc/uptime > /run/runcmd-works"
+EOF
+
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info &&
+   lxc-pstart $r-info \
+     sh -c 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+     lxc delete --force $r-info; done
+
+# show container info just to show versions.
+$ for r in zesty xenial; do
+   lxc init $r-proposed $r-info >/dev/null 2>&1 && echo == $r-info == &&
+   lxc-pstart $r-info -- \
+      sh -xc 'dpkg-query --show cloud-init; cat /etc/cloud/build.info' &&
+   lxc delete --force $r-info; done
+
+## launch an instance of each release and grab logs.
+$ for rel in xenial zesty; do
+   n=$rel-1724354
+   lxc launch $rel-proposed $n "--config=user.user-data=$(cat my.cfg)"
+   lxc exec $n -- sh -c \
+      'while ! [ -e /run/cloud-init/result.json ]; do echo -n .; sleep 1; done; echo'
+   lxc file pull $n/var/log/cloud-init.log $n-cloud-init.log
+done
+
+# check that 1724354 is installed.
+$ grep "WARN" *-1724354-cloud-init.log
+
+[Regression Potential]
+Highest chance for regression would be in the integration test
+suite.  The only change in code path is in cloudinit/config/schema.py:
+ - logging.warning(
+ + logging.debug(
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=41152f10ddb
+
+=== End SRU Template ===
