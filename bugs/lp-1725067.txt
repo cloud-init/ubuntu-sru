@@ -3,10 +3,68 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1725067
 
 === Begin SRU Template ===
 [Impact]
+Growing the root partition would fail in either of two cases:
+ a.) if the device /dev/root existed
+ b.) the kernel command line had upper case letters in PARTUUID=<value>
 
 [Test Case]
+get-proposed-image is
+  https://github.com/cloud-init/qa-scripts/blob/master/scripts/get-proposed-cloudimg
+It downloads a cloud image of a given release, and then creates a -proposed
+image with cloud-init upgraded.
+
+A script 'recreate.sh' will run each of the steps below automated.
+  https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1684869/recreate.sh
+
+
+1.) get a (proposed) disk image image.
+  and convert it to raw so you can read the partuuid with sfdisk
+  (get-proposed-image does this, if not,
+  'qemu-img convert -O raw orig.img orig.raw')
+  ./get-proposed-image
+
+2.) get the partition uuid of the first partition
+   # for xenial images that are dos partition table rather than gpt
+   # we need to convert that with:
+   #    sgdisk --mbrtogpt $raw
+   $ raw=yakkety-server-cloudimg-amd64-proposed.raw
+   $ ptuuid=$(sfdisk --part-uuid $raw 1)
+
+3.) create a nocloud seed
+   $ printf "%s\n%s\n%s\n%s\n" "#cloud-config" "password: passw0rd" \
+        "chpasswd: {expire: False}" "ssh_pwauth: True" > my-user-data
+   $ echo "instance-id: $(uuidgen || echo i-abcdefg)" > my-meta-data
+   $ cloud-localds my-seed.img my-user-data my-meta-data
+
+4.) extract kernel from inside the image
+   $ sudo mount-image-callback $raw -- mchroot sh -xc 'cat /boot/vmlinu?-*' > kernel
+
+5.) boot instance with disk backed by the raw disk above.
+
+   $ qemu-img create -f qcow2 -b $raw disk.img 10G
+   $ qemu-system-x86_64 -enable-kvm \
+       -drive file=disk.img,if=ide,index=0 -drive file=my-seed.img,if=ide \
+       -net nic -net user,hostfwd=tcp::2222-:22 \
+       -snapshot -m 768 -nographic -echr 0x05 \
+       -kernel kernel \
+       -append "root=PARTUUID=${ptuuid} ro console=tty1 console=ttyS0"
+
+6.) log in, verify / has been resized.
+   log in with 'ubuntu' and password 'passw0rd'
+    $ df -h /
+    Filesystem      Size  Used Avail Use% Mounted on
+    /dev/root       9.6G 1009M  8.6G  11% /
+
 
 [Regression Potential]
+Regressions would surface as the root filesystem not being correctly resized.
+The user would find themselves with not as much disk as expected.
+
+[Other Info]
+The qemu-system-x86 command above uses ide devices.  This is because
+the ide device emulated by qemu is built into the -generic kernel,
+while the more common virtio-block or virtio-scsi are not.  If you
+attach those device types, it will fail with 'cant find root'.
 
 [Other Info]
 Upstream commit at
