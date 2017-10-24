@@ -3,10 +3,47 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1724951
 
 === Begin SRU Template ===
 [Impact]
+Customers who provide the following cloud-config will get a Runtime error
+#cloud-config
+ntp:
+
+The expected behavior, per docs, is that an empty ntp configuration will result in
+"4 pools will be used in the format {0-3}.{distro}.pool.ntp.org.".
 
 [Test Case]
 
+
+if [ ! -f './lxc-proposed-snapshot' ]; then
+  wget https://raw.githubusercontent.com/cloud-init/ubuntu-sru/master/bin/lxc-proposed-snapshot;
+  chmod 755 lxc-proposed-snapshot;
+fi
+
+# 1. Provide a empty ntp configuration to cloud-init
+cat > install-ntp.conf <<EOF
+#cloud-config
+ntp:
+EOF
+
+# 2.
+for release in xenial zesty; do
+        ref=$release-proposed;
+        echo "$release START --------------";
+        lxc-proposed-snapshot --proposed --publish $release $ref;
+        lxc init $ref test-$release;
+        lxc config set test-$release user.user-data - < install-ntp.conf;
+        lxc start test-$release;
+        sleep 10;
+        # no runtime error
+        lxc exec test-$release -- cat /run/cloud-init/result.json
+        # ntp installed
+        lxc exec test-$release -- dpkg-query --show ntp;
+        # default pools
+        lxc exec test-$release -- grep pool /etc/ntp.conf
+done
+
 [Regression Potential]
+Minimal, this fixes only a corner case where cloud-config ntp specified is completely empty.
+Any more complex ntp configuration are unaffected by code changes.
 
 [Other Info]
 Upstream commit at
