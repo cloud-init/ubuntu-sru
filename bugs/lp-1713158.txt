@@ -1,6 +1,8 @@
 http://pad.lv/1709180
 https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1709180
 
+# ensure contiguous logs across timezone changes in cloud-init
+
 === Begin SRU Template ===
 [Impact]
 Logs don't contain timezone information so cloud-config changes to timezone may
@@ -16,9 +18,11 @@ EOF
 ## launch an instance and validate logs
 for release in xenial zesty; do
   ref=$release-proposed;
+  name=test-$release;
   lxc-proposed-snapshot --proposed --publish $release $ref;
   lxc init $ref $name;
   lxc config set $name user.user-data - < timestamp.yaml
+  lxc start $name;
   sleep 10;
   lxc exec $name -- cat /var/log/cloud-init.log  # and make sure timestamps are contiguous around timezone change
 done
@@ -32,3 +36,45 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=556a0220
 
 === End SRU Template ===
+
+
+=== SRU verification output ===
+
+Creating xenial-proposed-1068128618
+The configuration file contains legacy configuration keys.
+Please update your configuration file!
+--proposed -- 
+...
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~16.04.1 [342 kB]
+2017-10-16 22:39:29,443 - handlers.py[DEBUG]: finish: modules-config/config-ntp: SUCCESS: config-ntp ran successfully
+2017-10-16 22:39:29,443 - stages.py[DEBUG]: Running module timezone (<module 'cloudinit.config.cc_timezone' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_timezone.py'>) with frequency once-per-instance
+2017-10-16 22:39:29,443 - handlers.py[DEBUG]: start: modules-config/config-timezone: running config-timezone with frequency once-per-instance
+2017-10-16 22:39:29,443 - util.py[DEBUG]: Writing to /var/lib/cloud/instances/test-xenial/sem/config_timezone - wb: [644] 24 bytes
+2017-10-16 22:39:29,444 - helpers.py[DEBUG]: Running config-timezone using lock (<FileLock using file '/var/lib/cloud/instances/test-xenial/sem/config_timezone'>)
+2017-10-16 22:39:29,444 - util.py[DEBUG]: Writing to /etc/timezone - wb: [644] 17 bytes
+2017-10-16 22:39:29,445 - util.py[DEBUG]: Attempting to remove /etc/localtime
+2017-10-16 22:39:29,445 - handlers.py[DEBUG]: finish: modules-config/config-timezone: SUCCESS: config-timezone ran successfully
+2017-10-16 22:39:29,446 - stages.py[DEBUG]: Running module disable-ec2-metadata (<module 'cloudinit.config.cc_disable_ec2_metadata' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_disable_ec2_metadata.py'>) with frequency always
+
+
+Creating zesty-proposed-315387554
+The configuration file contains legacy configuration keys.
+Please update your configuration file!
+--proposed -- 
+Get:1 http://archive.ubuntu.com/ubuntu zesty-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~17.04.1 [340 kB]
+Preconfiguring packages ...
+2017-10-16 22:40:41,855 - __init__.py[DEBUG]: Searching for local data source in: ['DataSourceNoCloud']
+...
+2017-10-16 22:40:48,354 - util.py[DEBUG]: Read 0 bytes from /etc/system-image/channel.ini
+2017-10-16 22:40:48,354 - cc_apt_configure.py[DEBUG]: handling apt config: {}
+2017-10-16 22:40:48,470 - handlers.py[DEBUG]: finish: modules-config/config-ntp: SUCCESS: config-ntp ran successfully
+2017-10-16 22:40:48,470 - stages.py[DEBUG]: Running module timezone (<module 'cloudinit.config.cc_timezone' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_timezone.py'>) with frequency once-per-instance
+2017-10-16 22:40:48,470 - handlers.py[DEBUG]: start: modules-config/config-timezone: running config-timezone with frequency once-per-instance
+2017-10-16 22:40:48,470 - util.py[DEBUG]: Writing to /var/lib/cloud/instances/test-zesty/sem/config_timezone - wb: [644] 24 bytes
+2017-10-16 22:40:48,471 - helpers.py[DEBUG]: Running config-timezone using lock (<FileLock using file '/var/lib/cloud/instances/test-zesty/sem/config_timezone'>)
+2017-10-16 22:40:48,471 - util.py[DEBUG]: Writing to /etc/timezone - wb: [644] 17 bytes
+2017-10-16 22:40:48,472 - util.py[DEBUG]: Attempting to remove /etc/localtime
+2017-10-16 22:40:48,473 - handlers.py[DEBUG]: finish: modules-config/config-timezone: SUCCESS: config-timezone ran successfully
+2017-10-16 22:40:48,473 - stages.py[DEBUG]: Running module disable-ec2-metadata (<module 'cloudinit.config.cc_disable_ec2_metadata' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_disable_ec2_metadata.py'>) with frequency always
+
+=== End SRU verification output ===

@@ -23,30 +23,34 @@ puppet:
 # Write a simple site.pp manifest so we can validate puppet apply.
 # This manifest will emit a puppet notification about what type of server
 # we are based on hostname.
-  write_files:
-    - encoding: b64
-      content: |
-        Y2xhc3Mgd2Vic2VydmVyIHsKICBub3RpZnkgeyAnSSBhbSBhIHdlYiBzZXJ2ZXInOiB9Cn0KY2xh
-        c3MgZGF0YWJhc2VzZXJ2ZXIgewogIG5vdGlmeSB7ICdJIGFtIGEgZGF0YWJhc2Ugc2VydmVyJzog
-        fQp9CgoKbm9kZSAvXndlYi4qJC8gewogIGluY2x1ZGUgd2Vic2VydmVyCn0Kbm9kZSAvXmRiLiok
-        LyB7CiAgaW5jbHVkZSBkYXRhYmFzZXNlcnZlcgp9Cm5vZGUgZGVmYXVsdCB7CiAgbm90aWZ5IHsn
-        SSBhbSBhIGRlZmF1bHQgbm9kZSc6IH0KfQoK
-      path: /etc/puppet/manifests/site.pp
-      permissions: '0644'
-  hostname: webserver123
-  runcmd:
-    - puppet apply /etc/puppet/manifests/site.pp
+write_files:
+  - encoding: b64
+    content: |
+      Y2xhc3Mgd2Vic2VydmVyIHsKICBub3RpZnkgeyAnSSBhbSBhIHdlYiBzZXJ2ZXInOiB9Cn0KY2xh
+      c3MgZGF0YWJhc2VzZXJ2ZXIgewogIG5vdGlmeSB7ICdJIGFtIGEgZGF0YWJhc2Ugc2VydmVyJzog
+      fQp9CgoKbm9kZSAvXndlYi4qJC8gewogIGluY2x1ZGUgd2Vic2VydmVyCn0Kbm9kZSAvXmRiLiok
+      LyB7CiAgaW5jbHVkZSBkYXRhYmFzZXNlcnZlcgp9Cm5vZGUgZGVmYXVsdCB7CiAgbm90aWZ5IHsn
+      SSBhbSBhIGRlZmF1bHQgbm9kZSc6IH0KfQoK
+    path: /etc/puppet/manifests/site.pp
+    permissions: '0644'
+hostname: webserver123
+runcmd:
+  - puppet apply /etc/puppet/manifests/site.pp
 EOF
 
 # Launch instance under test
 $ for release in xenial zesty;
   do
     ref=$release-proposed;
+    name=webserver$release;
     lxc-proposed-snapshot --proposed --publish $release $ref;
     lxc init $ref $name;
     lxc config set $name user.user-data - < puppet.yml;
     lxc start $name;
     sleep 10; # For puppet install/apply
+    lxc exec $name -- dpkg-query --show cloud-init
+    lxc exec $name -- dpkg-query --show puppet
+
     lxc exec $name -- egrep 'certname|server' /etc/puppet/puppet.conf;
     lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log;   # expect to see 'I am a web server'
   done
@@ -59,3 +63,41 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=f831a874021f
 
 === End SRU Template ===
+
+
+
+=== SRU abridged verification Output ===
+Creating xenial-proposed-219618327
+--proposed -- 
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+...
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~16.04.1 [342 kB]
+Preconfiguring packages ...
+Creating webserverxenial
+# grep puppet.conf
+server = puppetmaster.local
+certname = webserverxenial.webserver123
+# grep cloud-init-output.log
+Notice: Compiled catalog for webserver123.lxd in environment production in 0.03 seconds
+Notice: I am a web server
+Notice: /Stage[main]/Webserver/Notify[I am a web server]/message: defined 'message' as 'I am a web server'
+Notice: Finished catalog run in 0.02 seconds
+
+
+Creating zesty-proposed-1263727516
+...
+--proposed -- 
+Hit:1 http://archive.ubuntu.com/ubuntu zesty InRelease
+Get:1 http://archive.ubuntu.com/ubuntu zesty-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~17.04.1 [340 kB]
+Preconfiguring packages ...
+Creating webserverzesty
+# grep puppet.conf
+server = puppetmaster.local
+certname = webserverzesty.webserver123
+# grep cloud-init-output.log
+Notice: Compiled catalog for webserver123.lxd in environment production in 0.08 seconds
+Notice: I am a web server
+Notice: /Stage[main]/Webserver/Notify[I am a web server]/message: defined 'message' as 'I am a web server'
+Notice: Applied catalog in 0.01 seconds
+=== End SRU abridged verification Output ===
+

@@ -12,9 +12,12 @@ The developer would instead need to run python3 -m 'cloudinit.cmd.main devel sch
 $ for release in xenial zesty;
   do
     ref=$release-proposed;
+    name=test-$release;
     lxc-proposed-snapshot --proposed --publish $release $ref;
     lxc launch $ref $name;
     sleep 10;
+    lxc exec $name -- grep CODE /etc/os-release;
+    lxc exec $name -- dpkg-query --show cloud-init;
     lxc exec $name cloud-init analyze;
     lxc exec $name cloud-init devel schema --doc;
   done
@@ -27,3 +30,377 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=f831a874
 
 === End SRU Template ===
+
+
+=== SRU abridged verification output ===
+
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+cloud-init	17.1-18-gd4f70470-0ubuntu1~16.04.1
+usage: /usr/bin/cloud-init analyze [-h] {blame,show,dump} ...
+/usr/bin/cloud-init analyze: error: the following arguments are required: subcommand
+
+Resizefs
+--------
+**Summary:** Resize filesystem
+
+Resize a filesystem to use all avaliable space on partition. This
+module is useful along with ``cc_growpart`` and will ensure that if the
+root partition has been resized the root filesystem will be resized
+along with it. By default, ``cc_resizefs`` will resize the root
+partition and will block the boot process while the resize command is
+running. Optionally, the resize operation can be performed in the
+background while cloud-init continues running modules. This can be
+enabled by setting ``resize_rootfs`` to ``true``. This module can be
+disabled altogether by setting ``resize_rootfs`` to ``false``.
+
+**Internal name:** ``cc_resizefs``
+
+**Module frequency:** always
+
+**Supported distros:** all
+
+**Config schema**:
+    **resize_rootfs:** (true/false/noblock) Whether to resize the root partition. Default: 'true'
+
+**Examples**::
+
+    resize_rootfs: false  # disable root filesystem resize operation
+
+
+Runcmd
+------
+**Summary:** Run arbitrary commands
+
+Run arbitrary commands at a rc.local like level with output to the
+console. Each item can be either a list or a string. If the item is a
+list, it will be properly executed as if passed to ``execve()`` (with
+the first arg as the command). If the item is a string, it will be
+written to a file and interpreted
+using ``sh``.
+
+.. note::
+all commands must be proper yaml, so you have to quote any characters
+yaml would eat (':' can be problematic)
+
+**Internal name:** ``cc_runcmd``
+
+**Module frequency:** once-per-instance
+
+**Supported distros:** all
+
+**Config schema**:
+    **runcmd:** (array of (array of string)/(string)) 
+
+**Examples**::
+
+    runcmd:
+        - [ ls, -l, / ]
+        - [ sh, -xc, "echo $(date) ': hello world!'" ]
+        - [ sh, -c, echo "=========hello world'=========" ]
+        - ls -l /root
+        - [ wget, "http://example.org", -O, /tmp/index.html ]
+    
+
+
+Bootcmd
+-------
+**Summary:** Run arbitrary commands early in the boot process
+
+This module runs arbitrary commands very early in the boot process,
+only slightly after a boothook would run. This is very similar to a
+boothook, but more user friendly. The environment variable
+``INSTANCE_ID`` will be set to the current instance id for all run
+commands. Commands can be specified either as lists or strings. For
+invocation details, see ``runcmd``.
+
+.. note::
+    bootcmd should only be used for things that could not be done later
+    in the boot process.
+
+**Internal name:** ``cc_bootcmd``
+
+**Module frequency:** always
+
+**Supported distros:** all
+
+**Config schema**:
+    **bootcmd:** (array of (array of string)/(string)) 
+
+**Examples**::
+
+    bootcmd:
+        - echo 192.168.1.130 us.archive.ubuntu.com > /etc/hosts
+        - [ cloud-init-per, once, mymkfs, mkfs, /dev/vdb ]
+    
+
+
+NTP
+---
+**Summary:** enable and configure ntp
+
+Handle ntp configuration. If ntp is not installed on the system and
+ntp configuration is specified, ntp will be installed. If there is a
+default ntp config file in the image or one is present in the
+distro's ntp package, it will be copied to ``/etc/ntp.conf.dist``
+before any changes are made. A list of ntp pools and ntp servers can
+be provided under the ``ntp`` config key. If no ntp ``servers`` or
+``pools`` are provided, 4 pools will be used in the format
+``{0-3}.{distro}.pool.ntp.org``.
+
+**Internal name:** ``cc_ntp``
+
+**Module frequency:** once-per-instance
+
+**Supported distros:** centos, debian, fedora, opensuse, ubuntu
+
+**Config schema**:
+    **ntp:** (object/null) 
+
+        **servers:** (array of string) List of ntp servers. If both pools and servers are empty, 4 default pool servers will be provided with the format ``{0-3}.{distro}.pool.ntp.org``.
+
+        **pools:** (array of string) List of ntp pools. If both pools and servers are empty, 4 default pool servers will be provided of the format ``{0-3}.{distro}.pool.ntp.org``.
+
+**Examples**::
+
+    ntp:
+      pools: [0.int.pool.ntp.org, 1.int.pool.ntp.org, ntp.myorg.org]
+      servers:
+        - ntp.server.local
+        - ntp.ubuntu.com
+        - 192.168.23.2
+
+
+ZypperAddRepo
+-------------
+**Summary:** Configure zypper behavior and add zypper repositories
+
+Configure zypper behavior by modifying /etc/zypp/zypp.conf. The
+configuration writer is "dumb" and will simply append the provided
+configuration options to the configuration file. Option settings
+that may be duplicate will be resolved by the way the zypp.conf file
+is parsed. The file is in INI format.
+Add repositories to the system. No validation is performed on the
+repository file entries, it is assumed the user is familiar with
+the zypper repository file format.
+
+**Internal name:** ``cc_zypper_add_repo``
+
+**Module frequency:** always
+
+**Supported distros:** opensuse, sles
+
+**Config schema**:
+    **zypper:** (object) 
+
+        **repos:** (array of object) 
+
+        **config:** (object) Any supported zypo.conf key is written to/etc/zypp/zypp.conf'
+
+**Examples**::
+
+    zypper:
+      repos:
+        - id: opensuse-oss
+          name: os-oss
+          baseurl: http://dl.opensuse.org/dist/leap/v/repo/oss/
+          enabled: 1
+          autorefresh: 1
+        - id: opensuse-oss-update
+          name: os-oss-up
+          baseurl: http://dl.opensuse.org/dist/leap/v/update
+          # any setting per
+          # https://en.opensuse.org/openSUSE:Standards_RepoInfo
+          # enable and autorefresh are on by default
+      config:
+        reposdir: /etc/zypp/repos.dir
+        servicesdir: /etc/zypp/services.d
+        download.use_deltarpm: true
+        # any setting in /etc/zypp/zypp.conf
+    
+
+VERSION_CODENAME=zesty
+UBUNTU_CODENAME=zesty
+cloud-init	17.1-18-gd4f70470-0ubuntu1~17.04.1
+usage: /usr/bin/cloud-init analyze [-h] {blame,show,dump} ...
+/usr/bin/cloud-init analyze: error: the following arguments are required: subcommand
+
+Runcmd
+------
+**Summary:** Run arbitrary commands
+
+Run arbitrary commands at a rc.local like level with output to the
+console. Each item can be either a list or a string. If the item is a
+list, it will be properly executed as if passed to ``execve()`` (with
+the first arg as the command). If the item is a string, it will be
+written to a file and interpreted
+using ``sh``.
+
+.. note::
+all commands must be proper yaml, so you have to quote any characters
+yaml would eat (':' can be problematic)
+
+**Internal name:** ``cc_runcmd``
+
+**Module frequency:** once-per-instance
+
+**Supported distros:** all
+
+**Config schema**:
+    **runcmd:** (array of (array of string)/(string)) 
+
+**Examples**::
+
+    runcmd:
+        - [ ls, -l, / ]
+        - [ sh, -xc, "echo $(date) ': hello world!'" ]
+        - [ sh, -c, echo "=========hello world'=========" ]
+        - ls -l /root
+        - [ wget, "http://example.org", -O, /tmp/index.html ]
+    
+
+
+Resizefs
+--------
+**Summary:** Resize filesystem
+
+Resize a filesystem to use all avaliable space on partition. This
+module is useful along with ``cc_growpart`` and will ensure that if the
+root partition has been resized the root filesystem will be resized
+along with it. By default, ``cc_resizefs`` will resize the root
+partition and will block the boot process while the resize command is
+running. Optionally, the resize operation can be performed in the
+background while cloud-init continues running modules. This can be
+enabled by setting ``resize_rootfs`` to ``true``. This module can be
+disabled altogether by setting ``resize_rootfs`` to ``false``.
+
+**Internal name:** ``cc_resizefs``
+
+**Module frequency:** always
+
+**Supported distros:** all
+
+**Config schema**:
+    **resize_rootfs:** (true/false/noblock) Whether to resize the root partition. Default: 'true'
+
+**Examples**::
+
+    resize_rootfs: false  # disable root filesystem resize operation
+
+
+NTP
+---
+**Summary:** enable and configure ntp
+
+Handle ntp configuration. If ntp is not installed on the system and
+ntp configuration is specified, ntp will be installed. If there is a
+default ntp config file in the image or one is present in the
+distro's ntp package, it will be copied to ``/etc/ntp.conf.dist``
+before any changes are made. A list of ntp pools and ntp servers can
+be provided under the ``ntp`` config key. If no ntp ``servers`` or
+``pools`` are provided, 4 pools will be used in the format
+``{0-3}.{distro}.pool.ntp.org``.
+
+**Internal name:** ``cc_ntp``
+
+**Module frequency:** once-per-instance
+
+**Supported distros:** centos, debian, fedora, opensuse, ubuntu
+
+**Config schema**:
+    **ntp:** (object/null) 
+
+        **pools:** (array of string) List of ntp pools. If both pools and servers are empty, 4 default pool servers will be provided of the format ``{0-3}.{distro}.pool.ntp.org``.
+
+        **servers:** (array of string) List of ntp servers. If both pools and servers are empty, 4 default pool servers will be provided with the format ``{0-3}.{distro}.pool.ntp.org``.
+
+**Examples**::
+
+    ntp:
+      pools: [0.int.pool.ntp.org, 1.int.pool.ntp.org, ntp.myorg.org]
+      servers:
+        - ntp.server.local
+        - ntp.ubuntu.com
+        - 192.168.23.2
+
+
+Bootcmd
+-------
+**Summary:** Run arbitrary commands early in the boot process
+
+This module runs arbitrary commands very early in the boot process,
+only slightly after a boothook would run. This is very similar to a
+boothook, but more user friendly. The environment variable
+``INSTANCE_ID`` will be set to the current instance id for all run
+commands. Commands can be specified either as lists or strings. For
+invocation details, see ``runcmd``.
+
+.. note::
+    bootcmd should only be used for things that could not be done later
+    in the boot process.
+
+**Internal name:** ``cc_bootcmd``
+
+**Module frequency:** always
+
+**Supported distros:** all
+
+**Config schema**:
+    **bootcmd:** (array of (array of string)/(string)) 
+
+**Examples**::
+
+    bootcmd:
+        - echo 192.168.1.130 us.archive.ubuntu.com > /etc/hosts
+        - [ cloud-init-per, once, mymkfs, mkfs, /dev/vdb ]
+    
+
+
+ZypperAddRepo
+-------------
+**Summary:** Configure zypper behavior and add zypper repositories
+
+Configure zypper behavior by modifying /etc/zypp/zypp.conf. The
+configuration writer is "dumb" and will simply append the provided
+configuration options to the configuration file. Option settings
+that may be duplicate will be resolved by the way the zypp.conf file
+is parsed. The file is in INI format.
+Add repositories to the system. No validation is performed on the
+repository file entries, it is assumed the user is familiar with
+the zypper repository file format.
+
+**Internal name:** ``cc_zypper_add_repo``
+
+**Module frequency:** always
+
+**Supported distros:** opensuse, sles
+
+**Config schema**:
+    **zypper:** (object) 
+
+        **repos:** (array of object) 
+
+        **config:** (object) Any supported zypo.conf key is written to/etc/zypp/zypp.conf'
+
+**Examples**::
+
+    zypper:
+      repos:
+        - id: opensuse-oss
+          name: os-oss
+          baseurl: http://dl.opensuse.org/dist/leap/v/repo/oss/
+          enabled: 1
+          autorefresh: 1
+        - id: opensuse-oss-update
+          name: os-oss-up
+          baseurl: http://dl.opensuse.org/dist/leap/v/update
+          # any setting per
+          # https://en.opensuse.org/openSUSE:Standards_RepoInfo
+          # enable and autorefresh are on by default
+      config:
+        reposdir: /etc/zypp/repos.dir
+        servicesdir: /etc/zypp/services.d
+        download.use_deltarpm: true
+        # any setting in /etc/zypp/zypp.conf
+
+=== End SRU abridged verification output ===

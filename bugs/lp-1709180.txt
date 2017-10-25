@@ -50,21 +50,19 @@ EOF
 
 ## launch an instance and validate
 for release in xenial zesty; do
-  ref=$release-proposed;
-  lxc-proposed-snapshot --proposed --publish $release $ref;
-  lxc launch $ref $name;
-  sleep 10;
-  lxc file push bonding.yaml $name/bonding.yaml;
-  lxc file push net-convert.py $name/net-convert.py;
-  ## run the converter
-  for k in eni netplan; do
-    lxc exec $name -- ./net-convert.py --network-data=bonding.yaml \
-       --kind=yaml --output-kind=$k \
-       -m eth1,aa:ab:ac:ad:ae:00 --directory=./out.d;
-  done;
-  lxc exec $name cat /out.d/etc/netplan/50-cloud-init.yaml;  # validate netplan configs
-  lxc exec $name cat /out.d/etc/network/interfaces; # validate ENI
-  lxc exec $name -- dpkg-query --show cloud-init;
+   name=test-$release; 
+   lxc exec $name -- grep CODE /etc/os-release;
+   lxc file push bonding.yaml $name/bonding.yaml;
+   lxc file push net-convert.py $name/net-convert.py;
+   lxc exec $name -- chmod 755 /net-convert.py;
+   for k in eni netplan; do
+     lxc exec $name -- /net-convert.py --network-data=/bonding.yaml        --kind=yaml --output-kind=$k        -m eth1,aa:ab:ac:ad:ae:00 --directory=./out.d;
+   done;
+   echo "Netplan content below:";
+   lxc exec $name cat ./out.d/etc/netplan/50-cloud-init.yaml;
+   echo "ENI content below:";
+   lxc exec $name cat ./out.d/etc/network/interfaces;
+   lxc exec $name -- dpkg-query --show cloud-init;
 done
 
 
@@ -76,3 +74,501 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=dc2bd799
 
 === End SRU Template ===
+
+=== SRU abridged verification output ===
+
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+Input YAML
+bonds:
+    bond0:
+        dhcp4: true
+        interfaces:
+        - eth0
+        - ens4
+        parameters:
+            mii-monitor-interval: 100
+            mode: active-backup
+ethernets:
+    ens4:
+        match:
+            driver: e1000
+            macaddress: 41135085242
+        set-name: ens4
+    eth0:
+        match:
+            driver: virtio
+            macaddress: 41135085240
+        set-name: eth0
+version: 2
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+        bonds:
+            bond0:
+                dhcp4: true
+                interfaces:
+                - eth0
+                - ens4
+                parameters:
+                    mii-monitor-interval: 100
+                    mode: active-backup
+        ethernets:
+            ens4:
+                match:
+                    driver: e1000
+                    macaddress: 41135085242
+                set-name: ens4
+            eth0:
+                match:
+                    driver: virtio
+                    macaddress: 41135085240
+                set-name: eth0
+        version: 2
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        bond0:
+            address: null
+            bond-miimon: 100
+            bond-mode: active-backup
+            bond-slaves: none
+            gateway: null
+            inet: inet
+            mac_address: null
+            mode: manual
+            mtu: null
+            name: bond0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: bond
+        ens4:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085242
+            mode: manual
+            mtu: null
+            name: ens4
+            subnets: []
+            type: physical
+        eth0:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085240
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 2
+use_ipv6: false
+
+Input YAML
+bonds:
+    bond0:
+        dhcp4: true
+        interfaces:
+        - eth0
+        - ens4
+        parameters:
+            mii-monitor-interval: 100
+            mode: active-backup
+ethernets:
+    ens4:
+        match:
+            driver: e1000
+            macaddress: 41135085242
+        set-name: ens4
+    eth0:
+        match:
+            driver: virtio
+            macaddress: 41135085240
+        set-name: eth0
+version: 2
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+        bonds:
+            bond0:
+                dhcp4: true
+                interfaces:
+                - eth0
+                - ens4
+                parameters:
+                    mii-monitor-interval: 100
+                    mode: active-backup
+        ethernets:
+            ens4:
+                match:
+                    driver: e1000
+                    macaddress: 41135085242
+                set-name: ens4
+            eth0:
+                match:
+                    driver: virtio
+                    macaddress: 41135085240
+                set-name: eth0
+        version: 2
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        bond0:
+            address: null
+            bond-miimon: 100
+            bond-mode: active-backup
+            bond-slaves: none
+            gateway: null
+            inet: inet
+            mac_address: null
+            mode: manual
+            mtu: null
+            name: bond0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: bond
+        ens4:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085242
+            mode: manual
+            mtu: null
+            name: ens4
+            subnets: []
+            type: physical
+        eth0:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085240
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 2
+use_ipv6: false
+
+Netplan content below:
+
+network:
+    bonds:
+        bond0:
+            dhcp4: true
+            interfaces:
+            - eth0
+            - ens4
+            parameters:
+                mii-monitor-interval: 100
+                mode: active-backup
+    ethernets:
+        ens4:
+            match:
+                driver: e1000
+                macaddress: 41135085242
+            set-name: ens4
+        eth0:
+            match:
+                driver: virtio
+                macaddress: 41135085240
+            set-name: eth0
+    version: 2
+ENI content below:
+auto lo
+iface lo inet loopback
+
+auto ens4
+iface ens4 inet manual
+    bond-master bond0
+    bond-miimon 100
+    bond-mode active-backup
+
+auto eth0
+iface eth0 inet manual
+    bond-master bond0
+    bond-miimon 100
+    bond-mode active-backup
+
+auto bond0
+iface bond0 inet dhcp
+    bond-miimon 100
+    bond-mode active-backup
+    bond-slaves none
+cloud-init	17.1-18-gd4f70470-0ubuntu1~16.04.1
+VERSION_CODENAME=zesty
+UBUNTU_CODENAME=zesty
+Input YAML
+bonds:
+    bond0:
+        dhcp4: true
+        interfaces:
+        - eth0
+        - ens4
+        parameters:
+            mii-monitor-interval: 100
+            mode: active-backup
+ethernets:
+    ens4:
+        match:
+            driver: e1000
+            macaddress: 41135085242
+        set-name: ens4
+    eth0:
+        match:
+            driver: virtio
+            macaddress: 41135085240
+        set-name: eth0
+version: 2
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+        bonds:
+            bond0:
+                dhcp4: true
+                interfaces:
+                - eth0
+                - ens4
+                parameters:
+                    mii-monitor-interval: 100
+                    mode: active-backup
+        ethernets:
+            ens4:
+                match:
+                    driver: e1000
+                    macaddress: 41135085242
+                set-name: ens4
+            eth0:
+                match:
+                    driver: virtio
+                    macaddress: 41135085240
+                set-name: eth0
+        version: 2
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        bond0:
+            address: null
+            bond-miimon: 100
+            bond-mode: active-backup
+            bond-slaves: none
+            gateway: null
+            inet: inet
+            mac_address: null
+            mode: manual
+            mtu: null
+            name: bond0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: bond
+        ens4:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085242
+            mode: manual
+            mtu: null
+            name: ens4
+            subnets: []
+            type: physical
+        eth0:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085240
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 2
+use_ipv6: false
+
+Input YAML
+bonds:
+    bond0:
+        dhcp4: true
+        interfaces:
+        - eth0
+        - ens4
+        parameters:
+            mii-monitor-interval: 100
+            mode: active-backup
+ethernets:
+    ens4:
+        match:
+            driver: e1000
+            macaddress: 41135085242
+        set-name: ens4
+    eth0:
+        match:
+            driver: virtio
+            macaddress: 41135085240
+        set-name: eth0
+version: 2
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+        bonds:
+            bond0:
+                dhcp4: true
+                interfaces:
+                - eth0
+                - ens4
+                parameters:
+                    mii-monitor-interval: 100
+                    mode: active-backup
+        ethernets:
+            ens4:
+                match:
+                    driver: e1000
+                    macaddress: 41135085242
+                set-name: ens4
+            eth0:
+                match:
+                    driver: virtio
+                    macaddress: 41135085240
+                set-name: eth0
+        version: 2
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        bond0:
+            address: null
+            bond-miimon: 100
+            bond-mode: active-backup
+            bond-slaves: none
+            gateway: null
+            inet: inet
+            mac_address: null
+            mode: manual
+            mtu: null
+            name: bond0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: bond
+        ens4:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085242
+            mode: manual
+            mtu: null
+            name: ens4
+            subnets: []
+            type: physical
+        eth0:
+            address: null
+            bond-master: bond0
+            bond-miimon: 100
+            bond-mode: active-backup
+            gateway: null
+            inet: inet
+            mac_address: 41135085240
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 2
+use_ipv6: false
+
+Netplan content below:
+
+network:
+    bonds:
+        bond0:
+            dhcp4: true
+            interfaces:
+            - eth0
+            - ens4
+            parameters:
+                mii-monitor-interval: 100
+                mode: active-backup
+    ethernets:
+        ens4:
+            match:
+                driver: e1000
+                macaddress: 41135085242
+            set-name: ens4
+        eth0:
+            match:
+                driver: virtio
+                macaddress: 41135085240
+            set-name: eth0
+    version: 2
+ENI content below:
+auto lo
+iface lo inet loopback
+
+auto ens4
+iface ens4 inet manual
+    bond-master bond0
+    bond-miimon 100
+    bond-mode active-backup
+
+auto eth0
+iface eth0 inet manual
+    bond-master bond0
+    bond-miimon 100
+    bond-mode active-backup
+
+auto bond0
+iface bond0 inet dhcp
+    bond-miimon 100
+    bond-mode active-backup
+    bond-slaves none
+cloud-init	17.1-18-gd4f70470-0ubuntu1~17.04.1
+
+
+=== End SRU abridged verification output ===

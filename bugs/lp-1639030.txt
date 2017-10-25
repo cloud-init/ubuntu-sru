@@ -10,8 +10,10 @@ Ec2 support to of network configuration for ipv6-configured interfaces was not s
 
 1. launch an instance in ec2 on an ipv6 network with an allocated ipv6 address on the interface
 2. allocate an ipv6 address to the network interface (as well as ipv4)
-3. sudo rm -rf /var/log/cloud-init* /var/lib/cloud; sudo reboot
-4. grep 'Applying network config' /var/log/cloud-init.log # look for dhcp6
+3. cat /run/cloud-init/results.json  # expect Ec2Datasource
+4. sudo rm -rf /var/log/cloud-init* /var/lib/cloud; sudo reboot
+5. grep 'Applying network config' /var/log/cloud-init.log # look for dhcp6
+6. cat /run/cloud-init/results.json   # expect for Ec2LocalDatasource
 
 
 [Regression Potential]
@@ -22,3 +24,156 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=3c45330a
 
 === End SRU Template ===
+
+
+=== Abridged SRU verification output  ===
+ubuntu@ip-172-31-31-93:~$ dpkg-query --show cloud-init
+cloud-init	0.7.9-153-g16a7302f-0ubuntu1~16.04.2
+ubuntu@ip-172-31-31-93:~$ grep CODE /etc/os-release 
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+ubuntu@ip-172-31-31-93:~$ dpkg-query --show cloud-init
+cloud-init	0.7.9-153-g16a7302f-0ubuntu1~16.04.2
+ubuntu@ip-172-31-31-93:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-31-93:~$ grep Traceback /var/log/cloud-init.log 
+ubuntu@ip-172-31-31-93:~$ 
+ubuntu@ip-172-31-31-93:~$ sudo apt install cloud-init
+....
+ubuntu@ip-172-31-31-93:~$ dpkg-query --show cloud-init
+cloud-init	17.1-18-gd4f70470-0ubuntu1~16.04.1
+ubuntu@ip-172-31-31-93:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+...  # after clean run
+ubuntu@ip-172-31-31-93:~$ dpkg-query --show cloud-init; cat /run/cloud-init/result.json ; grep Traceback /var/log/cloud-init.log 
+cloud-init	17.1-18-gd4f70470-0ubuntu1~16.04.1
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+
+ubuntu@ip-172-31-31-93:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# control-alias eth0
+iface eth0 inet6 dhcp
+
+
+----- now on zesty -----
+
+
+
+ubuntu@ip-172-31-41-7:~$ grep CODE /etc/os-release 
+VERSION_CODENAME=zesty
+UBUNTU_CODENAME=zesty
+ubuntu@ip-172-31-41-7:~$ dpkg-query --show cloud-initcloud-init	0.7.9-233-ge586fe35-0ubuntu1~17.04.2
+ubuntu@ip-172-31-41-7:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-41-7:~$ sudo sed -i 's/ zesty / zesty-proposed /' /etc/apt/sources.list
+ubuntu@ip-172-31-41-7:~$ sudo apt update
+...
+ubuntu@ip-172-31-41-7:~$ sudo apt install cloud-init
+...
+Get:1 hs file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# control-alias eth0
+iface eth0 inet6 dhcp
+uttp://us-east-2.ec2.archive.ubuntu.com/ubuntu zesty-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~17.04.1 [340 kB]
+ubuntu@ip-172-31-41-7:~$ sudo rm /var/log/cloud-init* /run/
+acpid.pid          dmeventd-client    machine-id         sshd/
+acpid.socket       dmeventd-server    motd.dynamic       sshd.pid
+agetty.reload      initctl            mount/             sudo/
+atd.pid            initramfs/         network/           systemd/
+blkid/             iscsid.pid         resolvconf/        tmpfiles.d/
+cloud-init/        lock/              rsyslogd.pid       udev/
+console-setup/     log/               screen/            user/
+crond.pid          lvm/               sendsigs.omit.d/   utmp
+crond.reboot       lvmetad.pid        shm/               uuidd/
+dbus/              lxcfs/             snapd-snap.socket  
+dhclient.eth0.pid  lxcfs.pid          snapd.socket       
+ubuntu@ip-172-31-41-7:~$ sudo rm /var/log/cloud-init* /var/lib/cloud/; sudo reboot;
+# after reboot
+ubuntu@ip-172-31-41-7:~$ dpkg-query --show cloud-init
+cloud-init	17.1-18-gd4f70470-0ubuntu1~17.04.1
+ubuntu@ip-172-31-41-7:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-41-7:~$ grep Traceback /var/log/cloud-init.log 
+ubuntu@ip-172-31-41-7:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+
+# Now add the ipv6 address to this instance a reboot on cleaned vm
+# From another terminal using aws cli
+$ aws ec2 describe-instances --instance-ids i-0f3eeab7fb494be8f |grep NetworkInterfaceId
+                            "NetworkInterfaceId": "eni-3b32d910",
+$ aws ec2 assign-ipv6-addresses --network-interface-id eni-3b32d910 --ipv6-address-count 1
+{
+    "AssignedIpv6Addresses": [
+        "2600:1f16:9cb:7100:c19:a926:85bd:a740"
+    ],
+    "NetworkInterfaceId": "eni-3b32d910"
+}
+
+
+# from the aws zesty vm now that it has ipv6 allocated
+ubuntu@ip-172-31-41-7:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot;
+ubuntu@ip-172-31-41-7:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# control-alias eth0
+iface eth0 inet6 dhcp
+
+
+=== End Abridged verification output  ===

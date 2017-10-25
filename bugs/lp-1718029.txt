@@ -21,12 +21,13 @@ ubuntu@azure$ dpkg-query show cloud-init
 ubuntu@azure$ sudo rm /var/lib/cloud /var/log/cloud*; sudo reboot
 # Recheck with proposed run
 $ ssh ubuntu@<azure-instance>
-ubuntu@azure-xenial$ grep 'Finding Azure endpoint from hook json...' /var/log/cloud-init.log
-ubuntu@azure-xenial$ grep 'Azure endpoint found at'  # success
+ubuntu@azure-xenial$ grep 'Getting metadata via agent' /var/log/cloud-init.log 
+ubuntu@azure-xenial:~$ grep 'Azure endpoint' /var/log/cloud-init.log   # walinux agent builtin, expect we don't see this log
+
 
 
 [Regression Potential]
-systemd networkd checks are done first before isc-dhclient lease parsing. On non-systemd environments, it's possible that this fix could traceback if it doesn't handle non-systemd environments. Check Azure & Cloudstack to make sure proposed doesn't regress.
+systemd networkd checks are done first before isc-dhclient lease parsing. On non-systemd environments, it's possible that this fix could traceback if it doesn't handle non-systemd environments. Check Azure & Cloudstack to make sure proposed doesn't regress. Azure has a builtin walinux agent so it shouldn't even take the systemd path on non-artful.
 
 
 [Other Info]
@@ -34,3 +35,104 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=9d2a87dc
 
 === End SRU Template ===
+
+
+=== SRU verification output ===
+ubuntu@test-xenial-sru:~$ grep CODE /etc/os-release 
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+ubuntu@test-xenial-sru:~$ dpkg-query --show cloud-init
+cloud-init	0.7.9-233-ge586fe35-0ubuntu1~16.04.2
+ubuntu@test-xenial-sru:~$ sudo sed -i 's/ xenial / xenial-proposed /'
+sed: no input files
+ubuntu@test-xenial-sru:~$ sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+ubuntu@test-xenial-sru:~$ sudo apt update
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [102 kB]
+...
+ubuntu@test-xenial-sru:~$ sudo apt install cloud-init
+...
+Get:1 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~16.04.1 [342 kB]
+ubuntu@test-xenial-sru:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@test-xenial-sru:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+
+
+# after clean reboot using cloud-init 17.1 
+ubuntu@test-xenial-sru:~$ cat /run/cloud-init/result.json {
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+ubuntu@test-xenial-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@test-xenial-sru:~$ 
+
+
+---- zesty
+ubuntu@my-z1:~$ apt policy cloud-init
+cloud-init:
+  Installed: 0.7.9-233-ge586fe35-0ubuntu1~17.04.2
+  Candidate: 0.7.9-233-ge586fe35-0ubuntu1~17.04.2
+  Version table:
+ *** 0.7.9-233-ge586fe35-0ubuntu1~17.04.2 500
+        500 http://azure.archive.ubuntu.com/ubuntu zesty-updates/main amd64 Packages
+        100 /var/lib/dpkg/status
+     0.7.9-90-g61eb03fe-0ubuntu1 500
+        500 http://azure.archive.ubuntu.com/ubuntu zesty/main amd64 Packages
+ubuntu@my-z1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@my-z1:~$ vi /var/log/cloud-init.log 
+ubuntu@my-z1:~$  grep 'Getting metadata via agent' /var/log/cloud-init.log
+ubuntu@my-z1:~$ grep 'Azure endpoint' /var/log/cloud-init.log
+2017-10-17 21:43:05,493 - azure.py[DEBUG]: Finding Azure endpoint...
+2017-10-17 21:43:05,517 - azure.py[DEBUG]: Azure endpoint found at 168.63.129.16
+
+# update to proposed
+ubuntu@my-z1:~$ sudo sed -i 's/ zesty / zesty-proposed /' /etc/apt/sources.list
+ubuntu@my-z1:~$ sudo apt update
+ubuntu@my-z1:~$ sudo apt install cloud-init
+...
+Get:1 http://azure.archive.ubuntu.com/ubuntu zesty-proposed/main amd64 cloud-init all 17.1-18-gd4f70470-0ubuntu1~17.04.1 [340 kB]
+...
+ubuntu@my-z1:~$ cloud-init analyze show
+...
+Starting stage: single
+Total Time: 5.85300 seconds
+
+1 boot records analyzed
+
+ubuntu@my-z1:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+
+# Now test post zesty upgrade to cloud-init 17.1
+ubuntu@my-z1:~$ cloud-init analyze show
+Total Time: 5.32500 seconds
+
+1 boot records analyzed
+
+ubuntu@my-z1:~$ dpkg-query --show cloud-init
+cloud-init	17.1-18-gd4f70470-0ubuntu1~17.04.1
+ubuntu@my-z1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@my-z1:~$ grep 'Azure endpoint' /var/log/cloud-init.log
+2017-10-17 21:58:40,211 - azure.py[DEBUG]: Finding Azure endpoint from networkd...
+2017-10-17 21:58:40,211 - azure.py[DEBUG]: Finding Azure endpoint from hook json...
+2017-10-17 21:58:40,233 - azure.py[DEBUG]: Azure endpoint found at 168.63.129.16
+ubuntu@my-z1:~$ grep Traceback /var/log/cloud-init.log 
+ubuntu@my-z1:~$
+
+=== End SRU verification output ===
