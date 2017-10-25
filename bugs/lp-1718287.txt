@@ -1,0 +1,106 @@
+http://pad.lv/1718287
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1718287
+
+=== Begin SRU Template ===
+[Impact]
+cloud-init DatasourceOVF block device mounting races with systemd.fstab
+mount.units resulting in some mount points not being mounted.
+
+[Test Case]
+
+1. Launch Ubuntu 16.04 instance in AWS and attach 25 ebs volumes (sdb .. sdz)
+2. sudo apt update && sudo apt upgrade
+3. cat >setup.sh << EOF
+#!/bin/bash
+
+mkdir /media/{b..z}
+for i in {b..z}; do
+	   mkfs -t ext4 /dev/xvd\$i
+	   mount /dev/xvd\$i /media/\$i
+	   echo "/dev/xvd\$i /media/\$i ext4 defaults,nofail 0 2" >> /etc/fstab
+done
+EOF
+4. chmod +x setup.sh && sudo bash ./setup.sh
+5  grep -c media /etc/fstab  # expect 25
+6. sudo rm -rf /var/log/cloud-init* /var/lib/cloud/
+7. grep -c media /proc/mounts # expect 25
+8. journalctl --utc -o short-precise --no-pager | grep -c Failed.*to.*mount  # expect 0
+9. grep -c Failed.*mount.*iso9660 /var/log/cloud-init.log  # expect 0
+
+[Regression Potential]
+Systems using DatasourceOVF could fail to find the datasource on block devices
+that didn't get probed by OVF to verify the filesystem present on the devices.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=da6562e2
+
+=== End SRU Template ===
+
+=== Abridged verification output ===
+ubuntu@ip-172-31-32-16:~$ dpkg-query --show cloud-init
+cloud-init  0.7.9-233-ge586fe35-0ubuntu1~16.04.2
+ubuntu@ip-172-31-32-16:~$ grep CODE /etc/os-release
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+ubuntu@ip-172-31-32-16:~$ grep -c media /etc/fstab 
+0
+ubuntu@ip-172-31-32-16:~$ sudo bash setup.sh
+....
+ubuntu@ip-172-31-32-16:~$ grep -c media /etc/fstab 
+25
+ubuntu@ip-172-31-32-16:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/
+ubuntu@ip-172-31-32-16:~$ sudo reboot
+....
+ubuntu@ip-172-31-32-16:~$ grep -c media /proc/mounts 
+24
+ubuntu@ip-172-31-32-16:~$ journalctl --utc -o short-precise --no-pager | grep -c Failed.*to.*mount
+1
+ubuntu@ip-172-31-32-16:~$ grep -c Failed.*mount.*iso9660 /var/log/cloud-init.log
+28
+ubuntu@ip-172-31-32-16:~$ sudo apt install cloud-init
+ubuntu@ip-172-31-32-16:~$ dpkg-query --show cloud-init
+cloud-init  17.1-18-gd4f70470-0ubuntu1~16.04.1
+ubuntu@ip-172-31-32-16:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/
+ubuntu@ip-172-31-32-16:~$ sudo reboot
+....
+ubuntu@ip-172-31-32-16:~$ grep -c media /proc/mounts 
+25
+ubuntu@ip-172-31-32-16:~$ journalctl --utc -o short-precise --no-pager | grep -c Failed.*to.*mount
+0
+ubuntu@ip-172-31-32-16:~$ grep -c Failed.*mount.*iso9660 /var/log/cloud-init.log
+0
+
+
+---- Now on Zesty ----
+Note: On Zesty, cloud-init only runs EC2 Datasource, so the OVF Datasource never runs
+This test passes on current and -proposed version of cloud-init.
+
+
+ubuntu@ip-172-31-38-68:~$ dpkg-query --show cloud-init
+cloud-init	0.7.9-233-ge586fe35-0ubuntu1~17.04.2
+ubuntu@ip-172-31-38-68:~$ grep CODE /etc/os-release 
+VERSION_CODENAME=zesty
+UBUNTU_CODENAME=zesty
+ubuntu@ip-172-31-38-68:~$ cat /run/cloud-init/cloud.cfg 
+datasource_list: [ Ec2, None ]
+ubuntu@ip-172-31-38-68:~$ grep -c media /proc/mounts
+25
+ubuntu@ip-172-31-38-68:~$ journalctl -o short-precise --no-pager | grep -c Failed.*to.*mount
+0
+ubuntu@ip-172-31-38-68:~$ grep -c Failed.*mount.*iso9660 /var/log/cloud-init.log 
+0
+ubuntu@ip-172-31-38-68:~$ sudo apt update && sudo apt install cloud-init
+....
+ubuntu@ip-172-31-38-68:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/
+ubuntu@ip-172-31-38-68:~$ sudo reboot
+....
+ubuntu@ip-172-31-38-68:~$ dpkg-query --show cloud-init
+cloud-init	17.1-18-gd4f70470-0ubuntu1~17.04.1
+ubuntu@ip-172-31-38-68:~$ ^Cdo reboot
+ubuntu@ip-172-31-38-68:~$ grep -c media /proc/mounts
+25
+ubuntu@ip-172-31-38-68:~$ journalctl -o short-precise --no-pager | grep -c Failed.*to.*mount
+0
+
+=== End Abridged verfication output ===
