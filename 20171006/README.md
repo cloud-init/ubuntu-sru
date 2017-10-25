@@ -13,7 +13,7 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 
 ## SRU verification content
 | Bug | Verification Script and Output |
-| -------- | -------- | -------- |
+| -------- |  -------- |
 | [#1725067](https://pad.lv/1725067) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1725067.txt) |
 | [#1718029](https://pad.lv/1718029) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1718029.txt) |
 | [#1717969](https://pad.lv/1717969) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1717969.txt) |
