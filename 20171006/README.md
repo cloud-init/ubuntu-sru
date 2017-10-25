@@ -22,7 +22,7 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 | [#1709180](https://pad.lv/1709180) | [verification output](../bugs/lp-1709180.txt) |
 | [#1724951](https://pad.lv/1724951) | [verification output](../bugs/lp-1724951.txt) |
 | [#1722566](https://pad.lv/1722566) | [verification output](../bugs/lp-1722566.txt) |
-| [#1718287](https://pad.lv/1718287) | ✗[verification output](../bugs/lp-1718287.txt) |
+| [#1718287](https://pad.lv/1718287) | [verification output](../bugs/lp-1718287.txt) |
 | [#1607345](https://pad.lv/1607345) | [verification output](../bugs/lp-1607345.txt) |
 | [#1715738](https://pad.lv/1715738) | [verification output](../bugs/lp-1715738.txt) |
 | [#1715690](https://pad.lv/1715690) | [verification output](../bugs/lp-1715690.txt) |
