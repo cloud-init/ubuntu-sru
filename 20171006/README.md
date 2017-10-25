@@ -14,22 +14,22 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [#1725067](https://pad.lv/1725067) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1725067.txt) |
-| [#1718029](https://pad.lv/1718029) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1718029.txt) |
-| [#1717969](https://pad.lv/1717969) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1717969.txt) |
-| [#1712676](https://pad.lv/1712676) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1712676.txt) |
-| [#1709761](https://pad.lv/1709761) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1709761.txt) |
-| [#1709180](https://pad.lv/1709180) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1709180.txt) |
-| [#1724951](https://pad.lv/1724951) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1724951.txt) |
-| [#1722566](https://pad.lv/1722566) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1722566.txt) |
-| [#1718287](https://pad.lv/1718287) | ✗[verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1718287.txt) |
-| [#1607345](https://pad.lv/1607345) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1607345.txt) |
-| [#1715738](https://pad.lv/1715738) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1715738.txt) |
-| [#1715690](https://pad.lv/1715690) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1715690.txt) |
-| [#1462693](https://pad.lv/1462693) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1462693.txt) |
-| [#1713158](https://pad.lv/1713158) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1713158.txt) |
-| [#1639030](https://pad.lv/1639030) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1639030.txt) |
-| [#1699282](https://pad.lv/1699282) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1699282.txt) |
-| [#1710932](https://pad.lv/1710932) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1710932.txt) |
-| [#1686485](https://pad.lv/1686485) | [verification output](https://github.com/cloud-init/ubuntu-sru/blob/master/bugs/lp-1686485.txt) |
+| [#1725067](https://pad.lv/1725067) | [verification output](../bugs/lp-1725067.txt) |
+| [#1718029](https://pad.lv/1718029) | [verification output](../bugs/lp-1718029.txt) |
+| [#1717969](https://pad.lv/1717969) | [verification output](../bugs/lp-1717969.txt) |
+| [#1712676](https://pad.lv/1712676) | [verification output](../bugs/lp-1712676.txt) |
+| [#1709761](https://pad.lv/1709761) | [verification output](../bugs/lp-1709761.txt) |
+| [#1709180](https://pad.lv/1709180) | [verification output](../bugs/lp-1709180.txt) |
+| [#1724951](https://pad.lv/1724951) | [verification output](../bugs/lp-1724951.txt) |
+| [#1722566](https://pad.lv/1722566) | [verification output](../bugs/lp-1722566.txt) |
+| [#1718287](https://pad.lv/1718287) | ✗[verification output](../bugs/lp-1718287.txt) |
+| [#1607345](https://pad.lv/1607345) | [verification output](../bugs/lp-1607345.txt) |
+| [#1715738](https://pad.lv/1715738) | [verification output](../bugs/lp-1715738.txt) |
+| [#1715690](https://pad.lv/1715690) | [verification output](../bugs/lp-1715690.txt) |
+| [#1462693](https://pad.lv/1462693) | [verification output](../bugs/lp-1462693.txt) |
+| [#1713158](https://pad.lv/1713158) | [verification output](../bugs/lp-1713158.txt) |
+| [#1639030](https://pad.lv/1639030) | [verification output](../bugs/lp-1639030.txt) |
+| [#1699282](https://pad.lv/1699282) | [verification output](../bugs/lp-1699282.txt) |
+| [#1710932](https://pad.lv/1710932) | [verification output](../bugs/lp-1710932.txt) |
+| [#1686485](https://pad.lv/1686485) | [verification output](../bugs/lp-1686485.txt) |
 
