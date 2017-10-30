@@ -1,0 +1,53 @@
+http://pad.lv/1728152
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1728152
+
+=== Begin SRU Template ===
+[Impact]
+Support for configuration of IPV6 addresses on the primary network
+interface in EC2 changed behavior of the automatic network configuration.
+This changed behavior in 2 ways:
+a.) Instances with only a private ipv4 address would not get *any* ipv4
+address.
+
+b.) Instances with multiple NICs attached at boot would get all NICs
+configured. Previously only the primary network interface would be
+configured by cloud-init.
+
+'b' is not necessarily a bug for Artful.  A new release can bring new
+behavior.  However, the change of behavior was not intended and not desired
+for an SRU.  In an effort to keep this behavior consistent across 16.04+
+we will be changing the behavior of Artful to only configure the primary
+network interface.
+
+[Test Case]
+To verify this code is fixed for all cases involved:
+
+1. Verify that instances without public ipv4 get an ipv4 address.
+ * Launch an instance on EC2 without a public IPV4 address.
+ * Verify the instance has its Ipv4 address configured via ssh and
+   checking 'ip' output.
+
+2. Verify no regression is done to public systems.
+ * Launch an instance on EC2 with a public IPV4 address.
+ * Verify the instance has its ipv4 address configured.
+
+3. Verify only the primary NIC is configured (17.10 only)
+ * Launch an instance on EC2 with multiple  nics configured.
+ * Verify that only the primary nic has configuration by default.
+
+For each of the above, verification entails inspection of
+network config (/etc/network/interfaces.d/* or /etc/netplan/)
+and also network state ('ip a' output).
+
+[Regression Potential]
+Regression in this area of code is certainly limited to EC2,
+and most likely limited to network configuration.
+
+Complete failure would show itself as no networking at all and
+a WARNING or stack trace on the console logs.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
