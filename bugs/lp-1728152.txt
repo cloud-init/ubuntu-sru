@@ -51,3 +51,406 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
 
 === End SRU Template ===
+
+
+
+=== SRU verification output ===
+
+---- xenial
+
+---- xenial public-ipv4-only
+# Get launch-ec2 script
+# Setup ec2 credentials obtained from aws ui
+cat ~/.aws/credentials
+[default]
+aws_access_key_id = <REDACTED>
+aws_secret_access_key = <REDACTED>
+
+
+$ git clone git@github.com:cloud-init/qa-scripts.git
+$ git clone https://github.com/smoser/talk-simplestreams.git 
+$ export PATH=$PATH:./qa-scripts/scripts:./talk-simplestreams/bin
+$ launch-ec2 --pubkey-file ~/.ssh/id_rsa.pub --series xenial --proposed --keep-alive --clean
+
+# default xenial instance with public ipv4 configuration
+
+$ ssh -i ~/.ssh/id_rsa.pub ubuntu@ec2-18-221-189-101.us-east-2.compute.amazonaws.com -- dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+
+$ ssh -i ~/.ssh/id_rsa.pub ubuntu@ec2-18-221-189-101.us-east-2.compute.amazonaws.com -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+---- xenial public-ipv4-and-ipv6 instance manually created through ec2 UI
+# Test before cloud-init upgrade to 17.1.27
+$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+$ sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list;
+$ sudo apt-get update;
+$ sudo apt-get install cloud-init;
+$ sudo rm -rf /var/lib/cloud /var/log/cloud-init*;  sudo reboot;
+
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# control-alias eth0
+iface eth0 inet6 dhcp
+
+$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+$ grep Trace /var/log/cloud-init.log
+$ 
+
+$ ip address
+
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:e5:24:b6:f6:08 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.18.159/20 brd 172.31.31.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 2600:1f16:9cb:7102:6935:42f4:88f3:2dab/128 scope global 
+       valid_lft forever preferred_lft forever
+    inet6 fe80::4e5:24ff:feb6:f608/64 scope link 
+       valid_lft forever preferred_lft forever
+
+---- xenial private-ipv4 instance manipv6ually created through ec2 UI
+ubuntu@ip-172-31-30-150:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+ubuntu@ip-172-31-30-150:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-30-150:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+ubuntu@ip-172-31-30-150:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:5a:ac:36:55:ea brd ff:ff:ff:ff:ff:ff
+    inet 172.31.30.150/20 brd 172.31.31.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::45a:acff:fe36:55ea/64 scope link 
+       valid_lft forever preferred_lft forever
+ubuntu@ip-172-31-30-150:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-30-150:~$ 
+
+
+
+---- zesty public ipv4 only
+ubuntu@ip-172-31-43-227:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.04.1
+ubuntu@ip-172-31-43-227:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-43-227:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 0a:cf:5a:06:cf:7e brd ff:ff:ff:ff:ff:ff
+    inet 172.31.43.227/20 brd 172.31.47.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::8cf:5aff:fe06:cf7e/64 scope link 
+       valid_lft forever preferred_lft forever
+
+---- zesty public ipv4&ipv6
+$ cat /etc/network/interfaces.d/50-cloud-init.cfg
+
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+ubuntu@ip-172-31-16-217:~$ sudo sed -i 's/ zesty / zesty-proposed /' /etc/apt/sources.list
+ubuntu@ip-172-31-16-217:~$ sudo apt updat
+ubuntu@ip-172-31-16-217:~$ sudo apt install cloud-init
+
+$ sudo rm -rf /var/lib/cloud /var/log/cloud-init*; sudo reboot
+
+ubuntu@ip-172-31-16-217:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.04.1
+ubuntu@ip-172-31-16-217:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+# control-alias eth0
+iface eth0 inet6 dhcp
+ubuntu@ip-172-31-16-217:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-16-217:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-16-217:~$ 
+
+ubuntu@ip-172-31-16-217:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:2f:d0:12:7c:a0 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.16.217/20 brd 172.31.31.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 2600:1f16:9cb:7102:61e7:e24e:9c70:2b81/128 scope global 
+       valid_lft forever preferred_lft forever
+    inet6 fe80::42f:d0ff:fe12:7ca0/64 scope link 
+       valid_lft forever preferred_lft forever
+
+---- zesty public ipv4 private only
+
+ubuntu@ip-172-31-20-72:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.04.1
+ubuntu@ip-172-31-20-72:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-20-72:~$ cat /etc/network/interfaces.d/50-cloud-init.cfg 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+ubuntu@ip-172-31-20-72:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:8a:8d:6a:b0:a8 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.20.72/20 brd 172.31.31.255 scope global eth0
+       valid_lft forever preferred_lft forever
+    inet6 fe80::48a:8dff:fe6a:b0a8/64 scope link 
+       valid_lft forever preferred_lft forever
+ubuntu@ip-172-31-20-72:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-20-72:~$ 
+
+
+---- artful public ipv4 only
+ubuntu@ip-172-31-31-224:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.10.1
+ubuntu@ip-172-31-31-224:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-31-224:~$ cat /etc/net
+netplan/  network/  networks  
+ubuntu@ip-172-31-31-224:~$ cat /etc/net
+netplan/  network/  networks  
+ubuntu@ip-172-31-31-224:~$ cat /etc/netplan/50-cloud-init.yaml 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: 06:a6:c2:4f:9a:04
+            set-name: eth0
+ubuntu@ip-172-31-31-224:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:a6:c2:4f:9a:04 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.31.224/20 brd 172.31.31.255 scope global dynamic eth0
+       valid_lft 3502sec preferred_lft 3502sec
+    inet6 fe80::4a6:c2ff:fe4f:9a04/64 scope link 
+       valid_lft forever preferred_lft forever
+ubuntu@ip-172-31-31-224:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-31-224:~$ 
+
+
+---- artful public ipv4&ipv6
+ubuntu@ip-172-31-22-23:~$ dpkg-query --show cloud-init
+cloud-init	17.1-18-gd4f70470-0ubuntu1
+ubuntu@ip-172-31-22-23:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-22-23:~$ cat /etc/netplan/50-cloud-init.yaml 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            dhcp6: true
+            match:
+                macaddress: 06:50:c6:8f:e1:54
+            set-name: eth0
+ubuntu@ip-172-31-22-23:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:50:c6:8f:e1:54 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.22.23/20 brd 172.31.31.255 scope global dynamic eth0
+       valid_lft 3428sec preferred_lft 3428sec
+    inet6 2600:1f16:9cb:7102:f57b:c54:5d83:2b10/128 scope global noprefixroute dynamic 
+       valid_lft 447sec preferred_lft 147sec
+    inet6 fe80::450:c6ff:fe8f:e154/64 scope link 
+       valid_lft forever preferred_lft forever
+ubuntu@ip-172-31-22-23:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-22-23:~$ 
+
+
+
+
+---- artful private ipv4 only
+ubuntu@ip-172-31-18-234:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.10.1
+ubuntu@ip-172-31-18-234:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-172-31-18-234:~$ cat /etc/netplan/50-cloud-init.yaml 
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: 06:a4:43:d2:52:34
+            set-name: eth0
+ubuntu@ip-172-31-18-234:~$ ip address show
+1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN group default qlen 1000
+    link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+    inet 127.0.0.1/8 scope host lo
+       valid_lft forever preferred_lft forever
+    inet6 ::1/128 scope host 
+       valid_lft forever preferred_lft forever
+2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc pfifo_fast state UP group default qlen 1000
+    link/ether 06:a4:43:d2:52:34 brd ff:ff:ff:ff:ff:ff
+    inet 172.31.18.234/20 brd 172.31.31.255 scope global dynamic eth0
+       valid_lft 3477sec preferred_lft 3477sec
+    inet6 fe80::4a4:43ff:fed2:5234/64 scope link 
+       valid_lft forever preferred_lft forever
+ubuntu@ip-172-31-18-234:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-172-31-18-234:~$ 
+
+
+
+=== End SRU verification output ===

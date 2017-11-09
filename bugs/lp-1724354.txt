@@ -65,3 +65,68 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=41152f10ddb
 
 === End SRU Template ===
+
+=== Abridged SRU validation output ===
+$ cat > my.cfg <<EOF
+#cloud-config
+bootcmd:
+  - "cat /proc/uptime > /run/bootcmd-works"
+runcmd:
+  - "cat /proc/uptime > /run/runcmd-works"
+EOF
+
+
+$ for release in xenial zesty artful; do
+   ref="$release-proposed";
+   echo "$release START --------------";
+   lxc-proposed-snapshot -p -P $release $ref;
+   lxc init $ref test-$release;
+   lxc config set test-$release user.user-data - < my.cfg;
+   lxc start test-$release;
+   lxc exec test-$release -- sh -c 'while ! [ -e /run/cloud-init/result.json ]; do echo -n .; sleep 1; done; echo';
+   lxc exec test-$release -- dpkg-query --show cloud-init;
+   lxc exec test-$release -- grep 'Ignoring schema' /var/log/cloud-init.log;
+   lxc exec test-$release -- dpkg-query --show python3-jsonschema;
+done
+
+
+
+xenial START --------------
+Creating xenial-proposed-21323830
+-P -- 
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.1-27-geb292c18-0ubuntu1~16.04.1 [341 kB]
+Creating test-xenial
+........
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+2017-11-07 20:00:33,875 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+2017-11-07 20:00:33,898 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+2017-11-07 20:00:36,716 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+dpkg-query: no packages found matching python3-jsonschema
+
+
+
+zesty START --------------
+Creating zesty-proposed-103427244
+-P -- 
+Get:1 http://archive.ubuntu.com/ubuntu zesty-proposed/main amd64 cloud-init all 17.1-27-geb292c18-0ubuntu1~17.04.1 [339 kB]
+Creating test-zesty
+...........
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.04.1
+2017-11-07 20:02:13,151 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+2017-11-07 20:02:13,181 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+2017-11-07 20:02:17,111 - schema.py[DEBUG]: Ignoring schema validation. python-jsonschema is not present
+dpkg-query: no packages found matching python3-jsonschema
+
+
+artful START --------------
+Creating artful-proposed-111528348
+-P -- 
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.1-27-geb292c18-0ubuntu1~17.10.1 [332 kB]
+Creating test-artful
+...................
+
+artful START --------------   # Note no warnings because python-jsonschema is installed by pkg deps
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.10.1
+python3-jsonschema	2.5.1-6
+
+=== End Abridged SRU validation output ===
