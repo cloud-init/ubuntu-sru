@@ -1,0 +1,298 @@
+http://pad.lv/1709761
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1709761
+
+=== Begin SRU Template ===
+[Impact]
+Ec2 instances could hit race condition with tempdir removal where dhclient doesn't write a pidfile and DataSourceEc2Local hits a traceback trying to read that non-existent pidfile. This traceback causes the instance to fallback and get discovered in init-network stage as DataSourceEc2. The thrashing costs instances a couple extra seconds to boot while re-discovering in a different stage.
+
+[Test Case]
+
+# Launch instance under test
+$ for release in xenial zesty artful; do
+    echo "Handling $release";
+    launch-ec2 --series $release;
+    ssh ubuntu@<ec2-address> cat /run/cloud-init/result.json;
+    ssh ubuntu@<ec2-address> grep Trace /var/log/cloud-init.log;
+    ssh ubuntu@<ec2-address> sudo sed 's/ $release / $release-proposed /' /etc/apt/sources.list;
+    
+  done
+
+[Regression Potential]
+Regression would still result in Tracebacks in DataSourceEc2Local which would cause cloud-init to fallback to DataSourceEc2 in init-network stage.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=7acc9e68
+
+=== End SRU Template ===
+
+=== SRU Verification output ===
+
+### EC2 Xenial upgrade and fresh install test
+ubuntu@ip-10-0-20-54:~$ sudo vi /etc/apt/sources.list
+ubuntu@ip-10-0-20-54:~$ sudo apt update
+...
+ubuntu@ip-10-0-20-54:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-0-20-54:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-10-0-20-54:~$ sudo apt install cloud-init
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
+ubuntu@ip-10-0-20-54:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Sat, 02 Dec 2017 04:10:13 +0000. Up 167.09 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+--------------------------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |                  Address                   |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+--------------------------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |                 10.0.20.54                 | 255.255.255.0 |   .    | 0a:a4:58:cb:62:8c |
+ci-info: |  eth0  | True | 2600:1f16:dc8:a120:73c6:9626:9c1d:2ecf/128 |       .       | global | 0a:a4:58:cb:62:8c |
+ci-info: |   lo   | True |                 127.0.0.1                  |   255.0.0.0   |   .    |         .         |
+ci-info: |   lo   | True |                  ::1/128                   |       .       |  host  |         .         |
+ci-info: +--------+------+--------------------------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++
+ci-info: +-------+-------------+-----------+---------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway  |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+-----------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.0.20.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   |  10.0.20.0  |  0.0.0.0  | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+-----------+---------------+-----------+-------+
+ubuntu@ip-10-0-20-54:~$ # remove cloud-init artifacts for clean boot
+ubuntu@ip-10-0-20-54:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+csmith@uptown:~/src/server/cloud-init/cloud-init ((2f2070f...))$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-217-50-75.us-east-2.compute.amazonaws.com
+csmith@uptown:~/src/server/cloud-init/cloud-init ((2f2070f...))$ ssh -i ~/Downloads/ubuntu.pem ubuntu@ec2-18-217-50-75.us-east-2.compute.amazonaws.com
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-217-50-75.us-east-2.compute.amazonaws.com,18.217.50.75' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 16.04.3 LTS (GNU/Linux 4.4.0-1041-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+51 packages can be updated.
+8 updates are security updates.
+
+
+Last login: Sat Dec  2 04:08:08 2017 from 67.174.121.94
+ubuntu@ip-10-0-20-54:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+ubuntu@ip-10-0-20-54:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-0-20-54:~$ grep Trace /var/log/cloud-init.log 
+
+# No leaked dhclients from cloud-init's dhcp_discovery && No missing pidfile Tracebacks
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-0-20-54:~$ ps -afe | grep dhclient
+root       980     1  0 04:11 ?        00:00:00 /sbin/dhclient -1 -v -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases -I -df /var/lib/dhcp/dhclient6.eth0.leases eth0
+root      1076     1  0 04:11 ?        00:00:00 /sbin/dhclient -1 -6 -pf /run/dhclient6.eth0.pid -lf /var/lib/dhcp/dhclient6.eth0.leases -I -df /var/lib/dhcp/dhclient.eth0.leases eth0
+ubuntu    1563  1464  0 04:16 pts/0    00:00:00 grep --color=auto dhclient
+
+### EC2 Zesty upgrade and fresh install test
+csmith@downtown:~/src/qa-scripts (master)$ ssh ubuntu@ec2-34-236-254-196.compute-1.amazonaws.com
+The authenticity of host 'ec2-34-236-254-196.compute-1.amazonaws.com (34.236.254.196)' can't be established.
+ECDSA key fingerprint is SHA256:iQqvMhiaS/xx0rzHxcNevpvtwgMgPpQoL8nwLM64QGo.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-34-236-254-196.compute-1.amazonaws.com,34.236.254.196' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.04 (GNU/Linux 4.10.0-40-generic x86_64)
+...
+
+# Show leaked dhcpclient on older version of cloud-init in /var/tmp
+ubuntu@ip-10-41-41-163:~$ ps -afe | grep dhcp
+root       652     1  0 22:35 ?        00:00:00 /var/tmp/cloud-init/cloud-init-dhcp-ujw4y61p/dhclient -1 -v -lf /var/tmp/cloud-init/cloud-init-dhcp-ujw4y61p/dhcp.leases -pf /var/tmp/cloud-init/cloud-init-dhcp-ujw4y61p/dhclient.pid eth0 -sf /bin/true
+root       901     1  0 22:35 ?        00:00:00 /sbin/dhclient -1 -v -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases -I -df /var/lib/dhcp/dhclient6.eth0.leases eth0
+ubuntu    2015  1998  0 22:36 pts/0    00:00:00 grep --color=auto dhcp
+ubuntu@ip-10-41-41-163:~$ grep Trace /var/log/cloud-init*
+ubuntu@ip-10-41-41-163:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-163:~$ # Show upgrade path without restart does't Trace
+ubuntu@ip-10-41-41-163:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Mon, 04 Dec 2017 22:38:41 +0000. Up 199.69 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |   Address    |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | eth0:  | True | 10.41.41.163 | 255.255.255.0 |   .   | 02:49:62:e2:03:1c |
+ci-info: | eth0:  | True |      .       |       .       |   d   | 02:49:62:e2:03:1c |
+ci-info: |  lo:   | True |  127.0.0.1   |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |      .       |       .       |   d   |         .         |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ubuntu@ip-10-41-41-163:~$ 
+ubuntu@ip-10-41-41-163:~$ grep Trace /var/log/cloud-init*
+ubuntu@ip-10-41-41-163:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-163:~$ # clean cloud-init artifacts to simulate fresh run
+ubuntu@ip-10-41-41-163:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+Connection to ec2-34-236-254-196.compute-1.amazonaws.com closed by remote host.
+Connection to ec2-34-236-254-196.compute-1.amazonaws.com closed.
+csmith@downtown:~/src/qa-scripts (master)$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-34-236-254-196.compute-1.amazonaws.com"
+# Host ec2-34-236-254-196.compute-1.amazonaws.com found: line 1168
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+csmith@downtown:~/src/qa-scripts (master)$ ssh ubuntu@ec2-34-236-254-196.compute-1.amazonaws.com
+The authenticity of host 'ec2-34-236-254-196.compute-1.amazonaws.com (34.236.254.196)' can't be established.
+ECDSA key fingerprint is SHA256:luwpDbt+/YHop4foKus+HQci4JAa0xDu2eTy82LpeiI.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-34-236-254-196.compute-1.amazonaws.com,34.236.254.196' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.04 (GNU/Linux 4.10.0-40-generic x86_64)
+...
+ubuntu@ip-10-41-41-163:~$ 
+ubuntu@ip-10-41-41-163:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-163:~$ grep Trace /var/log/cloud-init*
+# Show no leaked /var/tmp dhcpclients 
+ubuntu@ip-10-41-41-163:~$ ps -afe | grep dhcp
+root       807     1  0 22:39 ?        00:00:00 /sbin/dhclient -1 -v -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases -I -df /var/lib/dhcp/dhclient6.eth0.leases eth0
+ubuntu    1442  1424  0 22:40 pts/0    00:00:00 grep --color=auto dhcp
+ubuntu@ip-10-41-41-163:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-41-41-163:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+^[[Aubuntu@ip-10-41-41-163:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+^[[Aubuntu@ip-10-41-41-163:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+^[[Aubuntu@ip-10-41-41-163:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-41-41-163:~$ ps -afe | grep dhcp
+root       807     1  0 22:39 ?        00:00:00 /sbin/dhclient -1 -v -pf /run/dhclient.eth0.pid -lf /var/lib/dhcp/dhclient.eth0.leases -I -df /var/lib/dhcp/dhclient6.eth0.leases eth0
+ubuntu    1486  1424  0 22:40 pts/0    00:00:00 grep --color=auto dhcp
+ubuntu@ip-10-41-41-163:~$ # no leaked dhcpclients and no tracebacks
+ubuntu@ip-10-41-41-163:~$ cat /etc/os-release 
+NAME="Ubuntu"
+VERSION="17.04 (Zesty Zapus)"
+ID=ubuntu
+ID_LIKE=debian
+PRETTY_NAME="Ubuntu 17.04"
+VERSION_ID="17.04"
+HOME_URL="https://www.ubuntu.com/"
+SUPPORT_URL="https://help.ubuntu.com/"
+BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+VERSION_CODENAME=zesty
+UBUNTU_CODENAME=zesty
+ubuntu@ip-10-41-41-163:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.04.1
+
+
+
+
+
+### EC2 Artful upgrade and fresh install test
+ubuntu@ip-10-41-41-19:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.10.1
+# See stale dhcpclient from previous release
+ubuntu@ip-10-41-41-19:~$ ps -afe | grep dhclient
+root       571     1  0 21:42 ?        00:00:00 /var/tmp/cloud-init/cloud-init-dhcp-zro_t9xo/dhclient -1 -v -lf /var/tmp/cloud-init/cloud-init-dhcp-zro_t9xo/dhcp.leases -pf /var/tmp/cloud-init/cloud-init-dhcp-zro_t9xo/dhclient.pid eth0 -sf /bin/true
+ubuntu    1249  1224  0 22:23 pts/0    00:00:00 grep --color=auto dhclient
+ubuntu@ip-10-41-41-19:~$ sudo kill 571
+ubuntu@ip-10-41-41-19:~$ # Upgrade to proposed
+ubuntu@ip-10-41-41-19:~$ sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+ubuntu@ip-10-41-41-19:~$ sudo apt update
+...
+ubuntu@ip-10-41-41-19:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
+ubuntu@ip-10-41-41-19:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-19:~$ grep Trace /var/log/cloud-init.log 
+# Check upgrade without restart doesn't fail
+ubuntu@ip-10-41-41-19:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Mon, 04 Dec 2017 22:24:51 +0000. Up 2544.87 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++
+ci-info: +--------+------+-------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |   Address   |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-------------+---------------+-------+-------------------+
+ci-info: | eth0:  | True | 10.41.41.19 | 255.255.255.0 |   .   | 02:05:74:57:47:f4 |
+ci-info: | eth0:  | True |      .      |       .       |   d   | 02:05:74:57:47:f4 |
+ci-info: |  lo:   | True |  127.0.0.1  |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |      .      |       .       |   d   |         .         |
+ci-info: +--------+------+-------------+---------------+-------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ubuntu@ip-10-41-41-19:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-10-41-41-19:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-19:~$ # Clean /var/lib/cloud to allow cloud-init to run 'fresh'
+ubuntu@ip-10-41-41-19:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+Connection to ec2-34-231-242-89.compute-1.amazonaws.com closed by remote host.
+Connection to ec2-34-231-242-89.compute-1.amazonaws.com closed.
+csmith@downtown:~/src/qa-scripts (master)$ ssh ubuntu@ec2-34-231-242-89.compute-1.amazonaws.com
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-34-231-242-89.compute-1.amazonaws.com,34.231.242.89' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-17-generic x86_64)
+...
+Last login: Mon Dec  4 22:23:24 2017 from 67.174.121.94
+ubuntu@ip-10-41-41-19:~$ 
+ubuntu@ip-10-41-41-19:~$ grep Trace /var/log/cloud-init.log 
+ubuntu@ip-10-41-41-19:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+ubuntu@ip-10-41-41-19:~$ ps -afe | grep dhclient
+ubuntu    1082  1064  0 22:26 pts/0    00:00:00 grep --color=auto dhclient
+# Show multiple dhcpclient sandbox attempts don't Traceback or leak processes
+ubuntu@ip-10-41-41-19:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-41-41-19:~$ 
+ubuntu@ip-10-41-41-19:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-41-41-19:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+^[[Aubuntu@ip-10-41-41-19:~$ sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()'
+ubuntu@ip-10-41-41-19:~$ ps -afe | grep dhclient
+ubuntu    1125  1064  0 22:28 pts/0    00:00:00 grep --color=auto dhclient
+ubuntu@ip-10-41-41-19:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.10.1
+
+
+=== End SRU Verification output ===
