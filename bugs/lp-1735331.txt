@@ -14,7 +14,17 @@ $ for release in xenial zesty artful; do
     ssh ubuntu@<ec2-address> cat /run/cloud-init/result.json;
     ssh ubuntu@<ec2-address> grep Trace /var/log/cloud-init.log;
     ssh ubuntu@<ec2-address> sudo sed 's/ $release / $release-proposed /' /etc/apt/sources.list;
-    
+    ssh ubuntu@<ec2-address> sudo apt update;
+    ssh ubuntu@<ec2-address> sudo apt install cloud-init;
+    # Show upgrade without restart doesn't break
+    ssh ubuntu@<ec2-address> sudo cloud-init init;
+    # Show clean install doesn't break
+    ssh ubuntu@<ec2-address> 'sudo rm -rf /var/log/cloud-init* /var/lib/cloud; sudo reboot'
+    ssh ubuntu@<ec2-address> 'sudo cat /run/cloud-init/result.json
+    ssh ubuntu@<ec2-address> 'sudo grep Trace /var/log/cloud-init*';
+    # Asssert no intermittent tracebacks from dhcp_discovery and no leaked dhcpclients;
+    ssh ubuntu@<ec2-address> "sudo python3 -c 'from cloudinit.net.dhcp import maybe_perform_dhcp_discovery; maybe_perform_dhcp_discovery()";
+    sudo ps -afe |grep dhclient;
   done
 
 [Regression Potential]
