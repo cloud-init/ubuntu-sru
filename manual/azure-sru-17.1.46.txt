@@ -1,0 +1,362 @@
+# Manually deploy xenial, zesty and artful on Azure.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+
+# Xenial Azure
+$ az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-x1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-00-87-4F",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.6",
+  "publicIpAddress": "52.179.140.5",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@52.179.140.5
+The authenticity of host '52.179.140.5 (52.179.140.5)' can't be established.
+ECDSA key fingerprint is SHA256:jmFNrLwpGoYNLmJZiGCsOCgmYil5zVQW9jaGbFh2iGM.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '52.179.140.5' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 16.04.3 LTS (GNU/Linux 4.11.0-1015-azure x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ubuntu@my-x1:~$ grep CODE /etc/os-release 
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+ubuntu@my-x1:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+ubuntu@my-x1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-x1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@my-x1:~$ sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+ubuntu@my-x1:~$ sudo apt update
+...
+ubuntu@my-x1:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
+ubuntu@my-x1:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Tue, 05 Dec 2017 03:50:04 +0000. Up 177.15 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.6          | 255.255.255.0 |   .   | 00:0d:3a:00:87:4f |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe00:874f/64 |       .       |  link | 00:0d:3a:00:87:4f |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |   .   |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host |         .         |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ubuntu@my-x1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-x1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@my-x1:~$ # remove cloud-init artifacts to test 'fresh' boot scenario
+ubuntu@my-x1:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+root@publishing:~/cloud-init.github.io (source)#   ssh-keygen -f "/root/.ssh/known_hosts" -R "52.179.140.5"
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@52.179.140.5
+The authenticity of host '52.179.140.5 (52.179.140.5)' can't be established.
+ECDSA key fingerprint is SHA256:9dRCF4PrIaE380akaOdGijWezEnYt00XNqk0ISicIZE.
+Are you sure you want to continue connecting (yes/no)? yes
+Welcome to Ubuntu 16.04.3 LTS (GNU/Linux 4.11.0-1015-azure x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+55 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Tue Dec  5 03:48:36 2017 from 67.174.121.94
+ubuntu@my-x1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+ubuntu@my-x1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-x1:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+ubuntu@my-x1:~$ 
+
+
+# Zesty Azure
+$ az vm create --name=my-z1 --image=Canonical:UbuntuServer:17.04-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-z1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-03-56-D7",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.5",
+  "publicIpAddress": "52.179.140.85",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@52.179.140.85
+The authenticity of host '52.179.140.85 (52.179.140.85)' can't be established.
+ECDSA key fingerprint is SHA256:y6DL6/hkB6cWJhm1V2tA/Yo6P9xs571G1cspmRXTvaY.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '52.179.140.85' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.04 (GNU/Linux 4.10.0-40-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ubuntu@my-z1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+ubuntu@my-z1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-z1:~$ sudo sed -i 's/ zesty / zesty-proposed /' /etc/apt/sources.list
+ubuntu@my-z1:~$ sudo apt update
+...
+ubuntu@my-z1:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~17.04.1) ...
+ubuntu@my-z1:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Tue, 05 Dec 2017 03:56:20 +0000. Up 113.49 seconds.
+ci-info: +++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address  |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | eth0:  | True |  10.0.0.5 | 255.255.255.0 |   .   | 00:0d:3a:03:56:d7 |
+ci-info: | eth0:  | True |     .     |       .       |   d   | 00:0d:3a:03:56:d7 |
+ci-info: |  lo:   | True | 127.0.0.1 |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |     .     |       .       |   d   |         .         |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ubuntu@my-z1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-z1:~$ # remove cloud-init artifacts to test fresh install
+ubuntu@my-z1:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+root@publishing:~/cloud-init.github.io (source)#   ssh-keygen -f "/root/.ssh/known_hosts" -R "52.179.140.85"
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@52.179.140.85
+The authenticity of host '52.179.140.85 (52.179.140.85)' can't be established.
+ECDSA key fingerprint is SHA256:EYVPbUzQ2ZWXIDDJoagWeOiRRg6mHa3Keur8Fyka4Eg.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '52.179.140.85' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.04 (GNU/Linux 4.10.0-40-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+36 packages can be updated.
+0 updates are security updates.
+
+New release '17.10' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+Last login: Tue Dec  5 03:55:19 2017 from 67.174.121.94
+ubuntu@my-z1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+ubuntu@my-z1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-z1:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.04.1
+
+# Artful Azure
+$ az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-a1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-02-3F-39",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4",
+  "publicIpAddress": "40.70.2.59",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+root@publishing:~/cloud-init.github.io (source)# 
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@40.70.2.59
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-17-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * Ubuntu is participating in Google Code-in, a contest to introduce students
+   from 13 to 17 years old to free software. You can join as a student or as a
+   mentor:
+   - https://ubu.one/UcodeIn
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Thu Nov 30 04:08:52 2017 from 67.174.121.94
+ubuntu@my-a1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+ubuntu@my-a1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-a1:~$ sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+ubuntu@my-a1:~$ sudo apt update
+...
+ubuntu@my-a1:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
+ubuntu@my-a1:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Tue, 05 Dec 2017 04:02:51 +0000. Up 431696.69 seconds.
+ci-info: +++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address  |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | eth0:  | True |  10.0.0.4 | 255.255.255.0 |   .   | 00:0d:3a:02:3f:39 |
+ci-info: | eth0:  | True |     .     |       .       |   d   | 00:0d:3a:02:3f:39 |
+ci-info: |  lo:   | True | 127.0.0.1 |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |     .     |       .       |   d   |         .         |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   2   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   3   |     10.0.0.1    | 0.0.0.0  | 255.255.255.255 |    eth0   |   UH  |
+ci-info: |   4   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   5   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-a1:~$ # remove cloud-init artifacts to test clean boot scenario
+ubuntu@my-a1:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+Connection to 40.70.2.59 closed by remote host.
+Connection to 40.70.2.59 closed.
+root@publishing:~/cloud-init.github.io (source)#   ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.2.59"
+root@publishing:~/cloud-init.github.io (source)# ssh ubuntu@40.70.2.59
+The authenticity of host '40.70.2.59 (40.70.2.59)' can't be established.
+ECDSA key fingerprint is SHA256:d6CJ2eX7ILo/SlGbsf9mOg/kjD6/1G+QIT8XnLt24kg.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.2.59' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-17-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * Ubuntu is participating in Google Code-in, a contest to introduce students
+   from 13 to 17 years old to free software. You can join as a student or as a
+   mentor:
+   - https://ubu.one/UcodeIn
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+38 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Tue Dec  5 04:02:01 2017 from 67.174.121.94
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ 
+ubuntu@my-a1:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+ubuntu@my-a1:~$ grep Trace /var/log/cloud-init*
+ubuntu@my-a1:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.10.1
+ubuntu@my-a1:~$ 
+ 
+
+
+
