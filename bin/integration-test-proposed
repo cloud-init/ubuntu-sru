@@ -1,0 +1,42 @@
+#!/bin/bash
+## test proposed by pulling the source from the package
+## and then running integration test for platform.
+set -o pipefail
+start_d="$PWD"
+platform="${PLATFORM:-nocloud-kvm}"
+fails=0
+for rel in "$@"; do
+   cd "$start_d"
+   out_d="$PWD/$rel-$platform-results.d"
+   log="$PWD/$rel-$platform.log"
+   [ ! -e "$out_d" ] || { echo "skipping existing $out_d"; continue; }
+   rm -Rf work.d
+   mkdir work.d || { echo "failed to make work.d in $start_d"; exit 1; }
+   (
+   set -e
+   start_s=$SECONDS
+   cd work.d
+   echo "$(date -R): Starting testing of $rel-proposed on platform $platform"
+   pull-lp-source cloud-init "$rel-proposed"
+   cd cloud-init-*
+   echo "testing in ${PWD##*/}"
+   proposed="deb http://archive.ubuntu.com/ubuntu/ $rel-proposed main"
+   tox -e citest -- run --verbose \
+       --preserve-data \
+       "--data-dir=$out_d" \
+       "--platform=$platform" \
+       --os-name=$rel \
+       "--repo=$proposed"
+   r=$?
+   echo "$(date -R): exited with $r in $((SECONDS-${start_s}))s"
+   exit $r
+   ) 2>&1 | tee $log
+   r=$?
+   if [ $r -eq 0 ]; then
+      # clean up cloud-test-* files on success.
+      rm -f "$out_d"/cloud-test-*
+   else
+      fails=$((fails+1))
+   fi
+done
+exit $fails
