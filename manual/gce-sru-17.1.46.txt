@@ -1,0 +1,242 @@
+==== GCE Xenial upgrade and fresh install test 17.1.27 -> 17.1.46 ====
+# Deployed via cloud.google.com  web portal
+
+ubuntu@xenial-sru:~$ sudo cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@xenial-sru:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~16.04.1
+ubuntu@xenial-sru:~$ sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+ubuntu@xenial-sru:~$ sudo apt update
+...
+ubuntu@xenial-sru:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
+ubuntu@xenial-sru:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Fri, 08 Dec 2017 10:40:04 +0000. Up 123.54 seconds.
+ci-info: +++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
+ci-info: | Device |  Up  |         Address          |       Mask      | Scope |     Hw-Address    |
+ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
+ci-info: |  ens4  | True |        10.128.0.2        | 255.255.255.255 |   .   | 42:01:0a:80:00:02 |
+ci-info: |  ens4  | True | fe80::4001:aff:fe80:2/64 |        .        |  link | 42:01:0a:80:00:02 |
+ci-info: |   lo   | True |        127.0.0.1         |    255.0.0.0    |   .   |         .         |
+ci-info: |   lo   | True |         ::1/128          |        .        |  host |         .         |
+ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.128.0.1 |     0.0.0.0     |    ens4   |   UG  |
+ci-info: |   1   |  10.128.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@xenial-sru:~$ # clean cloud-init artifacts to simulate boot on fresh system
+ubuntu@xenial-sru:~$ sudo rm /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+rm: cannot remove '/var/lib/cloud/': Is a directory
+Connection to 35.225.85.10 closed by remote host.
+Connection to 35.225.85.10 closed.
+csmith@uptown:~$ ssh ubuntu@35.225.85.10
+Welcome to Ubuntu 16.04.3 LTS (GNU/Linux 4.10.0-40-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+69 packages can be updated.
+22 updates are security updates.
+
+
+Last login: Fri Dec  8 10:38:43 2017 from 67.174.121.94
+ubuntu@xenial-sru:~$ dpkg-query --show cloud-initcloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@xenial-sru:~$ sudo cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@xenial-sru:~$ 
+
+==== Zesty upgrade and fresh install test 17.1.27 -> 17.1.46 ====
+# deployed through cloud.google.com web portal
+csmith@uptown:~$ ssh ubuntu@35.224.97.58
+ubuntu@gce-zesty-sru:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@gce-zesty-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@gce-zesty-sru:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.04.1
+ubuntu@gce-zesty-sru:~$ sudo sed -i 's/ zesty / zesty-proposed /' /etc/apt/sources.list
+ubuntu@gce-zesty-sru:~$ sudo apt update
+...
+ubuntu@gce-zesty-sru:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~17.04.1) ...
+ubuntu@gce-zesty-sru:~$ # test live update without restart
+ubuntu@gce-zesty-sru:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Fri, 08 Dec 2017 10:57:50 +0000. Up 99.02 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address   |       Mask      | Scope |     Hw-Address    |
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: | ens4:  | True | 10.128.0.2 | 255.255.255.255 |   .   | 42:01:0a:80:00:02 |
+ci-info: | ens4:  | True |     .      |        .        |   d   | 42:01:0a:80:00:02 |
+ci-info: |  lo:   | True | 127.0.0.1  |    255.0.0.0    |   .   |         .         |
+ci-info: |  lo:   | True |     .      |        .        |   d   |         .         |
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.128.0.1 |     0.0.0.0     |    ens4   |   UG  |
+ci-info: |   1   |  10.128.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ubuntu@gce-zesty-sru:~$ # remove cloud-init artifacts to emulate fresh install
+ubuntu@gce-zesty-sru:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+Connection to 35.224.97.58 closed by remote host.
+Connection to 35.224.97.58 closed.
+csmith@uptown:~$ ssh ubuntu@35.224.97.58
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R 35.224.97.58# Host 35.224.97.58 found: line 1166
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+csmith@uptown:~$ ssh ubuntu@35.224.97.58
+The authenticity of host '35.224.97.58 (35.224.97.58)' can't be established.
+ECDSA key fingerprint is SHA256:Hrfi+ABhT5oKf6DUStVM4J/3lp36jsqeuv9JoVkg4tQ.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '35.224.97.58' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.04 (GNU/Linux 4.10.0-42-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+35 packages can be updated.
+0 updates are security updates.
+
+New release '17.10' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+Last login: Fri Dec  8 10:56:42 2017 from 67.174.121.94
+ubuntu@gce-zesty-sru:~$ cat /run/cloud-init/result.json {
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@gce-zesty-sru:~$ grep Trace /var/log/cloud-init*ubuntu@gce-zesty-sru:~$ dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.04.1
+
+
+
+
+==== Artful upgrade and fresh install test 17.1.27 -> 17.1.46 ====
+# deployed through cloud.google.com web portal
+ubuntu@artful-sru:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@artful-sru:~$ dpkg-query --show cloud-init
+cloud-init	17.1-27-geb292c18-0ubuntu1~17.10.1
+ubuntu@artful-sru:~$ sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+ubuntu@artful-sru:~$ sudo apt update
+...
+ubuntu@artful-sru:~$ sudo apt install cloud-init
+...
+Setting up cloud-init (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
+ubuntu@artful-sru:~$ #upgrade test without reboot
+ubuntu@artful-sru:~$ sudo cloud-init init
+Cloud-init v. 17.1 running 'init' at Fri, 08 Dec 2017 10:50:32 +0000. Up 228.28 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address   |       Mask      | Scope |     Hw-Address    |
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: | ens4:  | True | 10.128.0.3 | 255.255.255.255 |   .   | 42:01:0a:80:00:03 |
+ci-info: | ens4:  | True |     .      |        .        |   d   | 42:01:0a:80:00:03 |
+ci-info: |  lo:   | True | 127.0.0.1  |    255.0.0.0    |   .   |         .         |
+ci-info: |  lo:   | True |     .      |        .        |   d   |         .         |
+ci-info: +--------+------+------------+-----------------+-------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.128.0.1 |     0.0.0.0     |    ens4   |   UG  |
+ci-info: |   1   |   0.0.0.0   | 10.128.0.1 |     0.0.0.0     |    ens4   |   UG  |
+ci-info: |   2   |  10.128.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
+ci-info: |   3   |  10.128.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*
+ubuntu@artful-sru:~$ cat /run/cloud-init/result.json 
+{
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@artful-sru:~$ 
+ubuntu@artful-sru:~$ # remove cloud-init artifacts and reboot to emulate fresh install
+ubuntu@artful-sru:~$ sudo rm -rf /var/log/cloud-init* /var/lib/cloud/; sudo reboot
+Connection to 35.225.35.108 closed by remote host.
+Connection to 35.225.35.108 closed.
+csmith@uptown:~$ ssh ubuntu@35.225.35.108
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R 35.225.35.108
+csmith@uptown:~$ ssh ubuntu@35.225.35.108
+The authenticity of host '35.225.35.108 (35.225.35.108)' can't be established.
+ECDSA key fingerprint is SHA256:dfbwCX1/eR46rL+RzxqQmXYPgDCOKSUBKikNG7H9Zyo.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '35.225.35.108' (ECDSA) to the list of known hosts.
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-17-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+40 packages can be updated.
+12 updates are security updates.
+
+
+Last login: Fri Dec  8 10:48:27 2017 from 67.174.121.94
+ubuntu@artful-sru:~$ cat /run/cloud-init/result.json {
+ "v1": {
+  "datasource": "DataSourceGCE",
+  "errors": []
+ }
+}
+ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*ubuntu@artful-sru:~$ dpkg-query --show cloud-initcloud-init	17.1-46-g7acc9e68-0ubuntu1~17.10.1
+
+
+
