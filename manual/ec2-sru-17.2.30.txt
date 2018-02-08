@@ -1,0 +1,34 @@
+# Launch EC2 instance under test
+$ for release in xenial artful; do
+    echo "Handling $release";
+    launch-ec2 --series $release;
+    ssh ubuntu@<ec2-address> cat /run/cloud-init/result.json;
+    ssh ubuntu@<ec2-address> grep Trace /var/log/cloud-init.log;
+    ssh ubuntu@<ec2-address> sudo sed 's/ $release / $release-proposed /' /etc/apt/sources.list;
+    ssh ubuntu@<ec2-address> sudo apt update;
+    ssh ubuntu@<ec2-address> sudo apt install cloud-init;
+    # Show upgrade without restart doesn't break
+    ssh ubuntu@<ec2-address> sudo cloud-init init;
+    # Show clean install doesn't break
+    ssh ubuntu@<ec2-address> 'cloud-init status --wait';  # should not block
+    ssh ubuntu@<ec2-address> 'cloud-init status --full';
+    ssh ubuntu@<ec2-address> 'sudo cloud-init clean --logs --reboot';
+    ssh ubuntu@<ec2-address> 'cloud-init status --full';
+    ssh ubuntu@<ec2-address> 'sudo grep Trace /var/log/cloud-init*';
+    # Check generalized instance data per 0cf6db36
+    ssh ubuntu@<ec2-address> -- cat /run/cloud-init/instance-data.json;
+    # Watch for interactions with instance-identity endpoint.
+    ssh ubuntu@<ec2-address> -- grep instance-identity /var/log/cloud-init.log
+  done
+
+[Regression Potential]
+EC2 datasource now obtains information from instance-identity document for instance-id. We could expect Tracebacks or invalid instance-ids listed if parsing of this metadata document broke. This could mean that the datasource would not get recognized and would fall through the NoCloud or Openstackdata sources.
+
+[Other Info]
+
+=== End SRU Template ===
+
+=== SRU Verification output ===
+
+=== End SRU Verification output ===
+

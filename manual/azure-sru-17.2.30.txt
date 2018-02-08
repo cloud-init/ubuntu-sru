@@ -1,0 +1,52 @@
+# Manually deploy xenial and artful on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+
+# Xenial Azure
+$ az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+$ vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r'.[] | .virtualMachine.network/publicIpAddresses[].ipAddress'`
+$ ssh ubuntu@$vm_ip grep CODE /etc/os-release
+$ ssh ubuntu@$vm_ip 'dpkg-query --show -cloud-init'
+$ ssh ubuntu@$vm_ip 'cloud-init status --long'
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+$ ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log'
+$ ssh ubuntu@$vm_ip -- sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+$ ssh ubuntu@$vm_ip -- sudo apt update
+$ ssh ubuntu@$vm_ip -- sudo apt install cloud-init
+$ ssh ubuntu@$vm_ip -- sudo cloud-init init
+$ ssh ubuntu@$vm_ip -- sudo cloud-init status --long
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+# remove cloud-init artifacts to test 'fresh' boot scenario
+$ ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+$ ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init
+# Check generalized instance data per 0cf6db36
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/instance-data.json
+
+
+# Artful Azure
+$ az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+$ vm_ip=`az vm list-ip-addresses --name my-a1 | jq -r'.[] | .virtualMachine.network/publicIpAddresses[].ipAddress'`
+$ ssh ubuntu@$vm_ip grep CODE /etc/os-release
+$ ssh ubuntu@$vm_ip 'dpkg-query --show -cloud-init'
+$ ssh ubuntu@$vm_ip 'cloud-init status --long'
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+$ ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log'
+$ ssh ubuntu@$vm_ip -- sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+$ ssh ubuntu@$vm_ip -- sudo apt update
+$ ssh ubuntu@$vm_ip -- sudo apt install cloud-init
+$ ssh ubuntu@$vm_ip -- sudo cloud-init init
+$ ssh ubuntu@$vm_ip -- sudo cloud-init status --long
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+# remove cloud-init artifacts to test 'fresh' boot scenario
+$ ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+$ ssh ubuntu@$vm_ip -- cloud-init status --long
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+$ ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init
+# Check generalized instance data per 0cf6db36
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/instance-data.json
+
