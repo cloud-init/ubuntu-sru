@@ -1,24 +1,24 @@
 # Launch EC2 instance under test
 $ for release in xenial artful; do
     echo "Handling $release";
-    launch-ec2 --series $release;
-    ssh ubuntu@<ec2-address> cat /run/cloud-init/result.json;
-    ssh ubuntu@<ec2-address> grep Trace /var/log/cloud-init.log;
-    ssh ubuntu@<ec2-address> sudo sed 's/ $release / $release-proposed /' /etc/apt/sources.list;
-    ssh ubuntu@<ec2-address> sudo apt update;
-    ssh ubuntu@<ec2-address> sudo apt install cloud-init;
+    EC2_INST=`launch-ec2 --series $release | awk '/Found/{print $5}'`
+    ssh $EC2_INST -- cat /run/cloud-init/result.json;
+    ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+    ssh $EC2_INST "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list"
+    ssh $EC2_INST -- sudo apt-get update;
+    ssh $EC2_INST -- sudo apt-get install cloud-init;
     # Show upgrade without restart doesn't break
-    ssh ubuntu@<ec2-address> sudo cloud-init init;
+    ssh $EC2_INST -- sudo cloud-init init;
     # Show clean install doesn't break
-    ssh ubuntu@<ec2-address> 'cloud-init status --wait';  # should not block
-    ssh ubuntu@<ec2-address> 'cloud-init status --full';
-    ssh ubuntu@<ec2-address> 'sudo cloud-init clean --logs --reboot';
-    ssh ubuntu@<ec2-address> 'cloud-init status --full';
-    ssh ubuntu@<ec2-address> 'sudo grep Trace /var/log/cloud-init*';
+    ssh $EC2_INST -- cloud-init status --wait;  # should not block
+    ssh $EC2_INST -- cloud-init status --long;
+    ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+    ssh $EC2_INST -- cloud-init status --long;
+    ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
     # Check generalized instance data per 0cf6db36
-    ssh ubuntu@<ec2-address> -- cat /run/cloud-init/instance-data.json;
+    ssh $EC2_INST -- sudo cat /run/cloud-init/instance-data.json;
     # Watch for interactions with instance-identity endpoint.
-    ssh ubuntu@<ec2-address> -- grep instance-identity /var/log/cloud-init.log
+    ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log
   done
 
 [Regression Potential]
@@ -29,6 +29,384 @@ EC2 datasource now obtains information from instance-identity document for insta
 === End SRU Template ===
 
 === SRU Verification output ===
+### Start Ec2 verification xenial
+csmith@uptown:~$ EC2_INST=`launch-ec2 --series xenial | awk '/Found/{print $5}'` 
+csmith@uptown:~$ ssh $EC2_INST -- grep CODE /etc/os-releaseVERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+csmith@uptown:~$ echo $EC2_INST
+ubuntu@ec2-18-219-160-217.us-east-2.compute.amazonaws.com
+csmith@uptown:~$ ssh $EC2_INST -- dpkg-query --show cloud-initThe authenticity of host 'ec2-18-219-160-217.us-east-2.compute.amazonaws.com (18.219.160.217)' can't be established.
+...
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-219-160-217.us-east-2.compute.amazonaws.com,18.219.160.217' (ECDSA) to the list of known hosts.
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+csmith@uptown:~$     ssh $EC2_INST -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+csmith@uptown:~$     ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+csmith@uptown:~$     ssh $EC2_INST "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list"
+csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get update;
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
+...
+Reading package lists...
+csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get install cloud-init;
+...
+The following packages will be upgraded:
+  cloud-init
+Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.1) over (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19) ...
+Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init init;
+Cloud-init v. 17.2 running 'init' at Wed, 14 Feb 2018 20:47:28 +0000. Up 95.26 seconds.
+ci-info: +++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+----------------------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |          Address           |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+----------------------------+---------------+-------+-------------------+
+ci-info: |  eth0  | True |        10.41.41.38         | 255.255.255.0 |   .   | 06:71:0f:c9:39:0a |
+ci-info: |  eth0  | True | fe80::471:fff:fec9:390a/64 |       .       |  link | 06:71:0f:c9:39:0a |
+ci-info: |   lo   | True |         127.0.0.1          |   255.0.0.0   |   .   |         .         |
+ci-info: |   lo   | True |          ::1/128           |       .       |  host |         .         |
+ci-info: +--------+------+----------------------------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --wait;  # should not block
+
+status: done
+csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long';
+> ^C
+csmith@uptown:~$ ssh $EC2_INST -- cloud-init status --long
+status: done
+time: Wed, 14 Feb 2018 20:47:28 +0000
+detail:
+DataSourceEc2Local
+csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+Connection to ec2-18-219-160-217.us-east-2.compute.amazonaws.com closed by remote host.
+csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long;
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-219-160-217.us-east-2.compute.amazonaws.com
+# Host ec2-18-219-160-217.us-east-2.compute.amazonaws.com found: line 1190
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+csmith@uptown:~$ ssh $EC2_INST -- cloud-init status --long
+The authenticity of host 'ec2-18-219-160-217.us-east-2.compute.amazonaws.com (18.219.160.217)' can't be established.
+ECDSA key fingerprint is SHA256:kwmWlOrQMPQ1kdlfdhNBcPeSWhKSArqmygZFcHXgeq8.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-219-160-217.us-east-2.compute.amazonaws.com,18.219.160.217' (ECDSA) to the list of known hosts.
+status: done
+time: Wed, 14 Feb 2018 20:48:27 +0000
+detail:
+DataSourceEc2Local
+csmith@uptown:~$     ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
+csmith@uptown:~$     ssh $EC2_INST -- sudo cat /run/cloud-init/instance-data.json;
+{
+ "base64-encoded-keys": [],
+ "ds": {
+  "meta-data": {
+   "ami-id": "ami-c9a693ac",
+   "ami-launch-index": "0",
+   "ami-manifest-path": "(unknown)",
+   "block-device-mapping": {
+    "ami": "/dev/sda1",
+    "ephemeral0": "sdb",
+    "ephemeral1": "sdc",
+    "root": "/dev/sda1"
+   },
+   "hostname": "ip-10-41-41-38.us-east-2.compute.internal",
+   "instance-action": "none",
+   "instance-id": "i-003d88439ebd4d91c",
+   "instance-type": "t2.micro",
+   "local-hostname": "ip-10-41-41-38.us-east-2.compute.internal",
+   "local-ipv4": "10.41.41.38",
+   "mac": "06:71:0f:c9:39:0a",
+   "metrics": {
+    "vhostmd": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+   },
+   "network": {
+    "interfaces": {
+     "macs": {
+      "06:71:0f:c9:39:0a": {
+       "device-number": "0",
+       "interface-id": "eni-972ef1c3",
+       "ipv4-associations": {
+        "18.219.160.217": "10.41.41.38"
+       },
+       "local-hostname": "ip-10-41-41-38.us-east-2.compute.internal",
+       "local-ipv4s": "10.41.41.38",
+       "mac": "06:71:0f:c9:39:0a",
+       "owner-id": "437526006925",
+       "public-hostname": "ec2-18-219-160-217.us-east-2.compute.amazonaws.com",
+       "public-ipv4s": "18.219.160.217",
+       "security-group-ids": "sg-828247e9",
+       "security-groups": "Cloud-init integration test secgroup",
+       "subnet-id": "subnet-282f3053",
+       "subnet-ipv4-cidr-block": "10.41.41.0/24",
+       "subnet-ipv6-cidr-blocks": "2600:1f16:b80:ad00::/64",
+       "vpc-id": "vpc-252ef24d",
+       "vpc-ipv4-cidr-block": "10.41.0.0/16",
+       "vpc-ipv4-cidr-blocks": "10.41.0.0/16",
+       "vpc-ipv6-cidr-blocks": "2600:1f16:b80:ad00::/56"
+      }
+     }
+    }
+   },
+   "placement": {
+    "availability-zone": "us-east-2b"
+   },
+   "profile": "default-hvm",
+   "public-hostname": "ec2-18-219-160-217.us-east-2.compute.amazonaws.com",
+   "public-ipv4": "18.219.160.217",
+   "public-keys": {
+    "cloud-init-integration": [
+     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB cloud-init-integration"
+    ]
+   },
+   "reservation-id": "r-01c8cad873f3928d9",
+   "security-groups": "Cloud-init integration test secgroup",
+   "services": {
+    "domain": "amazonaws.com",
+    "partition": "aws"
+   }
+  },
+  "user-data": "",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": "us-east-2b",
+  "cloud-name": "aws",
+  "instance-id": "i-003d88439ebd4d91c",
+  "local-hostname": "ip-10-41-41-38",
+  "region": "us-east-2"
+ }
+}
+csmith@uptown:~$     ssh $EC2_INST -- -- grep instance-identity /var/log/cloud-init.log
+bash: --: invalid option
+Usage:	bash [GNU long option] [option] ...
+	bash [GNU long option] [option] script-file ...
+GNU long options:
+	--debug
+	--debugger
+	--dump-po-strings
+	--dump-strings
+	--help
+	--init-file
+	--login
+	--noediting
+	--noprofile
+	--norc
+	--posix
+	--rcfile
+	--restricted
+	--verbose
+	--version
+Shell options:
+	-ilrsD or -c command or -O shopt_option		(invocation only)
+	-abefhkmnptuvxBCHP or -o option
+csmith@uptown:~$ ssh $EC2_INST -- cloud-init status --long
+status: done
+time: Wed, 14 Feb 2018 20:48:27 +0000
+detail:
+DataSourceEc2Local
+csmith@uptown:~$     ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log
+2018-02-14 20:48:23,815 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'method': 'GET', 'allow_redirects': True, 'timeout': 5.0} configuration
+2018-02-14 20:48:23,822 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-02-14 20:48:23,822 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'method': 'GET', 'allow_redirects': True, 'timeout': 5.0} configuration
+2018-02-14 20:48:23,824 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-02-14 20:48:23,825 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'method': 'GET', 'allow_redirects': True, 'timeout': 5.0} configuration
+2018-02-14 20:48:23,828 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-02-14 20:48:23,829 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'method': 'GET', 'allow_redirects': True, 'timeout': 5.0} configuration
+2018-02-14 20:48:23,832 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-02-14 20:48:23,833 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'method': 'GET', 'allow_redirects': True, 'timeout': 5.0} configuration
+2018-02-14 20:48:23,835 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 466b) after 1 attempts
+
+
+
+### Start Ec2 verification artful
+$ ssh $EC2_INST -- grep CODE /etc/os-release
+The authenticity of host 'ec2-18-219-181-64.us-east-2.compute.amazonaws.com (18.219.181.64)' can't be established.
+ECDSA key fingerprint is SHA256:9H1q2nSeEf+pSjdDxR5YnVmAXijRCXdAfhJGd0UWWgs.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-219-181-64.us-east-2.compute.amazonaws.com,18.219.181.64' (ECDSA) to the list of known hosts.
+VERSION_CODENAME=artful
+UBUNTU_CODENAME=artful
+$ ssh ubuntu@ec2-18-219-181-64.us-east-2.compute.amazonaws.com -- dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.10.1
+$ ssh $EC2_INST cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*log
+$ ssh $EC2_INST "sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list"
+$ ssh $EC2_INST "sudo apt update"
+
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
+...
+Reading state information...
+48 packages can be upgraded. Run 'apt list --upgradable' to see them.
+$ ssh $EC2_INST "sudo apt install cloud-init"
+...
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~17.10.1 [342 kB]
+...
+$ ssh $EC2_INST "sudo cloud-init init"
+Cloud-init v. 17.2 running 'init' at Wed, 14 Feb 2018 20:28:15 +0000. Up 1426.95 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |   Address    |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | eth0:  | True | 10.41.41.141 | 255.255.255.0 |   .   | 06:af:51:71:ef:d2 |
+ci-info: | eth0:  | True |      .       |       .       |   d   | 06:af:51:71:ef:d2 |
+ci-info: |  lo:   | True |  127.0.0.1   |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |      .       |       .       |   d   |         .         |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*log
+$ ssh $EC2_INST -- cloud-init status --long
+status: done
+time: Wed, 14 Feb 2018 20:28:15 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- cloud-init status --wait
+
+status: done
+$ ssh $EC2_INST -- cloud-init status --long
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-219-181-64.us-east-2.compute.amazonaws.com
+# Host ec2-18-219-181-64.us-east-2.compute.amazonaws.com found: line 1188
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+$ ssh $EC2_INST -- cloud-init status --long
+The authenticity of host 'ec2-18-219-181-64.us-east-2.compute.amazonaws.com (18.219.181.64)' can't be established.
+...
+Warning: Permanently added 'ec2-18-219-181-64.us-east-2.compute.amazonaws.com,18.219.181.64' (ECDSA) to the list of known hosts.
+status: done
+time: Wed, 14 Feb 2018 20:30:08 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*log
+$ ssh $EC2_INST -- cat /run/cloud-init/instance-data.json
+cat: /run/cloud-init/instance-data.json: Permission denied
+$ ssh $EC2_INST -- sudo cat /run/cloud-init/instance-data.json
+{
+ "base64-encoded-keys": [],
+ "ds": {
+  "meta-data": {
+   "ami-id": "ami-d35065b6",
+   "ami-launch-index": "0",
+   "ami-manifest-path": "(unknown)",
+   "block-device-mapping": {
+    "ami": "/dev/sda1",
+    "ephemeral0": "sdb",
+    "ephemeral1": "sdc",
+    "root": "/dev/sda1"
+   },
+   "hostname": "ip-10-41-41-141.us-east-2.compute.internal",
+   "instance-action": "none",
+   "instance-id": "i-04b21b0f27c0f8fb2",
+   "instance-type": "t2.micro",
+   "local-hostname": "ip-10-41-41-141.us-east-2.compute.internal",
+   "local-ipv4": "10.41.41.141",
+   "mac": "06:af:51:71:ef:d2",
+   "metrics": {
+    "vhostmd": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+   },
+   "network": {
+    "interfaces": {
+     "macs": {
+      "06:af:51:71:ef:d2": {
+       "device-number": "0",
+       "interface-id": "eni-623be436",
+       "ipv4-associations": {
+        "18.219.181.64": "10.41.41.141"
+       },
+       "local-hostname": "ip-10-41-41-141.us-east-2.compute.internal",
+       "local-ipv4s": "10.41.41.141",
+       "mac": "06:af:51:71:ef:d2",
+       "owner-id": "437526006925",
+       "public-hostname": "ec2-18-219-181-64.us-east-2.compute.amazonaws.com",
+       "public-ipv4s": "18.219.181.64",
+       "security-group-ids": "sg-828247e9",
+       "security-groups": "Cloud-init integration test secgroup",
+       "subnet-id": "subnet-282f3053",
+       "subnet-ipv4-cidr-block": "10.41.41.0/24",
+       "subnet-ipv6-cidr-blocks": "2600:1f16:b80:ad00::/64",
+       "vpc-id": "vpc-252ef24d",
+       "vpc-ipv4-cidr-block": "10.41.0.0/16",
+       "vpc-ipv4-cidr-blocks": "10.41.0.0/16",
+       "vpc-ipv6-cidr-blocks": "2600:1f16:b80:ad00::/56"
+      }
+     }
+    }
+   },
+   "placement": {
+    "availability-zone": "us-east-2b"
+   },
+   "profile": "default-hvm",
+   "public-hostname": "ec2-18-219-181-64.us-east-2.compute.amazonaws.com",
+   "public-ipv4": "18.219.181.64",
+   "public-keys": {
+    "cloud-init-integration": [
+     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB cloud-init-integration"
+    ]
+   },
+   "reservation-id": "r-098372e627294e6d3",
+   "security-groups": "Cloud-init integration test secgroup",
+   "services": {
+    "domain": "amazonaws.com",
+    "partition": "aws"
+   }
+  },
+  "user-data": "",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": "us-east-2b",
+  "cloud-name": "aws",
+  "instance-id": "i-04b21b0f27c0f8fb2",
+  "local-hostname": "ip-10-41-41-141",
+  "region": "us-east-2"
+ }
+}
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log
+2018-02-14 20:29:40,288 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
+2018-02-14 20:29:40,291 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-02-14 20:29:40,291 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
+2018-02-14 20:29:40,293 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-02-14 20:29:40,293 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
+2018-02-14 20:29:40,296 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 467b) after 1 attempts
+2018-02-14 20:29:40,296 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
+2018-02-14 20:29:40,298 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-02-14 20:29:40,298 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
+2018-02-14 20:29:40,300 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+
+
 
 === End SRU Verification output ===
 
