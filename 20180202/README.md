@@ -28,5 +28,5 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 | EC2 manual xenial, artful | ✔ [verification output](../manual/ec2-sru-17.2.35.txt) |
 | Azure manual xenial, artful | ✔ [verification output](../manual/azure-sru-17.2.35.txt) |
 | GCE manual xenial, artful | ✔ [verification output](../manual/gce-sru-17.2.35.txt) |
-| Nocloud-kvm logs xenial | ✗ [verification output](../manual/nocloud-kvm-sru-17.2.30.txt) |
-| Nocloud-lxd logs xenial, artful | ✗ [verification output](../manual/nocloud-lxd-sru-17.2.30.txt) |
+| Nocloud-kvm logs xenial | ✔ [verification output](../manual/nocloud-kvm-sru-17.2.35.txt) |
+| Nocloud-lxd logs xenial, artful | ✔ [verification output](../manual/nocloud-lxd-sru-17.2.35.txt) |
