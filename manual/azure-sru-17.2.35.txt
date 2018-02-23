@@ -1,0 +1,483 @@
+# Manually deploy xenial and artful on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+# Expect Traceback on ifdown ifup hostname bounce
+
+# Xenial Azure
+az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-x1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-02-B2-C8",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4",
+  "publicIpAddress": "52.225.254.16",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+root@publishing:~# vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`
+root@publishing:~# echo $vm_ip
+52.225.254.16
+root@publishing:~# ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init'
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+root@publishing:~# ssh ubuntu@$vm_ip grep CODE /etc/os-release
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+root@publishing:~# ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+root@publishing:~# ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log'
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+sed: -e expression #1, char 2: unterminated `s' command
+root@publishing:~# ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list"
+root@publishing:~#  ssh ubuntu@$vm_ip -- sudo apt-get update
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [102 kB]
+Get:2 http://azure.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu xenial-updates InRelease [102 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu xenial-backports InRelease [102 kB]
+Get:5 http://security.ubuntu.com/ubuntu xenial-security/main Sources [116 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main Sources [25.6 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe Sources [32.2 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/restricted Sources [2,116 B]
+Get:9 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [58.3 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe Sources [59.1 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [26.7 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [43.4 kB]
+Get:13 http://security.ubuntu.com/ubuntu xenial-security/multiverse Sources [1,516 B]
+Get:14 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [21.1 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main Sources [298 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu xenial-updates/restricted Sources [2,524 B]
+Get:17 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe Sources [191 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu xenial-updates/multiverse Sources [7,968 B]
+Get:19 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [736 kB]
+Get:20 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [305 kB]
+Get:21 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [591 kB]
+Get:22 http://azure.archive.ubuntu.com/ubuntu xenial-backports/main Sources [3,432 B]
+Get:23 http://azure.archive.ubuntu.com/ubuntu xenial-backports/universe Sources [4,904 B]
+Fetched 3,085 kB in 1s (1,692 kB/s)
+Reading package lists...
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+
+1 upgraded, 0 newly installed, 0 to remove and 32 not upgraded.
+Need to get 349 kB of archives.
+After this operation, 48.1 kB of additional disk space will be used.
+Get:1 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~16.04.1 [349 kB]
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 349 kB in 0s (530 kB/s)
+(Reading database ... 54517 files and directories currently installed.)
+Preparing to unpack .../cloud-init_17.2-35-gf576b2a2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.1) over (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19) ...
+Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+root@publishing:~#  ssh ubuntu@$vm_ip -- sudo cloud-init init
+Cloud-init v. 17.2 running 'init' at Fri, 23 Feb 2018 17:24:40 +0000. Up 579.26 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.4          | 255.255.255.0 |   .   | 00:0d:3a:02:b2:c8 |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe02:b2c8/64 |       .       |  link | 00:0d:3a:02:b2:c8 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |   .   |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host |         .         |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo cloud-init status --long
+status: done
+time: Fri, 23 Feb 2018 17:24:40 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+root@publishing:~# ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+root@publishing:~# ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+root@publishing:~# # remove cloud-init artifacts to test 'fresh' boot scenario
+root@publishing:~# 
+root@publishing:~# ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+Connection to 52.225.254.16 closed by remote host.
+root@publishing:~# ssh-keygen -f "~/.ssh/known_hosts" 52.225.254.16
+Too many arguments.
+usage: ssh-keygen [-q] [-b bits] [-t dsa | ecdsa | ed25519 | rsa]
+                  [-N new_passphrase] [-C comment] [-f output_keyfile]
+       ssh-keygen -p [-P old_passphrase] [-N new_passphrase] [-f keyfile]
+       ssh-keygen -i [-m key_format] [-f input_keyfile]
+       ssh-keygen -e [-m key_format] [-f input_keyfile]
+       ssh-keygen -y [-f input_keyfile]
+       ssh-keygen -c [-P passphrase] [-C comment] [-f keyfile]
+       ssh-keygen -l [-v] [-E fingerprint_hash] [-f input_keyfile]
+       ssh-keygen -B [-f input_keyfile]
+       ssh-keygen -D pkcs11
+       ssh-keygen -F hostname [-f known_hosts_file] [-l]
+       ssh-keygen -H [-f known_hosts_file]
+       ssh-keygen -R hostname [-f known_hosts_file]
+       ssh-keygen -r hostname [-f input_keyfile] [-g]
+       ssh-keygen -G output_file [-v] [-b bits] [-M memory] [-S start_point]
+       ssh-keygen -T output_file -f input_file [-v] [-a rounds] [-J num_lines]
+                  [-j start_line] [-K checkpt] [-W generator]
+       ssh-keygen -s ca_key -I certificate_identity [-h] [-n principals]
+                  [-O option] [-V validity_interval] [-z serial_number] file ...
+       ssh-keygen -L [-f input_keyfile]
+       ssh-keygen -A
+       ssh-keygen -k -f krl_file [-u] [-s ca_public] [-z version_number]
+                  file ...
+       ssh-keygen -Q -f krl_file file ...
+root@publishing:~# ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:YIm9gDFw9cekYin5RnnRlbidH2oYBMazTzi3OF/fN6I.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/known_hosts:33
+  remove with:
+  ssh-keygen -f "/root/.ssh/known_hosts" -R "52.225.254.16"
+ECDSA host key for 52.225.254.16 has changed and you have requested strict checking.
+Host key verification failed.
+root@publishing:~# 
+root@publishing:~#   ssh-keygen -f "/root/.ssh/known_hosts" -R "52.225.254.16"
+# Host 52.225.254.16 found: line 33
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+root@publishing:~#  ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+The authenticity of host '52.225.254.16 (52.225.254.16)' can't be established.
+ECDSA key fingerprint is SHA256:YIm9gDFw9cekYin5RnnRlbidH2oYBMazTzi3OF/fN6I.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '52.225.254.16' (ECDSA) to the list of known hosts.
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+root@publishing:~# ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+root@publishing:~# ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.1
+root@publishing:~# ssh ubuntu@$vm_ip -- cloud-init status --long
+status: done
+time: Fri, 23 Feb 2018 17:25:55 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+root@publishing:~# # Check generalized instance data per 0cf6db36
+root@publishing:~# ssh ubuntu@$vm_ip -- cat /run/cloud-init/instance-data.json
+cat: /run/cloud-init/instance-data.json: Permission denied
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json
+{
+ "base64-encoded-keys": [
+  "ds/meta-data/random_seed"
+ ],
+ "ds": {
+  "meta-data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "instance-id": "2B577730-8E1C-8D4C-B2EE-8AD03B87F3E7",
+   "local-hostname": "my-x1",
+   "random_seed": "T0VNMGQAAAABFVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ=="
+  },
+  "user-data": "",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": null,
+  "cloud-name": "azure",
+  "instance-id": "2B577730-8E1C-8D4C-B2EE-8AD03B87F3E7",
+  "local-hostname": "my-x1",
+  "region": null
+ }
+}
+root@publishing:~# # End Xenial
+root@publishing:~# # Artful Azur
+root@publishing:~# # Artful Azure
+root@publishing:~# az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-a1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-05-40-78",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.5",
+  "publicIpAddress": "40.70.57.120",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+root@publishing:~#  vm_ip=`az vm list-ip-addresses --name my-a1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`
+root@publishing:~# echo $vm_ip
+40.70.57.120
+root@publishing:~# ssh ubuntu@$vm_ip grep CODE /etc/os-release
+The authenticity of host '40.70.57.120 (40.70.57.120)' can't be established.
+ECDSA key fingerprint is SHA256:YqNZ5b+BROQifzSQdRwJCXvtWqiTsQviErxboIpHPz0.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.57.120' (ECDSA) to the list of known hosts.
+VERSION_CODENAME=artful
+UBUNTU_CODENAME=artful
+root@publishing:~# ssh ubuntu@$vm_ip 'dpkg-query --show -cloud-init'
+dpkg-query: error: conflicting actions -c (--control-path) and -W (--show)
+
+Use --help for help about querying packages.
+root@publishing:~# ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+root@publishing:~#  ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log'
+/var/log/cloud-init.log:Traceback (most recent call last):
+root@publishing:~# ssh ubuntu@$vm_ip "sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list"
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo apt-get update
+Get:1 http://security.ubuntu.com/ubuntu artful-security InRelease [78.6 kB]
+Get:2 http://azure.archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
+Get:3 http://security.ubuntu.com/ubuntu artful-security/multiverse Sources [1172 B]
+Get:4 http://security.ubuntu.com/ubuntu artful-security/main Sources [42.0 kB]
+Get:5 http://security.ubuntu.com/ubuntu artful-security/universe Sources [10.2 kB]
+Get:6 http://security.ubuntu.com/ubuntu artful-security/restricted Sources [960 B]
+Get:7 http://security.ubuntu.com/ubuntu artful-security/main amd64 Packages [134 kB]
+Get:8 http://security.ubuntu.com/ubuntu artful-security/main Translation-en [58.2 kB]
+Get:9 http://security.ubuntu.com/ubuntu artful-security/universe amd64 Packages [44.5 kB]
+Get:10 http://security.ubuntu.com/ubuntu artful-security/universe Translation-en [27.5 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu artful-updates InRelease [78.6 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu artful-backports InRelease [72.2 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu artful-proposed/universe Sources [8472 B]
+Get:14 http://azure.archive.ubuntu.com/ubuntu artful-proposed/main Sources [23.8 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [73.4 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [30.2 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu artful-proposed/universe amd64 Packages [31.2 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu artful-proposed/universe Translation-en [18.2 kB]
+Get:19 http://azure.archive.ubuntu.com/ubuntu artful-updates/main Sources [84.9 kB]
+Get:20 http://azure.archive.ubuntu.com/ubuntu artful-updates/multiverse Sources [1172 B]
+Get:21 http://azure.archive.ubuntu.com/ubuntu artful-updates/universe Sources [23.9 kB]
+Get:22 http://azure.archive.ubuntu.com/ubuntu artful-updates/restricted Sources [960 B]
+Get:23 http://azure.archive.ubuntu.com/ubuntu artful-updates/main amd64 Packages [214 kB]
+Get:24 http://azure.archive.ubuntu.com/ubuntu artful-updates/main Translation-en [94.9 kB]
+Get:25 http://azure.archive.ubuntu.com/ubuntu artful-updates/universe amd64 Packages [86.5 kB]
+Get:26 http://azure.archive.ubuntu.com/ubuntu artful-updates/universe Translation-en [49.1 kB]
+Get:27 http://azure.archive.ubuntu.com/ubuntu artful-backports/main Sources [1192 B]
+Get:28 http://azure.archive.ubuntu.com/ubuntu artful-backports/universe Sources [1772 B]
+Fetched 1527 kB in 1s (908 kB/s)
+Reading package lists...
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 17 not upgraded.
+Need to get 342 kB of archives.
+After this operation, 47.1 kB of additional disk space will be used.
+Get:1 http://azure.archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~17.10.1 [342 kB]
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 342 kB in 0s (535 kB/s)
+(Reading database ... 65833 files and directories currently installed.)
+Preparing to unpack .../cloud-init_17.2-35-gf576b2a2-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.1) over (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
+Processing triggers for rsyslog (8.16.0-1ubuntu9) ...
+Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo cloud-init init
+Cloud-init v. 17.2 running 'init' at Fri, 23 Feb 2018 17:33:28 +0000. Up 222.03 seconds.
+ci-info: +++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address  |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | eth0:  | True |  10.0.0.5 | 255.255.255.0 |   .   | 00:0d:3a:05:40:78 |
+ci-info: | eth0:  | True |     .     |       .       |   d   | 00:0d:3a:05:40:78 |
+ci-info: |  lo:   | True | 127.0.0.1 |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |     .     |       .       |   d   |         .         |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   2   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   3   |     10.0.0.1    | 0.0.0.0  | 255.255.255.255 |    eth0   |   UH  |
+ci-info: |   4   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   5   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo cloud-init status --long
+status: done
+time: Fri, 23 Feb 2018 17:33:28 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+root@publishing:~# ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+/var/log/cloud-init.log:Traceback (most recent call last):
+root@publishing:~# vi /var/log/cloud-init.log 
+root@publishing:~# ssh ubuntu@$vm_ip
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-36-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+17 packages can be updated.
+0 updates are security updates.
+
+
+ubuntu@my-a1:~$ vi /var/log/cloud-init.log 
+/Tubuntu@my-a1:~$ exit
+logout
+Connection to 40.70.57.120 closed.
+root@publishing:~# # known traceback on ifupdown hostname bounce
+root@publishing:~# e: Unexpected error while running command.
+e:: command not found
+root@publishing:~# Command: ['sh', '-xc', 'i=$interface; x=0; ifdown $i || x=$?; ifup $i || x=$?; exit $x']
+Command:: command not found
+root@publishing:~# ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+root@publishing:~# # remove cloud-init artifacts to test 'fresh' boot scenario
+root@publishing:~# ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+Connection to 40.70.57.120 closed by remote host.
+root@publishing:~# ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:WUzCInFfohRDHEGJLvRod3sPE05pkAywiAuL2Dbtv5A.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/known_hosts:34
+  remove with:
+  ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.57.120"
+ECDSA host key for 40.70.57.120 has changed and you have requested strict checking.
+Host key verification failed.
+root@publishing:~#   ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.57.120"
+# Host 40.70.57.120 found: line 34
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+root@publishing:~# ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot'
+The authenticity of host '40.70.57.120 (40.70.57.120)' can't be established.
+ECDSA key fingerprint is SHA256:WUzCInFfohRDHEGJLvRod3sPE05pkAywiAuL2Dbtv5A.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.57.120' (ECDSA) to the list of known hosts.
+Connection to 40.70.57.120 closed by remote host.
+root@publishing:~#  ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:fzR+fNcO7ROY0lFQHJazgyX4P3I1mYJ1a8/3ec4rOg4.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/known_hosts:34
+  remove with:
+  ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.57.120"
+ECDSA host key for 40.70.57.120 has changed and you have requested strict checking.
+Host key verification failed.
+root@publishing:~#   ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.57.120"
+# Host 40.70.57.120 found: line 34
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+root@publishing:~# ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json
+The authenticity of host '40.70.57.120 (40.70.57.120)' can't be established.
+ECDSA key fingerprint is SHA256:fzR+fNcO7ROY0lFQHJazgyX4P3I1mYJ1a8/3ec4rOg4.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.57.120' (ECDSA) to the list of known hosts.
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+root@publishing:~# ssh ubuntu@$vm_ip -- cloud-init status --long
+status: done
+time: Fri, 23 Feb 2018 17:42:16 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+root@publishing:~# ssh ubuntu@$vm_ip -- cloud-init status --wait # should not block
+
+status: done
+root@publishing:~# ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*
+
+root@publishing:~# ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init
+
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.1
+root@publishing:~# # Check generalized instance data per 0cf6db36
+root@publishing:~# ssh ubuntu@$vm_ip -- cat /run/cloud-init/instance-data.json
+cat: /run/cloud-init/instance-data.json: Permission denied
+root@publishing:~# ^C
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json
+{
+ "base64-encoded-keys": [
+  "ds/meta-data/random_seed"
+ ],
+ "ds": {
+  "meta-data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "instance-id": "9DE1BAB4-6B11-AA46-9632-EEFFE487C23F",
+   "local-hostname": "my-a1",
+   "random_seed": "T0VNMGQAAAABFVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ=="
+  },
+  "user-data": "",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": null,
+  "cloud-name": "azure",
+  "instance-id": "9DE1BAB4-6B11-AA46-9632-EEFFE487C23F",
+  "local-hostname": "my-a1",
+  "region": null
+ }
+}
+root@publishing:~# # End artful test
+
