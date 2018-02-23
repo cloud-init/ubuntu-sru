@@ -14,8 +14,8 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [#1734991](http://pad.lv/1734991) | ✗ [verification output](../bugs/lp-1734991.txt) |
-| [#1741093](http://pad.lv/1741093) | ✗ [verification output](../bugs/lp-1741093.txt) |
+| [#1734991](http://pad.lv/1734991) | ✔ [verification output](../bugs/lp-1734991.txt) |
+| [#1741093](http://pad.lv/1741093) | ✔ [verification output](../bugs/lp-1741093.txt) |
 | [#1719157,#1716397,#1736750](http://pad.lv/1719157) | ✗ [ping author/owner] |
 | [#1670456,#1707033,#1707037,#1707039](http://pad.lv/1670456) | ✗ [ping author/owner] |
 | [#1742479](http://pad.lv/1742479) | ✗ [ping author/owner] |
