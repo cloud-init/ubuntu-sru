@@ -1,0 +1,61 @@
+http://pad.lv/1712680
+
+=== Begin SRU Template ===
+[Impact]
+Automatically regenerating network every reboot of MAAS would effectively trunacte any user-changed network configuration across reboots.
+
+[Test Case]
+
+# Change maas curtin_userdata preseeds for xenial and artful to install cloud-init proposed images
+# Per https://gist.github.com/smoser/e917b2873aff767cb454cb0513a564a4#add-proposed-and-install-a-specific-package
+$ for release in xenial artful;
+  do
+    # deploy node via MAAS for this $release;
+    ssh ubuntu@<node-ip> grep CODE /etc/os-release;
+    ssh ubuntu@<node-ip> "sudo sed -i 's/auto lo/i #SAMIAM' /etc/network/interfaces.d/50-cloud-init.cfg";
+    ssh ubuntu@<node-ip> sudo reboot;
+    ssh ubuntu@<node-ip> grep SAMIAM etc/network/interfaces.d/50-cloud-init.cfg;
+  done
+
+[Regression Potential]
+Regression potential is minimal as worst case scenario is that we keep freshing network data as the original bug reported.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=
+
+=== End SRU Template ===
+
+
+=== SRU abridged verification output ===
+### xenial
+$ ssh ubuntu@10.5.1.17 grep CODE /etc/os-release;
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+
+$ ssh ubuntu@10.5.1.17 "sudo sed -i '/auto lo/i #SAMIAM' /etc/network/interfaces.d/50-cloud-init.cfg";
+$ ssh ubuntu@10.5.1.17 sudo reboot;
+$ ssh ubuntu@10.5.1.17 grep SAMIAM /etc/network/interfaces.d/50-cloud-init.cfg
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+#SAMIAM
+$ ssh ubuntu@10.5.1.17 -- dpkg-query --show cloud-init
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.1
+
+
+# artful uses netplan files instead
+$ ssh ubuntu@10.5.1.17 "sudo sed -i '/network:/i #SAMIAM' /etc/netplan/50-cloud-init.yaml";
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+$ ssh ubuntu@10.5.1.17 sudo reboot;
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+packet_write_wait: Connection to UNKNOWN port 0: Broken pipe
+$ ssh ubuntu@10.5.1.17 grep SAMIAM /etc/netplan/50-cloud-init.yaml
+ssh_exchange_identification: Connection closed by remote host
+$ ssh ubuntu@10.5.1.17 grep SAMIAM /etc/netplan/50-cloud-init.yaml
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+#SAMIAM
+$ ssh ubuntu@10.5.1.17 -- dpkg-query --show cloud-init
+Warning: Permanently added '10.5.1.17' (ECDSA) to the list of known hosts.
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.1
+$ 
