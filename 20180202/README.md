@@ -21,8 +21,7 @@ The links listed below are to bugs bugs fixed in this SRU are as follows. Links 
 | [#1742479](http://pad.lv/1742479) | ✔ [ping author/owner] |
 | [#1712680](http://pad.lv/1712680) | ✔ [verification output](../bugs/lp-1712680.txt) |
 | [#1722668](http://pad.lv/1722668) | ✔ [verification output](../bugs/lp-1722668.txt) |
-| [#1737704](http://pad.lv/1737704) | ✗ [verification output](../bugs/lp-1737704.txt) |
-| [#1731868](http://pad.lv/1731868) | ✗ [verification output](../bugs/lp-1731868.txt) |
+| [#1737704](http://pad.lv/1737704) | ✔ [verification output](../bugs/lp-1737704.txt) |
 | - cli: Add clean and status subcommands \[[30b4d157](https://git.launchpad.net/cloud-init/commit/?id=30b4d157)\] | ✔ [verification output](../manual/ec2-sru-17.2.35.txt)|
 | EC2 manual xenial, artful | ✔ [verification output](../manual/ec2-sru-17.2.35.txt) |
 | Azure manual xenial, artful | ✔ [verification output](../manual/azure-sru-17.2.35.txt) |
