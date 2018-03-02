@@ -1,0 +1,81 @@
+http://pad.lv/1737704
+
+=== Begin SRU Template ===
+[Impact]
+Cloud-init ds-identify would raise an error from shell "_shwrap: d parameter not set" and cloud-init would fail to determine a valid datasource while attempting
+to skip non-cdrom iso9660 devices. The result is a warning message on login.
+
+[Test Case]
+Download and prepare a proposed cloudimg
+Boot that kvm image mounting a non-cdrom device file and ensure it's skipped without ds-identify error.
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=a30a3bb
+
+=== End SRU Template ===
+
+=== Abridged SRU verification output ====
+
+$ wget https://raw.githubusercontent.com/cloud-init/ubuntu-sru/master/bin/get-proposed-cloudimg
+
+$ chmod 755 get-proposed-cloudimg
+# It downloads a cloud image of a given release, and then creates a -proposed
+image with cloud-init upgraded.
+
+$ get-proposed-cloudimg xenial
+$ raw=xenial-server-cloudimg-amd64-proposed.raw
+
+# create a nocloud seed
+$ printf "%s\n%s\n%s\n%s\n" "#cloud-config" "password: passw0rd" \
+  "chpasswd: {expire: False}" "ssh_pwauth: True" > my-user-data
+$ echo "instance-id: i-abcdefg" > my-meta-data
+$ cloud-localds my-seed.img my-user-data my-meta-data
+
+# extract kernel from inside the image
+$ sudo mount-image-callback $raw -- mchroot sh -xc 'cat /boot/vmlinu?-*' > kernel
+
+# boot instance with disk backed by the raw disk above using /dev/vdb instead of /dev/sr0
+
+$ qemu-img create -f qcow2 -b $raw disk.img 10G
+$ qemu-system-x86_64 -enable-kvm \
+  -device virtio-net-pci,netdev=net00 \
+  -netdev type=user,id=net00 \
+  -drive file=disk.img,id=disk00,if=none,format=qcow2,index=0 \
+  -device virtio-blk,drive=disk00,serial=disk.img \
+  -drive file=my-seed.img,id=disk01,if=none,format=raw,index=1 \
+  -device virtio-blk,drive=disk01,serial=my-seed.img \
+  -m 768 -nographic 
+
+# log in, verify no error in ds-itentify.log and no warning message.
+[  OK  ] Reached target Cloud-init target.
+
+Ubuntu 16.04.4 LTS ubuntu ttyS0
+
+ubuntu login: ubuntu
+Password: 
+Last login: Tue Feb 27 21:31:33 UTC 2018 on ttyS0
+Welcome to Ubuntu 16.04.4 LTS (GNU/Linux 4.4.0-116-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+ubuntu@ubuntu:~$ fgrep -r shwrap /run/cloud-init/ds-identify.log 
+ubuntu@ubuntu:~$ 
+ubuntu@ubuntu:~$ grep Found /run/cloud-init/ds-identify.log 
+Found single datasource: NoCloud
+ubuntu@ubuntu:~$ grep skipping /run/cloud-init/ds-identify.log 
+skipping iso dev /dev/vdb  # proper skip message without shell error
+ubuntu@ubuntu:~$ dpkg-query --show cloud-init
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.
+
+=== End Abridged SRU verification output ====
+
