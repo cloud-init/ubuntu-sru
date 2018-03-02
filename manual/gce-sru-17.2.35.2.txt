@@ -1,0 +1,221 @@
+=== Begin Abridged manual verification GCE
+
+Manual verification of GCE for SRU-regression fix 17.2.35.2.
+Part of ../20180301/README.md.
+
+
+NOTE: Xenial didn't publish an SRU regression per cloud-init 17.2.35, it still is on 17.1.46 which properly processes user-data.
+
+
+# Xenial
+
+root@publishing:~# gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v20180224 --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml
+Created [https://www.googleapis.com/compute/v1/projects/cloud-init-testing/zones/us-central1-b/instances/xenial-sru-test].
+NAME             ZONE           MACHINE_TYPE   PREEMPTIBLE  INTERNAL_IP  EXTERNAL_IP    STATUS
+xenial-sru-test  us-central1-b  n1-standard-1               10.128.0.2   35.184.113.47  RUNNING
+root@publishing:~# gcloud compute ssh xenial-sru-test
+No zone specified. Using zone [us-central1-b] for instance: [xenial-sru-test].
+Warning: Permanently added 'compute.2904988054415753140' (ECDSA) to the list of known hosts.
+Enter passphrase for key '/root/.ssh/google_compute_engine': 
+Welcome to Ubuntu 16.04.4 LTS (GNU/Linux 4.13.0-1011-gcp x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+root@SRU-worked:~# dpkg-query --show cloud-init
+cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
+root@SRU-worked:~# hostname xenial-sru-test   # set it back so we can validate upgrade 
+root@SRU-worked:~# exit
+logout
+Connection to 35.184.113.47 closed.
+root@publishing:~# gcloud compute ssh xenial-sru-test
+... # Validating hostname presented in PS1
+Last login: Fri Mar  2 16:55:23 2018 from 67.174.121.94
+root@xenial-sru-test:~# rel=$(lsb_release -sc);
+root@xenial-sru-test:~# line=$(awk '$1 == "deb" && $2 ~ /ubuntu.com/ {
+>   printf("%s %s %s-proposed main universe\n", $1, $2, rel); exit(0) };
+>   ' "rel=$rel" /etc/apt/sources.list);
+root@xenial-sru-test:~# echo "$line" | sudo tee /etc/apt/sources.list.d/proposed.list
+deb http://us-central1.gce.archive.ubuntu.com/ubuntu/ xenial-proposed main universe
+root@xenial-sru-test:~# sudo apt-get update -q;
+Hit:1 http://us-central1.gce.archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://us-central1.gce.archive.ubuntu.com/ubuntu xenial-updates InRelease [102 kB]
+Get:3 http://us-central1.gce.archive.ubuntu.com/ubuntu xenial-backports InRelease [102 kB]
+Get:4 http://us-central1.gce.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
+...
+Reading package lists...
+root@xenial-sru-test:~# sudo apt-get install cloud-init;
+...
+The following packages will be upgraded:
+  cloud-init
+...
+Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.2) ...
+root@xenial-sru-test:~# # Clean cloud-init artifacts so cloud-init runs against fresh instance
+root@xenial-sru-test:~# sudo cloud-init clean --reboot --logs
+Connection to 35.184.113.47 closed by remote host.
+Connection to 35.184.113.47 closed.
+ERROR: (gcloud.compute.ssh) [/usr/bin/ssh] exited with return code [255].
+root@publishing:~# gcloud compute ssh xenial-sru-test
+No zone specified. Using zone [us-central1-b] for instance: [xenial-sru-test].
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+Welcome to Ubuntu 16.04.4 LTS (GNU/Linux 4.13.0-1011-gcp x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+26 packages can be updated.
+3 updates are security updates.
+
+
+Last login: Fri Mar  2 17:07:00 2018 from 67.174.121.94
+root@SRU-worked:~# # Note hostname properly updated
+root@SRU-worked:~# dpkg-query --show cloud-init
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.2
+root@SRU-worked:~# cloud-init status --long
+status: done
+time: Fri, 02 Mar 2018 17:13:08 +0000
+detail:
+DataSourceGCE
+root@SRU-worked:~# grep Trace /var/log/cloud-init.log    # No traces
+# user-data b64encoded values present in instance-data.json
+root@SRU-worked:~# grep user-data /run/cloud-init/instance-data.json 
+  "ds/user-data"
+   "instance-data": "{\"user-data\":\"#cloud-config\\nhostname: SRU-worked\\n\"}",
+  "user-data": "I2Nsb3VkLWNvbmZpZwpob3N0bmFtZTogU1JVLXdvcmtlZAo=",
+=
+root@SRU-worked:~# grep CODE /etc/os-release 
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+root@SRU-worked:~# 
+
+### Artful
+root@publishing:~# gcloud compute ssh artful-sru-test
+No zone specified. Using zone [us-central1-b] for instance: [artful-sru-test].
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:qnFD0APJ/VAfRHXrYshvasMsvAjmJ/R6/lmmXQzGx6w.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/google_compute_known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/google_compute_known_hosts:4
+  remove with:
+  ssh-keygen -f "/root/.ssh/google_compute_known_hosts" -R "compute.5802718818769095753"
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+Enter passphrase for key '/root/.ssh/google_compute_engine': 
+Enter passphrase for key '/root/.ssh/google_compute_engine': 
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-36-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * Meltdown, Spectre and Ubuntu: What are the attack vectors,
+   how the fixes work, and everything else you need to know
+   - https://ubu.one/u2Know
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+Last login: Fri Mar  2 15:51:05 2018 from 67.174.121.94
+root@artful-sru-test:~# dpkg-query --show cloud-init
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.1
+root@artful-sru-test:~# # add proposed
+root@artful-sru-test:~# rel=$(lsb_release -sc);
+root@artful-sru-test:~# line=$(awk '$1 == "deb" && $2 ~ /ubuntu.com/ {
+>   printf("%s %s %s-proposed main universe\n", $1, $2, rel); exit(0) };
+>   ' "rel=$rel" /etc/apt/sources.list);
+root@artful-sru-test:~# echo "$line" | sudo tee /etc/apt/sources.list.d/proposed.list
+deb http://us-central1.gce.archive.ubuntu.com/ubuntu/ artful-proposed main universe
+root@artful-sru-test:~# sudo apt-get update -q;
+
+Hit:1 http://us-central1.gce.archive.ubuntu.com/ubuntu artful InRelease
+Get:2 http://us-central1.gce.archive.ubuntu.com/ubuntu artful-updates InRelease [78.6 kB]
+Get:3 http://us-central1.gce.archive.ubuntu.com/ubuntu artful-backports InRelease [72.2 kB]
+Get:4 http://us-central1.gce.archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
+...
+Reading package lists...
+root@artful-sru-test:~# sudo apt-get install cloud-init;
+...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 342 kB of archives.
+After this operation, 1024 B of additional disk space will be used.
+Get:1 http://us-central1.gce.archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~17.10.2 [342 kB]
+...
+Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+root@artful-sru-test:~# # Reboot 'clean' allowing new cloud-init to run against a fresh system
+root@artful-sru-test:~# sudo cloud-init clean --reboot --logs
+Connection to 35.184.113.47 closed by remote host.
+Connection to 35.184.113.47 closed.
+ERROR: (gcloud.compute.ssh) [/usr/bin/ssh] exited with return code [255].
+Connection to 35.184.113.47 closed by remote host.
+Connection to 35.184.113.47 closed.
+No zone specified. Using zone [us-central1-b] for instance: [artful-sru-test].
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+...
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-36-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * Meltdown, Spectre and Ubuntu: What are the attack vectors,
+   how the fixes work, and everything else you need to know
+   - https://ubu.one/u2Know
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+14 packages can be updated.
+2 updates are security updates.
+
+
+Last login: Fri Mar  2 16:43:32 2018 from 67.174.121.94
+root@SRU-worked:~# dpkg-query --show cloud-initcloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.2
+root@SRU-worked:~# # <--- Note proper user-data hostname
+root@SRU-worked:~# sudo grep user-data /run/cloud-init/instance-data.json   "ds/user-data"
+   "instance-data": "{\"user-data\":\"#cloud-config\\nhostname: SRU-worked\\n\"}",
+  "user-data": "I2Nsb3VkLWNvbmZpZwpob3N0bmFtZTogU1JVLXdvcmtlZAo=",
+root@SRU-worked:~# # ^ user-data populated with b64encoded contentroot@SRU-worked:~# sudo cloud-init status --long
+gstatus: done
+time: Fri, 02 Mar 2018 16:45:22 +0000
+detail:
+DataSourceGCE
+root@SRU-worked:~# grep Trace /var/log/cloud-init*
+root@SRU-worked:~# 
+

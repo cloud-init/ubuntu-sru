@@ -15,9 +15,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [#1752711](http://pad.lv/1752711) | ✗ [verification output](../bugs/lp-1752711.txt) |
-| EC2 manual xenial, artful | ✗ [verification output](../manual/ec2-sru-17.2.35.2.txt) |
-| Azure manual xenial, artful | ✗ [verification output](../manual/azure-sru-17.2.35.2.txt) |
-| GCE manual xenial, artful | ✗ [verification output](../manual/gce-sru-17.2.35.2.txt) |
-| Nocloud-kvm logs xenial | ✗ [verification output](../manual/nocloud-kvm-sru-17.2.35.2.txt) |
-| Nocloud-lxd logs xenial, artful | ✗ [verification output](../manual/nocloud-lxd-sru-17.2.35.2.txt) |
+| [#1752711](http://pad.lv/1752711) | ✔ [verification output](../bugs/lp-1752711.txt) |
+| EC2 manual xenial, artful | ✔ [verification output](../manual/ec2-sru-17.2.35.2.txt) |
+| GCE manual xenial, artful | ✔ [verification output](../manual/gce-sru-17.2.35.2.txt) |
+| Nocloud-lxd logs xenial, artful | ✔ [verification output](../manual/nocloud-lxd-sru-17.2.35.2.txt) |
