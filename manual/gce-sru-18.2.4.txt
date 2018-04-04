@@ -1,265 +1,32 @@
 ==== GCE Xenial upgrade and fresh install test 17.1.46 -> 17.2.35 ====
-# Deployed via cloud.google.com  web portal
+# Deployed via gcloud CLI with userdata
+$ cat > sethostname.yaml << EOF
+#cloud-config
+ssh_import_id: [chad.smith]
+hostname: SRU-worked
+EOF
 
-# Xenial instance
-$ ssh ubuntu@35.230.37.129
-ubuntu@xenial-sru:~$ dpkg-query --show cloud-init
-cloud-init	17.1-46-g7acc9e68-0ubuntu1~16.04.1
-ubuntu@xenial-sru:~$ sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
-ubuntu@xenial-sru:~$ sudo apt-get update
-Get:1 http://us-west1.gce.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
-...
-ubuntu@xenial-sru:~$ sudo apt install cloud-init
-...
-The following packages will be upgraded:
-  cloud-init
-Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.1) over (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
-ubuntu@xenial-sru:~$ sudo cat /run/cloud-init/result.json 
-{
- "v1": {
-  "datasource": "DataSourceGCE",
-  "errors": []
- }
-}
-ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init.log 
-ubuntu@xenial-sru:~$ sudo cloud-init init
-Cloud-init v. 17.2 running 'init' at Fri, 23 Feb 2018 05:37:35 +0000. Up 195.15 seconds.
-ci-info: +++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
-ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
-ci-info: | Device |  Up  |         Address          |       Mask      | Scope |     Hw-Address    |
-ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
-ci-info: |  ens4  | True |        10.138.0.2        | 255.255.255.255 |   .   | 42:01:0a:8a:00:02 |
-ci-info: |  ens4  | True | fe80::4001:aff:fe8a:2/64 |        .        |  link | 42:01:0a:8a:00:02 |
-ci-info: |   lo   | True |        127.0.0.1         |    255.0.0.0    |   .   |         .         |
-ci-info: |   lo   | True |         ::1/128          |        .        |  host |         .         |
-ci-info: +--------+------+--------------------------+-----------------+-------+-------------------+
-ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ci-info: |   0   |   0.0.0.0   | 10.138.0.1 |     0.0.0.0     |    ens4   |   UG  |
-ci-info: |   1   |  10.138.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init*
-ubuntu@xenial-sru:~$ # clean cloud-init artifacts to simulate fresh system boot
-ubuntu@xenial-sru:~$ sudo cloud-init clean --logs --reboot
-Connection to 35.230.37.129 closed by remote host.
-Connection to 35.230.37.129 closed.
-csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R 35.230.37.129
-# Host 35.230.37.129 found: line 1191
-/home/csmith/.ssh/known_hosts updated.
-Original contents retained as /home/csmith/.ssh/known_hosts.old
-csmith@uptown:~$ ssh ubuntu@35.230.37.129
-The authenticity of host '35.230.37.129 (35.230.37.129)' can't be established.
-ECDSA key fingerprint is SHA256:to/wKtIfbpCH3oR/qXs7u48REmb4foGW71d1zj9pliE.
-Are you sure you want to continue connecting (yes/no)? yes
-ubuntu@xenial-sru:~$ dpkg-query --show cloud-initcloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.1
-ubuntu@xenial-sru:~$ grep Trace /var/log/cloud-init*
-ubuntu@xenial-sru:~$ sudo cat /run/cloud-init/result.json {
- "v1": {
-  "datasource": "DataSourceGCE",
-  "errors": []
- }
-}
-ubuntu@xenial-sru:~$ cloud-init status --long
-status: done
-time: Fri, 23 Feb 2018 05:38:56 +0000
-detail:
-DataSourceGCE
+# Xenial instance with user-data
 
+gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v20180404 --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
 
-# Artful sru manual upgrade/fresh boot test
-csmith@uptown:~$ ssh ubuntu@35.199.163.1
-The authenticity of host '35.199.163.1 (35.199.163.1)' can't be established.
-ECDSA key fingerprint is SHA256:2uzdBqDLv/GmYcRDSU2bGVA61lE73yNfBlll3saFLaI.
-Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added '35.199.163.1' (ECDSA) to the list of known hosts.
-Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-36-generic x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/advantage
-
-  Get cloud support with Ubuntu Advantage Cloud Guest:
-    http://www.ubuntu.com/business/services/cloud
-
-0 packages can be updated.
-0 updates are security updates.
+GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
+ssh $GCE_VM -- dpkg-query --show cloud-init;
+ssh $GCE_VM "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
+ssh $GCE_VM sudo apt-get update;
 
 
 
-The programs included with the Ubuntu system are free software;
-the exact distribution terms for each program are described in the
-individual files in /usr/share/doc/*/copyright.
+ssh $GCE_VM sudo apt install cloud-init;
+ssh $GCE_VM sudo cat /run/cloud-init/result.json;
+ssh $GCE_VM grep Trace /var/log/cloud-init.log; 
+ssh $GCE_VM sudo cloud-init init;
+ssh $GCE_VM grep Trace /var/log/cloud-init.log; 
+ssh $GCE_VM sudo cloud-init clean --logs --reboot;
+ssh $GCE_VM  -- dpkg-query --show cloud-init
 
-Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
-applicable law.
+ssh $GCE_VM grep Trace /var/log/cloud-init*
+ssh $GCE_VM sudo cat /run/cloud-init/result.json
+ssh $GCE_VM cloud-init status --long
 
-To run a command as administrator (user "root"), use "sudo <command>".
-See "man sudo_root" for details.
-
-ubuntu@artful-sru:~$ dpkg-query --show cloud-init
-cloud-init	17.1-46-g7acc9e68-0ubuntu1~17.10.1
-ubuntu@artful-sru:~$ cat /run/cloud-init/result.json 
-{
- "v1": {
-  "datasource": "DataSourceGCE",
-  "errors": []
- }
-}
-ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*
-ubuntu@artful-sru:~$ sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
-ubuntu@artful-sru:~$ sudo apt-get update
-Get:1 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
-Get:2 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates InRelease [78.6 kB]
-Get:3 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-backports InRelease [72.2 kB]
-Get:4 http://security.ubuntu.com/ubuntu artful-security InRelease [78.6 kB]    u
-Hit:5 http://archive.canonical.com/ubuntu artful InRelease                     d
-Get:6 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/main Sources [23.8 kB]
-Get:7 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/universe Sources [8472 B]
-Get:8 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [73.4 kB]
-Get:9 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [30.2 kB]
-Get:10 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/universe amd64 Packages [31.2 kB]
-Get:11 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/universe Translation-en [18.2 kB]
-Get:12 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/restricted Sources [960 B]
-Get:13 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/universe Sources [23.9 kB]
-Get:14 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/multiverse Sources [1172 B]
-Get:15 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/main Sources [84.9 kB]
-Get:16 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/main amd64 Packages [214 kB]
-Get:17 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/main Translation-en [94.9 kB]
-Get:18 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/universe amd64 Packages [86.5 kB]
-Get:19 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-updates/universe Translation-en [49.1 kB]
-Get:20 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-backports/universe Sources [1772 B]
-Get:21 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-backports/main Sources [1192 B]
-Get:22 http://security.ubuntu.com/ubuntu artful-security/multiverse Sources [1172 B]
-Get:23 http://security.ubuntu.com/ubuntu artful-security/universe Sources [10.2 kB]
-Get:24 http://security.ubuntu.com/ubuntu artful-security/restricted Sources [960 B]
-Get:25 http://security.ubuntu.com/ubuntu artful-security/main Sources [42.0 kB]
-Get:26 http://security.ubuntu.com/ubuntu artful-security/main amd64 Packages [134 kB]
-Get:27 http://security.ubuntu.com/ubuntu artful-security/main Translation-en [58.2 kB]
-Get:28 http://security.ubuntu.com/ubuntu artful-security/universe amd64 Packages [44.5 kB]
-Get:29 http://security.ubuntu.com/ubuntu artful-security/universe Translation-en [27.5 kB]
-Fetched 1527 kB in 1s (993 kB/s)          
-Reading package lists... Done
-ubuntu@artful-sru:~$ sudo apt-get install cloud-init
-Reading package lists... Done
-Building dependency tree       
-Reading state information... Done
-The following packages will be upgraded:
-  cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 17 not upgraded.
-Need to get 342 kB of archives.
-After this operation, 47.1 kB of additional disk space will be used.
-Get:1 http://us-west1.gce.archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~17.10.1 [342 kB]
-Fetched 342 kB in 0s (622 kB/s)
-Preconfiguring packages ...
-(Reading database ... 69416 files and directories currently installed.)
-Preparing to unpack .../cloud-init_17.2-35-gf576b2a2-0ubuntu1~17.10.1_all.deb ...
-Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.1) over (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
-Processing triggers for rsyslog (8.16.0-1ubuntu9) ...
-Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.1) ...
-ubuntu@artful-sru:~$ cat /run/cloud-init/result.json 
-{
- "v1": {
-  "datasource": "DataSourceGCE",
-  "errors": []
- }
-}
-ubuntu@artful-sru:~$ sudo cloud-init init
-Cloud-init v. 17.2 running 'init' at Fri, 23 Feb 2018 05:47:18 +0000. Up 224.26 seconds.
-ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
-ci-info: +--------+------+------------+-----------------+-------+-------------------+
-ci-info: | Device |  Up  |  Address   |       Mask      | Scope |     Hw-Address    |
-ci-info: +--------+------+------------+-----------------+-------+-------------------+
-ci-info: | ens4:  | True | 10.138.0.3 | 255.255.255.255 |   .   | 42:01:0a:8a:00:03 |
-ci-info: | ens4:  | True |     .      |        .        |   d   | 42:01:0a:8a:00:03 |
-ci-info: |  lo:   | True | 127.0.0.1  |    255.0.0.0    |   .   |         .         |
-ci-info: |  lo:   | True |     .      |        .        |   d   |         .         |
-ci-info: +--------+------+------------+-----------------+-------+-------------------+
-ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ci-info: |   0   |   0.0.0.0   | 10.138.0.1 |     0.0.0.0     |    ens4   |   UG  |
-ci-info: |   1   |   0.0.0.0   | 10.138.0.1 |     0.0.0.0     |    ens4   |   UG  |
-ci-info: |   2   |  10.138.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
-ci-info: |   3   |  10.138.0.1 |  0.0.0.0   | 255.255.255.255 |    ens4   |   UH  |
-ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*
-ubuntu@artful-sru:~$  # clean cloud-init artifacts to simulate fresh system bootubuntu@artful-sru:~$ sudo cloud-init clean --logs --reboot
-Connection to 35.199.163.1 closed by remote host.
-Connection to 35.199.163.1 closed.
-csmith@uptown:~$ ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R 35.199.163.1
-# Host 35.199.163.1 found: line 1192
-/home/csmith/.ssh/known_hosts updated.
-Original contents retained as /home/csmith/.ssh/known_hosts.old
-csmith@uptown:~$ ssh ubuntu@35.199.163.1The authenticity of host '35.199.163.1 (35.199.163.1)' can't be established.
-ECDSA key fingerprint is SHA256:cx5s6OxhRPTOyAFJHRetQEMTBPRiKEiMzPXAygbn+dw.
-Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added '35.199.163.1' (ECDSA) to the list of known hosts.
-Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-36-generic x86_64)
-
- * Documentation:  https://help.ubuntu.com
- * Management:     https://landscape.canonical.com
- * Support:        https://ubuntu.com/advantage
-
-
-  Get cloud support with Ubuntu Advantage Cloud Guest:
-    http://www.ubuntu.com/business/services/cloud
-
-17 packages can be updated.
-0 updates are security updates.
-
-
-Last login: Fri Feb 23 05:45:32 2018 from 67.174.121.94
-ubuntu@artful-sru:~$ dpkg-query --show cloud-init
-cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.1
-ubuntu@artful-sru:~$ grep Trace /var/log/cloud-init*
-ubuntu@artful-sru:~$ cat /run/cloud-init/result.json 
-{
- "v1": {
-  "datasource": "DataSourceGCE",
-  "errors": []
- }
-}
-ubuntu@artful-sru:~$ cloud-init status --long
-status: done
-time: Fri, 23 Feb 2018 05:48:58 +0000
-detail:
-DataSourceGCE
-ubuntu@artful-sru:~$ sudo cat /run/cloud-init/instance-data.json 
-{
- "base64-encoded-keys": [],
- "ds": {
-  "meta-data": {
-   "availability-zone": "us-west1-b",
-   "instance-data": "{\"ssh-keys\":\"csmith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB csmith@fringe\"}",
-   "instance-id": "4502373016992356122",
-   "local-hostname": "artful-sru.c.cloud-init-testing.internal",
-   "project-data": "{\"google-compute-default-region\":\"us-west1\",\"google-compute-default-zone\":\"us-west1-b\",\"ssh-keys\":\"chad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDrqV3fKl685jHUgXmaMKVzHyQikafhGpVmozQZrdnSd4PR9CApetsdRsquzGxOf1l3T8Mx4LWHEihHBj2LV24AFDLFciJxoiKrqy6p0F0fXD4ITGAQiyNWblPllFO62P9BIu4vrG+P8vYaVALJdB8J29gdqjNgfvws8PF3UYYKKjtuiULXIFVW3L03JZPpk+iHIzzZgVQjzeuiPS7Y7KVXrFaQIR1YvTeZUyRtvdI0YZnYclb3qiL8lcLsIWjEiQALJgRTt3mrnDzZ+F/XII2wJBp0lGvva2XVNp1AIaH6Tub8SpStUR7Is3HMLNhnnVlPpMAWxe3ASc6S3o4dlRSh google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2018-02-23T05:37:39+0000\\\"}\\nchad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqzjNKgqmvkd6mvkBZGUTLbrnjL847fm/VS9ci3CI6rYlvzhg860M170netc6jWwF4u8nqnIjaTwBWl3h2gbb4= google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2018-02-23T05:37:37+0000\\\"}\\npowersj:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w== powersj@x1\\n\",\"sshKeys\":\"chad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqMv+yV3qUQiDNF9Ykqwd/J06lQnIN67fGIB5Cukvin+3I8wXQwOtB+TmqJGUDlIwoeK6L3cc9VLxl8ujJ+Dg4= google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2017-09-21T19:49:16+0000\\\"}\\nchad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGc4eocDyJDifmxxETICup2XiAU9cDRp9oYXETvEMy5bLr3/W+hQDQ00rqUQgKffFgohucqwYqv0lJ6LVJ+w/9aDViVN9c8wKzBwXFWAaDKYBizaHtxwwb+WegJCj5GvTJVZ6GvL7AV1p+b7DbKoUvEjuREt7w64ocmVZO84/k56OrnafqcGk3FS7ZJ6peUHflc81bp/IvtkOKwMyd2TCk5FX0sT6cV9GI+itMuGrDrN33+q3Y8Rdo6wz6PTl0kutdD3WRpfK5e5b5Y048ssveyoThfOwcxERTtmRZTksKAOn0lCtw/7M3cYEZPDgjtClLj1d/hyKLzbUPbqbilEdAc= google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2017-09-21T19:49:16+0000\\\"}\\nchad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqMv+yV3qUQiDNF9Ykqwd/J06lQnIN67fGIB5Cukvin+3I8wXQwOtB+TmqJGUDlIwoeK6L3cc9VLxl8ujJ+Dg4= google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2017-09-21T19:48:16+0000\\\"}\\nchad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGc4eocDyJDifmxxETICup2XiAU9cDRp9oYXETvEMy5bLr3/W+hQDQ00rqUQgKffFgohucqwYqv0lJ6LVJ+w/9aDViVN9c8wKzBwXFWAaDKYBizaHtxwwb+WegJCj5GvTJVZ6GvL7AV1p+b7DbKoUvEjuREt7w64ocmVZO84/k56OrnafqcGk3FS7ZJ6peUHflc81bp/IvtkOKwMyd2TCk5FX0sT6cV9GI+itMuGrDrN33+q3Y8Rdo6wz6PTl0kutdD3WRpfK5e5b5Y048ssveyoThfOwcxERTtmRZTksKAOn0lCtw/7M3cYEZPDgjtClLj1d/hyKLzbUPbqbilEdAc= google-ssh {\\\"userName\\\":\\\"chad.smith@canonical.com\\\",\\\"expireOn\\\":\\\"2017-09-21T19:48:16+0000\\\"}\\nrharper:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5ZqTCxWN7+0qe/JbK0/4wSXuFo2Hw0E00VaicVKM7RMCYTMmbDWalKrpqFLrxFLFty9QakrhT4RCcHOaiQ3ZFXsrfiUCfwZx+2cnU9jCqxWjJJpo1ehZWiZpBa1/dspLU3uahA0O2q4ZN/sx9zUAbccL0DvfZQ5sXci2Wp0fQo+krwb/ACqrthZvTDg58p3yoSS0PgbHolWKMcOFNtcXGVJxFqkSKjdia1o/BbEudsPoKiy3E6MNVrTXZXIaYfEKASkcorMWza2T8N0Tl5q3hZQS967vTsPruc/2Jp/e0jkAcDnfagKgPbJn+vvDIZHRAIpo3kgUS04u5flz58763 rharper@foudres\\n\"}",
-   "public-keys-data": [
-    "csmith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB csmith@fringe",
-    "chad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDrqV3fKl685jHUgXmaMKVzHyQikafhGpVmozQZrdnSd4PR9CApetsdRsquzGxOf1l3T8Mx4LWHEihHBj2LV24AFDLFciJxoiKrqy6p0F0fXD4ITGAQiyNWblPllFO62P9BIu4vrG+P8vYaVALJdB8J29gdqjNgfvws8PF3UYYKKjtuiULXIFVW3L03JZPpk+iHIzzZgVQjzeuiPS7Y7KVXrFaQIR1YvTeZUyRtvdI0YZnYclb3qiL8lcLsIWjEiQALJgRTt3mrnDzZ+F/XII2wJBp0lGvva2XVNp1AIaH6Tub8SpStUR7Is3HMLNhnnVlPpMAWxe3ASc6S3o4dlRSh google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2018-02-23T05:37:39+0000\"}",
-    "chad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqzjNKgqmvkd6mvkBZGUTLbrnjL847fm/VS9ci3CI6rYlvzhg860M170netc6jWwF4u8nqnIjaTwBWl3h2gbb4= google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2018-02-23T05:37:37+0000\"}",
-    "powersj:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w== powersj@x1",
-    "",
-    "chad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqMv+yV3qUQiDNF9Ykqwd/J06lQnIN67fGIB5Cukvin+3I8wXQwOtB+TmqJGUDlIwoeK6L3cc9VLxl8ujJ+Dg4= google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2017-09-21T19:49:16+0000\"}",
-    "chad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGc4eocDyJDifmxxETICup2XiAU9cDRp9oYXETvEMy5bLr3/W+hQDQ00rqUQgKffFgohucqwYqv0lJ6LVJ+w/9aDViVN9c8wKzBwXFWAaDKYBizaHtxwwb+WegJCj5GvTJVZ6GvL7AV1p+b7DbKoUvEjuREt7w64ocmVZO84/k56OrnafqcGk3FS7ZJ6peUHflc81bp/IvtkOKwMyd2TCk5FX0sT6cV9GI+itMuGrDrN33+q3Y8Rdo6wz6PTl0kutdD3WRpfK5e5b5Y048ssveyoThfOwcxERTtmRZTksKAOn0lCtw/7M3cYEZPDgjtClLj1d/hyKLzbUPbqbilEdAc= google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2017-09-21T19:49:16+0000\"}",
-    "chad_smith:ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBNqMv+yV3qUQiDNF9Ykqwd/J06lQnIN67fGIB5Cukvin+3I8wXQwOtB+TmqJGUDlIwoeK6L3cc9VLxl8ujJ+Dg4= google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2017-09-21T19:48:16+0000\"}",
-    "chad_smith:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAGc4eocDyJDifmxxETICup2XiAU9cDRp9oYXETvEMy5bLr3/W+hQDQ00rqUQgKffFgohucqwYqv0lJ6LVJ+w/9aDViVN9c8wKzBwXFWAaDKYBizaHtxwwb+WegJCj5GvTJVZ6GvL7AV1p+b7DbKoUvEjuREt7w64ocmVZO84/k56OrnafqcGk3FS7ZJ6peUHflc81bp/IvtkOKwMyd2TCk5FX0sT6cV9GI+itMuGrDrN33+q3Y8Rdo6wz6PTl0kutdD3WRpfK5e5b5Y048ssveyoThfOwcxERTtmRZTksKAOn0lCtw/7M3cYEZPDgjtClLj1d/hyKLzbUPbqbilEdAc= google-ssh {\"userName\":\"chad.smith@canonical.com\",\"expireOn\":\"2017-09-21T19:48:16+0000\"}",
-    "rharper:ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC5ZqTCxWN7+0qe/JbK0/4wSXuFo2Hw0E00VaicVKM7RMCYTMmbDWalKrpqFLrxFLFty9QakrhT4RCcHOaiQ3ZFXsrfiUCfwZx+2cnU9jCqxWjJJpo1ehZWiZpBa1/dspLU3uahA0O2q4ZN/sx9zUAbccL0DvfZQ5sXci2Wp0fQo+krwb/ACqrthZvTDg58p3yoSS0PgbHolWKMcOFNtcXGVJxFqkSKjdia1o/BbEudsPoKiy3E6MNVrTXZXIaYfEKASkcorMWza2T8N0Tl5q3hZQS967vTsPruc/2Jp/e0jkAcDnfagKgPbJn+vvDIZHRAIpo3kgUS04u5flz58763 rharper@foudres"
-   ]
-  },
-  "user-data": null,
-  "vendor-data": null
- },
- "v1": {
-  "availability-zone": "us-west1-b",
-  "cloud-name": "gce",
-  "instance-id": "4502373016992356122",
-  "local-hostname": "artful-sru",
-  "region": "us-west1"
- }
-}
-ubuntu@artful-sru:~$ 
 
