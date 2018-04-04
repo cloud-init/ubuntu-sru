@@ -15,7 +15,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| EC2 manual xenial, artful | ✔ [verification output](../manual/ec2-sru-18.2-4.txt) |
-| GCE manual xenial, artful | ✔ [verification output](../manual/gce-sru-18.2.4.txt) |
-| Azure manual xenial, artful | ✔ [verification output](../manual/gce-sru-18.2.4.txt) |
-| Nocloud-lxd logs xenial, artful | ✔ [verification output](../manual/nocloud-lxd-sru-18.2.4.txt |
+| EC2 manual xenial, artful | ✗ [verification output](../manual/ec2-sru-18.2-4.txt) |
+| GCE manual xenial, artful | ✗ [verification output](../manual/gce-sru-18.2.4.txt) |
+| Azure manual xenial, artful | ✗ [verification output](../manual/gce-sru-18.2.4.txt) |
+| Nocloud-lxd logs xenial, artful | ✗ [verification output](../manual/nocloud-lxd-sru-18.2.4.txt) |
