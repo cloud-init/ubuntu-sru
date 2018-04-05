@@ -5,10 +5,8 @@ This Readme hosts the manual SRU verification logs for bugs related to the cloud
 Given [cloud-init's exception process](https://wiki.ubuntu.com/CloudinitUpdates), Ubuntu SRUs will from this point forward create an general SRU process bug which will describe related bugs/features fixed in the given cloud-init SRU. A readme like this will exist to capture any manual SRU validation performed for specific bugs or features fixed in the SRU. Generally most of the features and bugs should be covered by cloud-init's conituous integration at https://jenkins.ubuntu.com/server/view/cloud-init/.
 
 
-03-01-2018 SRU: [launchpad process bug:#%SRU_PROCESS_BUG%](https://pad.lv/%SRU_PROCESS_BUG%)
+%SRU_START_DATE% SRU: [launchpad process bug:#%SRU_PROCESS_BUG%](https://pad.lv/%SRU_PROCESS_BUG%)
 
-
-This SRU is a SRU-regression fix for a single cherry-picked bug affecting only GCE instances.
 
 The links listed below are to bugs fixed in this SRU and the verification of those bugs.
 
