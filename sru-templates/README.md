@@ -17,7 +17,3 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 %BUG_VERIFICATION%
 %MANUAL_VERIFICATION%
-| [#1752711](http://pad.lv/1752711) | ✔ [verification output](../bugs/lp-1752711.txt) |
-| EC2 manual xenial, artful | ✔ [verification output](../manual/ec2-sru-17.2.35.2.txt) |
-| GCE manual xenial, artful | ✔ [verification output](../manual/gce-sru-17.2.35.2.txt) |
-| Nocloud-lxd logs xenial, artful | ✔ [verification output](../manual/nocloud-lxd-sru-17.2.35.2.txt) |
