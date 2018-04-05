@@ -8,8 +8,6 @@ Given [cloud-init's exception process](https://wiki.ubuntu.com/CloudinitUpdates)
 03-01-2018 SRU: [launchpad process bug:#1759406](https://pad.lv/1759406)
 
 
-This SRU is a SRU-regression fix for a single cherry-picked bug affecting only GCE instances.
-
 The links listed below are to bugs fixed in this SRU and the verification of those bugs.
 
 ## SRU verification content
