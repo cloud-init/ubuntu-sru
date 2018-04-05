@@ -1,103 +1,71 @@
 # Manual EC2 upgrade and clean install validation Xenial and Artful 
-csmith@uptown:~$ cat > sethostname.yaml <<EOF
-> #cloud-config
-> hostname: SRU-worked
-> EOF
+$ cat hostname.yaml 
+#cloud-config
+ssh_import_id: [raharper]
+hostname: sru-worked
+  
+## Start xenial manual ec2 verification ##
 
-csmith@uptown:~$ EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`
-csmith@uptown:~$     ssh $EC2_INST -- cat /run/cloud-init/result.json;
-The authenticity of host 'ec2-18-217-3-83.us-east-2.compute.amazonaws.com (18.217.3.83)' can't be established.
-ECDSA key fingerprint is SHA256:m1fSnv0w4fY4UEd/WJv5xhVr/im3uPHPDkltlPjdUZ0.
+$ ./launch-ec2 -u hostname.yaml -v -s xenial 
+Waiting for EC2 instance initialization size=t2.micro zone=us-east-2b
+Found EC2 instance: ssh ubuntu@ec2-13-58-194-161.us-east-2.compute.amazonaws.com
+
+$ EC2_INST=ubuntu@ec2-13-58-194-161.us-east-2.compute.amazonaws.com
+
+$ ssh $EC2_INST -- cat /run/cloud-init/result.json;The authenticity of host 'ec2-13-58-194-161.us-east-2.compute.amazonaws.com (13.58.194.161)' can't be established.
+ECDSA key fingerprint is SHA256:WpeIl74DT9xNY1Tjsue7uda44o+sybssBK5ek+8HSYs.
 Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added 'ec2-18-217-3-83.us-east-2.compute.amazonaws.com,18.217.3.83' (ECDSA) to the list of known hosts.
+Warning: Permanently added 'ec2-13-58-194-161.us-east-2.compute.amazonaws.com,13.58.194.161' (ECDSA) to the list of known hosts.
 {
  "v1": {
   "datasource": "DataSourceEc2Local",
   "errors": []
  }
 }
-csmith@uptown:~$     ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
 
-csmith@uptown:~$     ssh $EC2_INST "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list"
-sudo: unable to resolve host SRU-worked
-csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get update;
-sudo: unable to resolve host SRU-worked
-Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
-Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates InRelease [102 kB]
-Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports InRelease [102 kB]
-Get:4 http://security.ubuntu.com/ubuntu xenial-security InRelease [102 kB]
-Get:5 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/main Sources [18.3 kB]
-Get:6 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/universe Sources [28.8 kB]
-Get:7 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [38.2 kB]
-Get:8 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [18.0 kB]
-Get:9 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [35.7 kB]
-Get:10 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [18.1 kB]
-Get:11 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/main Sources [299 kB]
-Get:12 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/restricted Sources [2,524 B]
-Get:13 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/universe Sources [192 kB]
-Get:14 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/multiverse Sources [7,968 B]
-Get:15 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [737 kB]
-Get:16 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [593 kB]
-Get:17 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [240 kB]
-Get:18 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.2 kB]
-Get:19 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8,052 B]
-Get:20 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/main Sources [3,432 B]
-Get:21 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/universe Sources [4,900 B]
-Get:22 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [4,836 B]
-Get:23 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [3,220 B]
-Get:24 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [6,624 B]
-Get:25 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [3,768 B]
-Get:26 http://security.ubuntu.com/ubuntu xenial-security/main Sources [117 kB]
-Get:27 http://security.ubuntu.com/ubuntu xenial-security/restricted Sources [2,116 B]
-Get:28 http://security.ubuntu.com/ubuntu xenial-security/universe Sources [59.5 kB]
-Get:29 http://security.ubuntu.com/ubuntu xenial-security/multiverse Sources [1,516 B]
-Get:30 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [321 kB]
-Get:31 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [121 kB]
-Get:32 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [3,208 B]
-Get:33 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [1,408 B]
-Fetched 3,466 kB in 0s (3,798 kB/s)
-Reading package lists...
-csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get install cloud-init;
-sudo: unable to resolve host SRU-worked
-Reading package lists...
-Building dependency tree...
-Reading state information...
-The following packages will be upgraded:
-  cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 24 not upgraded.
-Need to get 346 kB of archives.
-After this operation, 49.2 kB of additional disk space will be used.
-Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~16.04.2 [346 kB]
+$ ssh $EC2_INST -- sudo systemd-analyze 
+sudo: unable to resolve host sru-worked
+Startup finished in 4.072s (kernel) + 9.891s (userspace) = 13.964s
+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init.log
+
+$ scp /home/ubuntu/cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1_all.deb $EC2_INST:
+cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1_all.deb           100%  347KB 346.7KB/s   00:00
+
+$ ssh $EC2_INST -- sudo dpkg --install cloud-init*.deb
+sudo: unable to resolve host sru-worked
+(Reading database ... 51143 files and directories currently installed.)
+Preparing to unpack cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) over (17.2-35-gf576b2a2-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
 debconf: unable to initialize frontend: Dialog
 debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
 debconf: falling back to frontend: Readline
-Fetched 346 kB in 1s (210 kB/s)
 debconf: unable to initialize frontend: Readline
 debconf: (This frontend requires a controlling tty.)
 debconf: falling back to frontend: Teletype
-dpkg-preconfigure: unable to re-open stdin: 
-(Reading database ... 51142 files and directories currently installed.)
-Preparing to unpack .../cloud-init_17.2-35-gf576b2a2-0ubuntu1~16.04.2_all.deb ...
-Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.2) over (17.1-46-g7acc9e68-0ubuntu1~16.04.1) ...
-Processing triggers for ureadahead (0.100.0-19) ...
-Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~16.04.2) ...
-debconf: unable to initialize frontend: Dialog
-debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
-debconf: falling back to frontend: Readline
 Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
-csmith@uptown:~$ ssh $EC2_INST hostname
-SRU-worked
-csmith@uptown:~$ ssh $EC2_INST sudo hostname something-else
-sudo: unable to resolve host SRU-worked
-csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init init;
+Processing triggers for ureadahead (0.100.0-19) ...
+
+$ ssh $EC2_INST hostname
+sru-worked
+
+$ ssh $EC2_INST hostname
+sru-worked
+
+$ ssh $EC2_INST sudo hostname something-else
+sudo: unable to resolve host sru-worked
+
+$ ssh $EC2_INST -- sudo cloud-init init;
 sudo: unable to resolve host something-else
-Cloud-init v. 17.2 running 'init' at Fri, 02 Mar 2018 17:45:12 +0000. Up 193.81 seconds.
+Cloud-init v. 18.2 running 'init' at Thu, 05 Apr 2018 16:15:31 +0000. Up 1106.16 seconds.
 ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
 ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
 ci-info: | Device |  Up  |           Address           |      Mask     | Scope |     Hw-Address    |
 ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
-ci-info: |  eth0  | True |         10.41.41.199        | 255.255.255.0 |   .   | 06:e0:dc:be:fc:ce |
-ci-info: |  eth0  | True | fe80::4e0:dcff:febe:fcce/64 |       .       |  link | 06:e0:dc:be:fc:ce |
+ci-info: |  eth0  | True |         10.41.41.162        | 255.255.255.0 |   .   | 06:70:d9:cb:c2:98 |
+ci-info: |  eth0  | True | fe80::470:d9ff:fecb:c298/64 |       .       |  link | 06:70:d9:cb:c2:98 |
 ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |   .   |         .         |
 ci-info: |   lo   | True |           ::1/128           |       .       |  host |         .         |
 ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
@@ -108,18 +76,19 @@ ci-info: +-------+-------------+------------+---------------+-----------+-------
 ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |    0.0.0.0    |    eth0   |   UG  |
 ci-info: |   1   |  10.41.41.0 |  0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
 ci-info: +-------+-------------+------------+---------------+-----------+-------+
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --wait;  # should not block
+
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N
+1522944984.257940544
 
 status: done
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long;
-status: done
-time: Fri, 02 Mar 2018 17:45:12 +0000
-detail:
-DataSourceEc2Local
-csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
-sudo: unable to resolve host something-else
-Connection to ec2-18-217-3-83.us-east-2.compute.amazonaws.com closed by remote host.
-csmith@uptown:~$     ssh $EC2_INST -- hostname;
+1522944985.379329393
+
+$ date --utc +%s.%N; ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+1522945041.149759757
+sudo: unable to resolve host sru-worked
+Connection to ec2-13-58-194-161.us-east-2.compute.amazonaws.com closed by remote host.
+
+$ ssh $EC2_INST -- hostname;
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -127,146 +96,110 @@ IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
 Someone could be eavesdropping on you right now (man-in-the-middle attack)!
 It is also possible that a host key has just been changed.
 The fingerprint for the ECDSA key sent by the remote host is
-SHA256:MAcZcTZWGqrPc7mFV2Nd73OPGDwEvu5nMoEqlnLC6oc.
+SHA256:cSRK7d3WGVGfSoGYs3dGFScaOHWvCqyXJoEGbs3BWag.
 Please contact your system administrator.
-Add correct host key in /home/csmith/.ssh/known_hosts to get rid of this message.
-Offending ECDSA key in /home/csmith/.ssh/known_hosts:1195
+Add correct host key in /home/ubuntu/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/ubuntu/.ssh/known_hosts:5
   remove with:
-  ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-217-3-83.us-east-2.compute.amazonaws.com
-ECDSA host key for ec2-18-217-3-83.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R ec2-13-58-194-161.us-east-2.compute.amazonaws.com
+ECDSA host key for ec2-13-58-194-161.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
 Host key verification failed.
-csmith@uptown:~$ 
-csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-217-3-83.us-east-2.compute.amazonaws.com
-# Host ec2-18-217-3-83.us-east-2.compute.amazonaws.com found: line 1195
-/home/csmith/.ssh/known_hosts updated.
-Original contents retained as /home/csmith/.ssh/known_hosts.old
-csmith@uptown:~$ ssh $EC2_INST hostname
-The authenticity of host 'ec2-18-217-3-83.us-east-2.compute.amazonaws.com (18.217.3.83)' can't be established.
-ECDSA key fingerprint is SHA256:MAcZcTZWGqrPc7mFV2Nd73OPGDwEvu5nMoEqlnLC6oc.
+
+$ ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R ec2-13-58-194-161.us-east-2.compute.amazonaws.com
+# Host ec2-13-58-194-161.us-east-2.compute.amazonaws.com found: line 5
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+
+$ ssh $EC2_INST -- hostname;
+The authenticity of host 'ec2-13-58-194-161.us-east-2.compute.amazonaws.com (13.58.194.161)' can't be established.
+ECDSA key fingerprint is SHA256:cSRK7d3WGVGfSoGYs3dGFScaOHWvCqyXJoEGbs3BWag.
 Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added 'ec2-18-217-3-83.us-east-2.compute.amazonaws.com,18.217.3.83' (ECDSA) to the list of known hosts.
-SRU-worked
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long;
+Warning: Permanently added 'ec2-13-58-194-161.us-east-2.compute.amazonaws.com' (ECDSA) to the list of known hosts.
+Warning: the ECDSA host key for 'ec2-13-58-194-161.us-east-2.compute.amazonaws.com' differs from the key for the IP address '13.58.194.161'
+Offending key for IP in /home/ubuntu/.ssh/known_hosts:5
+Are you sure you want to continue connecting (yes/no)? yes
+sru-worked
+
+$ ssh $EC2_INST -- cloud-init status --long;
 status: done
-time: Fri, 02 Mar 2018 17:45:59 +0000
+time: Thu, 05 Apr 2018 16:17:56 +0000
 detail:
 DataSourceEc2Local
-csmith@uptown:~$     ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
-sudo: unable to resolve host SRU-worked
-csmith@uptown:~$     ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
-sudo: unable to resolve host SRU-worked
+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+sudo: unable to resolve host sru-worked
   "ds/user-data"
-  "user-data": "I2Nsb3VkLWNvbmZpZwpob3N0bmFtZTogU1JVLXdvcmtlZAo=",
-csmith@uptown:~$     ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log
-2018-03-02 17:45:55,962 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'allow_redirects': True, 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'method': 'GET'} configuration
-2018-03-02 17:45:55,969 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
-2018-03-02 17:45:55,969 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'allow_redirects': True, 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'method': 'GET'} configuration
-2018-03-02 17:45:55,972 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
-2018-03-02 17:45:55,972 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'allow_redirects': True, 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'method': 'GET'} configuration
-2018-03-02 17:45:55,975 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 467b) after 1 attempts
-2018-03-02 17:45:55,976 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'allow_redirects': True, 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'method': 'GET'} configuration
-2018-03-02 17:45:55,980 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
-2018-03-02 17:45:55,980 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'allow_redirects': True, 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'method': 'GET'} configuration
-2018-03-02 17:45:55,982 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1106b) after 1 attempts
-csmith@uptown:~$     ssh $EC2_INST -- dpkg-query --show cloud-init
-cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.2
-csmith@uptown:~$ # Start artful manual ec2 verification
-csmith@uptown:~$ release=artful
-csmith@uptown:~$     echo "Handling $release";
-Handling artful
-csmith@uptown:~$     EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
-csmith@uptown:~$     ssh $EC2_INST -- cat /run/cloud-init/result.json;
-The authenticity of host 'ec2-18-219-25-147.us-east-2.compute.amazonaws.com (18.219.25.147)' can't be established.
-ECDSA key fingerprint is SHA256:9ynHMlz4egaQOk06MQA6tghg3Oh50Fp23/szZP4reOM.
-Are you sure you want to continue connecting (yes/no)? yes 
-Warning: Permanently added 'ec2-18-219-25-147.us-east-2.compute.amazonaws.com,18.219.25.147' (ECDSA) to the list of known hosts.
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkOiBbcmFoYXJwZXJdCmhvc3RuYW1lOiBzcnUtd29ya2VkCg==",
+
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log
+2018-04-05 16:17:52,118 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'timeout': 5.0, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'headers': {'User-Agent': 'Cloud-Init/18.2'}, 'allow_redirects': True, 'method': 'GET'} configuration
+2018-04-05 16:17:52,130 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-04-05 16:17:52,130 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'timeout': 5.0, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'headers': {'User-Agent': 'Cloud-Init/18.2'}, 'allow_redirects': True, 'method': 'GET'} configuration
+2018-04-05 16:17:52,136 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-04-05 16:17:52,136 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'timeout': 5.0, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'headers': {'User-Agent': 'Cloud-Init/18.2'}, 'allow_redirects': True, 'method': 'GET'} configuration
+2018-04-05 16:17:52,138 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-04-05 16:17:52,139 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'timeout': 5.0, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'headers': {'User-Agent': 'Cloud-Init/18.2'}, 'allow_redirects': True, 'method': 'GET'} configuration
+2018-04-05 16:17:52,144 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 467b) after 1 attempts
+2018-04-05 16:17:52,144 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'timeout': 5.0, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'headers': {'User-Agent': 'Cloud-Init/18.2'}, 'allow_redirects': True, 'method': 'GET'} configuration
+2018-04-05 16:17:52,146 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+
+$ ssh $EC2_INST -- sudo systemd-analyze 
+sudo: unable to resolve host sru-worked
+Startup finished in 3.946s (kernel) + 7.967s (userspace) = 11.913s
+
+
+## Start artful manual ec2 verification ##
+
+$ ./launch-ec2 -u hostname.yaml -v -s artful 
+Waiting for EC2 instance initialization size=t2.micro zone=us-east-2b
+Found EC2 instance: ssh ubuntu@ec2-18-221-231-241.us-east-2.compute.amazonaws.com
+
+$ ssh $EC2_INST -- cat /run/cloud-init/result.json;
 {
  "v1": {
   "datasource": "DataSourceEc2Local",
   "errors": []
  }
 }
-csmith@uptown:~$     ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
-csmith@uptown:~$     ssh $EC2_INST -- hostname;
-SRU-worked
-csmith@uptown:~$     ssh $EC2_INST "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list"
-csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get update;
-Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
-Get:2 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates InRelease [78.6 kB]
-Get:3 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports InRelease [72.2 kB]
-Get:4 http://security.ubuntu.com/ubuntu artful-security InRelease [78.6 kB]
-Get:5 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/universe Sources [8200 B]
-Get:6 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/main Sources [15.9 kB]
-Get:7 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [28.3 kB]
-Get:8 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [13.2 kB]
-Get:9 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/universe amd64 Packages [19.9 kB]
-Get:10 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/universe Translation-en [12.4 kB]
-Get:11 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/restricted Sources [960 B]
-Get:12 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/multiverse Sources [1172 B]
-Get:13 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/main Sources [86.6 kB]
-Get:14 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/universe Sources [26.0 kB]
-Get:15 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/main amd64 Packages [216 kB]
-Get:16 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/main Translation-en [96.2 kB]
-Get:17 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/universe amd64 Packages [89.9 kB]
-Get:18 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/universe Translation-en [51.2 kB]
-Get:19 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/multiverse amd64 Packages [1828 B]
-Get:20 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-updates/multiverse Translation-en [1124 B]
-Get:21 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/main Sources [1192 B]
-Get:22 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/universe Sources [1768 B]
-Get:23 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/main amd64 Packages [1516 B]
-Get:24 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/main Translation-en [668 B]
-Get:25 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/universe amd64 Packages [3412 B]
-Get:26 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-backports/universe Translation-en [1880 B]
-Get:27 http://security.ubuntu.com/ubuntu artful-security/main Sources [43.2 kB]
-Get:28 http://security.ubuntu.com/ubuntu artful-security/restricted Sources [960 B]
-Get:29 http://security.ubuntu.com/ubuntu artful-security/multiverse Sources [1172 B]
-Get:30 http://security.ubuntu.com/ubuntu artful-security/universe Sources [11.0 kB]
-Get:31 http://security.ubuntu.com/ubuntu artful-security/main amd64 Packages [136 kB]
-Get:32 http://security.ubuntu.com/ubuntu artful-security/main Translation-en [59.1 kB]
-Get:33 http://security.ubuntu.com/ubuntu artful-security/universe amd64 Packages [46.1 kB]
-Get:34 http://security.ubuntu.com/ubuntu artful-security/universe Translation-en [29.3 kB]
-Get:35 http://security.ubuntu.com/ubuntu artful-security/multiverse amd64 Packages [1828 B]
-Get:36 http://security.ubuntu.com/ubuntu artful-security/multiverse Translation-en [1124 B]
-Fetched 1473 kB in 0s (2038 kB/s)
-Reading package lists...
-csmith@uptown:~$     ssh $EC2_INST -- sudo apt-get install cloud-init;
-Reading package lists...
-Building dependency tree...
-Reading state information...
-The following packages will be upgraded:
-  cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 21 not upgraded.
-Need to get 342 kB of archives.
-After this operation, 48.1 kB of additional disk space will be used.
-Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 17.2-35-gf576b2a2-0ubuntu1~17.10.2 [342 kB]
+
+$ ssh $EC2_INST -- sudo systemd-analyze 
+Startup finished in 7.137s (kernel) + 36.302s (userspace) = 43.440s
+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+
+$ ssh $EC2_INST -- hostname;
+sru-worked
+
+$ scp /home/ubuntu/cloud-init_18.2-4-g05926e48-0ubuntu1~17.10.1_all.deb  $EC2_INST:
+cloud-init_18.2-4-g05926e48-0ubuntu1~17.10.1_all.deb                                                            100%  344KB 344.0KB/s   00:00    
+$ ssh $EC2_INST -- sudo dpkg --install cloud-init*.deb
+(Reading database ... 57201 files and directories currently installed.)
+Preparing to unpack cloud-init_18.2-4-g05926e48-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) over (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
 debconf: unable to initialize frontend: Dialog
 debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
 debconf: falling back to frontend: Readline
 debconf: unable to initialize frontend: Readline
 debconf: (This frontend requires a controlling tty.)
 debconf: falling back to frontend: Teletype
-dpkg-preconfigure: unable to re-open stdin: 
-Fetched 342 kB in 0s (513 kB/s)
-(Reading database ... 57197 files and directories currently installed.)
-Preparing to unpack .../cloud-init_17.2-35-gf576b2a2-0ubuntu1~17.10.2_all.deb ...
-Unpacking cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.2) over (17.1-46-g7acc9e68-0ubuntu1~17.10.1) ...
 Processing triggers for rsyslog (8.16.0-1ubuntu9) ...
-Setting up cloud-init (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
-debconf: unable to initialize frontend: Dialog
-debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
-debconf: falling back to frontend: Readline
-csmith@uptown:~$     ssh $EC2_INST -- sudo hostname something-else;  # cloud-init will reset it
-csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init init;
-Cloud-init v. 17.2 running 'init' at Fri, 02 Mar 2018 17:49:57 +0000. Up 111.49 seconds.
-ci-info: ++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++
-ci-info: +--------+------+-------------+---------------+-------+-------------------+
-ci-info: | Device |  Up  |   Address   |      Mask     | Scope |     Hw-Address    |
-ci-info: +--------+------+-------------+---------------+-------+-------------------+
-ci-info: | eth0:  | True | 10.41.41.34 | 255.255.255.0 |   .   | 06:2b:9e:21:a5:9e |
-ci-info: | eth0:  | True |      .      |       .       |   d   | 06:2b:9e:21:a5:9e |
-ci-info: |  lo:   | True |  127.0.0.1  |   255.0.0.0   |   .   |         .         |
-ci-info: |  lo:   | True |      .      |       .       |   d   |         .         |
-ci-info: +--------+------+-------------+---------------+-------+-------------------+
+
+$ ssh $EC2_INST -- sudo hostname something-else;
+$ ssh $EC2_INST -- sudo cloud-init init;
+Cloud-init v. 18.2 running 'init' at Thu, 05 Apr 2018 16:50:03 +0000. Up 1274.76 seconds.
+ci-info: ++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |   Address    |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
+ci-info: | eth0:  | True | 10.41.41.132 | 255.255.255.0 |   .   | 06:a2:45:e2:13:2e |
+ci-info: | eth0:  | True |      .       |       .       |   d   | 06:a2:45:e2:13:2e |
+ci-info: |  lo:   | True |  127.0.0.1   |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |      .       |       .       |   d   |         .         |
+ci-info: +--------+------+--------------+---------------+-------+-------------------+
 ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
 ci-info: +-------+-------------+------------+-----------------+-----------+-------+
 ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
@@ -275,19 +208,19 @@ ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG
 ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
 ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
 ci-info: +-------+-------------+------------+-----------------+-----------+-------+
-csmith@uptown:~$     # Show clean install doesn't break
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --wait;  # should not block
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N
+1522947015.617542825
 
 status: done
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long;
+1522947016.969051470
+$ ssh $EC2_INST -- cloud-init status --long;
 status: done
-time: Fri, 02 Mar 2018 17:49:57 +0000
+time: Thu, 05 Apr 2018 16:50:04 +0000
 detail:
 DataSourceEc2Local
-csmith@uptown:~$     ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
-Connection to ec2-18-219-25-147.us-east-2.compute.amazonaws.com closed by remote host.
-csmith@uptown:~$     ssh $EC2_INST -- hostname;
-
+$ ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+Connection to ec2-18-221-231-241.us-east-2.compute.amazonaws.com closed by remote host.
+$ ssh $EC2_INST -- hostname;
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
 @    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
 @@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
@@ -295,45 +228,53 @@ IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
 Someone could be eavesdropping on you right now (man-in-the-middle attack)!
 It is also possible that a host key has just been changed.
 The fingerprint for the ECDSA key sent by the remote host is
-SHA256:lB+btCFd0bHTdG4h2l56B82XaNwZ6Owi7eOq9f1zATM.
+SHA256:xGwNbDXfh1CokLiZGSvMrxvOH4trbhANNM+d9oXT2QY.
 Please contact your system administrator.
-Add correct host key in /home/csmith/.ssh/known_hosts to get rid of this message.
-Offending ECDSA key in /home/csmith/.ssh/known_hosts:1196
+Add correct host key in /home/ubuntu/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/ubuntu/.ssh/known_hosts:9
   remove with:
-  ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-219-25-147.us-east-2.compute.amazonaws.com
-ECDSA host key for ec2-18-219-25-147.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R ec2-18-221-231-241.us-east-2.compute.amazonaws.com
+ECDSA host key for ec2-18-221-231-241.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
 Host key verification failed.
-csmith@uptown:~$ 
-csmith@uptown:~$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R ec2-18-219-25-147.us-east-2.compute.amazonaws.com
-# Host ec2-18-219-25-147.us-east-2.compute.amazonaws.com found: line 1196
-/home/csmith/.ssh/known_hosts updated.
-Original contents retained as /home/csmith/.ssh/known_hosts.old
-csmith@uptown:~$     ssh $EC2_INST -- hostname;
-The authenticity of host 'ec2-18-219-25-147.us-east-2.compute.amazonaws.com (18.219.25.147)' can't be established.
-ECDSA key fingerprint is SHA256:lB+btCFd0bHTdG4h2l56B82XaNwZ6Owi7eOq9f1zATM.
+
+$ ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R ec2-18-221-231-241.us-east-2.compute.amazonaws.com
+# Host ec2-18-221-231-241.us-east-2.compute.amazonaws.com found: line 9
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+
+$ ssh $EC2_INST -- hostname;
+The authenticity of host 'ec2-18-221-231-241.us-east-2.compute.amazonaws.com (18.221.231.241)' can't be established.
+ECDSA key fingerprint is SHA256:xGwNbDXfh1CokLiZGSvMrxvOH4trbhANNM+d9oXT2QY.
 Are you sure you want to continue connecting (yes/no)? yes
-Warning: Permanently added 'ec2-18-219-25-147.us-east-2.compute.amazonaws.com,18.219.25.147' (ECDSA) to the list of known hosts.
-SRU-worked
-csmith@uptown:~$     ssh $EC2_INST -- cloud-init status --long;
+Warning: Permanently added 'ec2-18-221-231-241.us-east-2.compute.amazonaws.com,18.221.231.241' (ECDSA) to the list of known hosts.
+sru-worked
+
+$ ssh $EC2_INST -- cloud-init status --long;
 status: done
-time: Fri, 02 Mar 2018 17:51:09 +0000
+time: Thu, 05 Apr 2018 16:53:18 +0000
 detail:
 DataSourceEc2Local
-csmith@uptown:~$     ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
-csmith@uptown:~$     ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
   "ds/user-data"
-  "user-data": "I2Nsb3VkLWNvbmZpZwpob3N0bmFtZTogU1JVLXdvcmtlZAo=",
-csmith@uptown:~$     ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
-2018-03-02 17:50:41,479 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
-2018-03-02 17:50:41,485 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
-2018-03-02 17:50:41,485 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
-2018-03-02 17:50:41,489 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
-2018-03-02 17:50:41,490 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
-2018-03-02 17:50:41,493 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
-2018-03-02 17:50:41,493 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
-2018-03-02 17:50:41,500 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 466b) after 1 attempts
-2018-03-02 17:50:41,500 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/17.2'}} configuration
-2018-03-02 17:50:41,502 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
-csmith@uptown:~$     ssh $EC2_INST -- dpkg-query --show cloud-init
-cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.2
-csmith@uptown:~$ 
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkOiBbcmFoYXJwZXJdCmhvc3RuYW1lOiBzcnUtd29ya2VkCg==",
+
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+2018-04-05 16:52:47,636 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-04-05 16:52:47,642 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-04-05 16:52:47,642 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-04-05 16:52:47,646 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-04-05 16:52:47,646 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-04-05 16:52:47,650 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-04-05 16:52:47,650 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-04-05 16:52:47,653 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-04-05 16:52:47,654 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-04-05 16:52:47,658 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 467b) after 1 attempts
+
+$ ssh $EC2_INST -- dpkg-query --show cloud-init
+cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.1
+
+$ ssh $EC2_INST -- sudo systemd-analyze 
+Startup finished in 5.891s (kernel) + 31.928s (userspace) = 37.820s
