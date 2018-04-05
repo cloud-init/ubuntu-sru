@@ -1,36 +1,29 @@
 ==== GCE Xenial upgrade and fresh install test 17.1.46 -> 17.2.35 ====
 # Deployed via gcloud CLI with userdata
-$ cat > sethostname.yaml << EOF
+cat > sethostname.yaml << EOF
 #cloud-config
 ssh_import_id: [chad.smith]
 hostname: SRU-worked
 EOF
 
 # Xenial instance with user-data
+IMAGE_VERSION=`image-status gce bionic | grep us-central | awk '{print $2}'`;
 
-gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v20180404 --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
+gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
 
 GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
 ssh $GCE_VM -- dpkg-query --show cloud-init;
 ssh $GCE_VM "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
 ssh $GCE_VM sudo apt-get update;
-
-
-
 ssh $GCE_VM sudo apt install cloud-init;
 ssh $GCE_VM sudo cat /run/cloud-init/result.json;
-ssh $GCE_VM grep Trace /var/log/cloud-init.log; 
+ssh $GCE_VM grep Trace /var/log/cloud-init.log;
 ssh $GCE_VM sudo cloud-init init;
-ssh $GCE_VM grep Trace /var/log/cloud-init.log; 
+ssh $GCE_VM grep Trace /var/log/cloud-init.log;
 ssh $GCE_VM sudo cloud-init clean --logs --reboot;
-ssh $GCE_VM  -- dpkg-query --show cloud-init;
+ssh $GCE_VM  -- dpkg-query --show cloud-init
+ssh $GCE_VM grep Trace /var/log/cloud-init*
+ssh $GCE_VM sudo cat /run/cloud-init/result.json
+ssh $GCE_VM cloud-init status --long
 
-ssh $GCE_VM grep Trace /var/log/cloud-init*;
-ssh $GCE_VM sudo cat /run/cloud-init/result.json;
-ssh $GCE_VM cloud-init status --long;
-
-# assert non-base64 user-data is non-None per http://pad.lv/1752711
-ssh $GCE_VM -- sudo cat /run/cloud-init/instance-data.json  | grep user-data;
-
-
-
+# TODO add cloud-specific verification steps for this particular SRU
