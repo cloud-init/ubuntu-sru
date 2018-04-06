@@ -2,30 +2,592 @@
 # Validate upgrade to proposed version of cloud-init
 # Check Tracebacks or error conditions on clean boot
 
-az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --ssh-key-value @/root/.ssh/id_rsa.pub;
-
-vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
-
-echo $vm_ip;
-ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
-ssh ubuntu@$vm_ip grep CODE /etc/os-release;
-ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
-ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
-ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
-ssh ubuntu@$vm_ip -- sudo apt-get update;
-ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
-ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
-ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
-ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
-ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
-ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
-ssh ubuntu@$vm_ip -- cloud-init status --long;
-ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
-
 # TODO add cloud-specific verification steps for this particular SRU
 # LP: #1736455 hostname in init-local from metadata and again when user-data
 # is processed
 ssh ubuntu@$vm_ip grep cc_set_hostname /var/log/cloud-init.log;
 
+
+
+### START Xenial SRU validation ###
+$ az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml 
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-x1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-00-BA-FA",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4",
+  "publicIpAddress": "40.70.47.72",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+$ vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+$ echo $vm_ip;
+40.70.47.72
+$ ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
+The authenticity of host '40.70.47.72 (40.70.47.72)' can't be established.
+ECDSA key fingerprint is SHA256:rf6GF5kZfGmjJ36CriJs9/I6bCMd2ofbihr5JEEHBsk.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.47.72' (ECDSA) to the list of known hosts.
+Enter passphrase for key '/root/.ssh/id_rsa': 
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.2
+$ ssh ubuntu@$vm_ip grep CODE /etc/os-release;
+Enter passphrase for key '/root/.ssh/id_rsa': 
+
+$ eval `ssh-agent`Agent pid 12501
+$ vi ~/.bash
+.bash_history  .bashrc        
+$ vi ~/.bash_history 
+$ ssh-add
+Enter passphrase for /root/.ssh/id_rsa: 
+Identity added: /root/.ssh/id_rsa (/root/.ssh/id_rsa)
+$ echo $vm_ip;
+40.70.47.72
+$ ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~16.04.2
+$ ssh ubuntu@$vm_ip grep CODE /etc/os-release;
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
+$ ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
+sudo: unable to resolve host SRU-worked
+$ ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
+sudo: unable to resolve host SRU-worked
+status: done
+time: Fri, 06 Apr 2018 20:28:01 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+$ ssh ubuntu@$vm_ip -- sudo apt-get update;
+sudo: unable to resolve host SRU-worked
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [102 kB]
+Get:2 http://azure.archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu xenial-updates InRelease [102 kB]
+Get:4 http://azure.archive.ubuntu.com/ubuntu xenial-backports InRelease [102 kB]
+Get:5 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main Sources [22.5 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe Sources [29.3 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [61.6 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [27.6 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [33.9 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [16.3 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main Sources [304 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu xenial-updates/restricted Sources [2,524 B]
+Get:13 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe Sources [200 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu xenial-updates/multiverse Sources [7,948 B]
+Get:15 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [755 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [619 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu xenial-backports/main Sources [3,432 B]
+Get:18 http://azure.archive.ubuntu.com/ubuntu xenial-backports/universe Sources [5,816 B]
+Get:19 http://security.ubuntu.com/ubuntu xenial-security/main Sources [119 kB]
+Get:20 http://security.ubuntu.com/ubuntu xenial-security/restricted Sources [2,116 B]
+Get:21 http://security.ubuntu.com/ubuntu xenial-security/universe Sources [62.8 kB]
+Get:22 http://security.ubuntu.com/ubuntu xenial-security/multiverse Sources [1,520 B]
+ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
+Fetched 2,833 kB in 0s (3,232 kB/s)
+Reading package lists...
+$ ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
+sudo: unable to resolve host SRU-worked
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 34 not upgraded.
+Need to get 355 kB of archives.
+After this operation, 51.2 kB of additional disk space will be used.
+Get:1 http://azure.archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.2-4-g05926e48-0ubuntu1~16.04.1 [355 kB]
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 355 kB in 0s (2,766 kB/s)
+(Reading database ... 54519 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) over (17.2-35-gf576b2a2-0ubuntu1~16.04.2) ...
+Processing triggers for ureadahead (0.100.0-19) ...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+$ ssh ubuntu@$vm_ip -- sudo cloud-init init;
+sudo: unable to resolve host SRU-worked
+Cloud-init v. 18.2 running 'init' at Fri, 06 Apr 2018 20:32:44 +0000. Up 332.12 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.4          | 255.255.255.0 |   .   | 00:0d:3a:00:ba:fa |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe00:bafa/64 |       .       |  link | 00:0d:3a:00:ba:fa |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |   .   |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host |         .         |
+ci-info: +--------+------+-----------------------------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+$ ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
+sudo: unable to resolve host SRU-worked
+status: done
+time: Fri, 06 Apr 2018 20:32:45 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+sudo: unable to resolve host SRU-worked
+Connection to 40.70.47.72 closed by remote host.
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:VRJCXuIMl0DlmA0u4S4spbPr6gBT+tV/7mBmpRn7v/o.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/known_hosts:43
+  remove with:
+  ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.47.72"
+ECDSA host key for 40.70.47.72 has changed and you have requested strict checking.
+Host key verification failed.
+$   ssh-keygen -f "/root/.ssh/known_hosts" -R "40.70.47.72"
+# Host 40.70.47.72 found: line 43
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+$ ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+The authenticity of host '40.70.47.72 (40.70.47.72)' can't be established.
+ECDSA key fingerprint is SHA256:VRJCXuIMl0DlmA0u4S4spbPr6gBT+tV/7mBmpRn7v/o.
+Are you sure you want to continue connecting (yes/no)? ^C
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
+The authenticity of host '40.70.47.72 (40.70.47.72)' can't be established.
+ECDSA key fingerprint is SHA256:VRJCXuIMl0DlmA0u4S4spbPr6gBT+tV/7mBmpRn7v/o.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.70.47.72' (ECDSA) to the list of known hosts.
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+$ ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
+cloud-init	18.2-4-g05926e48-0ubuntu1~16.04.1
+$ ssh ubuntu@$vm_ip -- cloud-init status --long;
+status: done
+time: Fri, 06 Apr 2018 20:33:37 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+$ ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
+sudo: unable to resolve host SRU-worked
+{
+ "base64-encoded-keys": [
+  "ds/meta-data/random_seed",
+  "ds/user-data"
+ ],
+ "ds": {
+  "meta-data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "instance-id": "A4203FA8-AC0A-F940-BAD3-DF3E088ABB62",
+   "local-hostname": "my-x1",
+   "random_seed": "T0VNMGQAAAABFVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ=="
+  },
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkOiBbY2hhZC5zbWl0aF0KaG9zdG5hbWU6IFNSVS13b3JrZWQK",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": null,
+  "cloud-name": "azure",
+  "instance-id": "A4203FA8-AC0A-F940-BAD3-DF3E088ABB62",
+  "local-hostname": "my-x1",
+  "region": null
+ }
+}
+$ ssh ubuntu@$vm_ip -- sydo systemd-analyze;
+bash: sydo: command not found
+$ ssh ubuntu@$vm_ip -- sudo systemd-analyze;
+sudo: unable to resolve host SRU-worked
+Startup finished in 6.921s (kernel) + 15.174s (userspace) = 22.096s
+$ ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01200s +00.00000s
+|`->found local data from DataSourceAzure @00.15900s +00.20900s
+Finished stage: (init-local) 00.52700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @01.80100s +00.02300s
+|`->reading and applying user-data @02.17300s +00.00900s
+|`->reading and applying vendor-data @02.18200s +00.00100s
+|`->config-migrator ran successfully @02.44000s +00.00000s
+|`->config-seed_random ran successfully @02.44100s +00.01100s
+|`->config-bootcmd ran successfully @02.45300s +00.00000s
+|`->config-write-files ran successfully @02.45300s +00.00100s
+|`->config-growpart ran successfully @02.45500s +00.12500s
+|`->config-resizefs ran successfully @02.58100s +00.02900s
+|`->config-disk_setup ran successfully @02.61000s +00.23600s
+|`->config-mounts ran successfully @02.86500s +00.01600s
+|`->config-set_hostname ran successfully @02.88200s +00.04200s
+|`->config-update_hostname ran successfully @02.92500s +00.00500s
+|`->config-update_etc_hosts ran successfully @02.93400s +00.00100s
+|`->config-ca-certs ran successfully @02.93500s +00.00100s
+|`->config-rsyslog ran successfully @02.93600s +00.00100s
+|`->config-users-groups ran successfully @02.93800s +00.39100s
+|`->config-ssh ran successfully @03.32900s +00.35100s
+Finished stage: (init-network) 01.89600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @07.88900s +00.00100s
+|`->config-snap ran successfully @07.89000s +00.00300s
+|`->config-snap_config ran successfully @07.89400s +00.00100s
+|`->config-ssh-import-id ran successfully @07.89500s +00.89700s
+|`->config-locale ran successfully @08.79300s +00.00200s
+|`->config-set-passwords ran successfully @08.79500s +00.16800s
+|`->config-grub-dpkg ran successfully @08.96400s +00.70100s
+|`->config-apt-pipelining ran successfully @09.66600s +00.00200s
+|`->config-apt-configure ran successfully @09.66900s +00.13600s
+|`->config-ubuntu-advantage ran successfully @09.80500s +00.00200s
+|`->config-ntp ran successfully @09.80700s +00.00100s
+|`->config-timezone ran successfully @09.80800s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @09.80900s +00.00000s
+|`->config-runcmd ran successfully @09.81000s +00.00100s
+|`->config-byobu ran successfully @09.81100s +00.00100s
+Finished stage: (modules-config) 02.13300 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @10.51000s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @10.51300s +00.00100s
+|`->config-fan ran successfully @10.51400s +00.00100s
+|`->config-landscape ran successfully @10.51500s +00.00100s
+|`->config-lxd ran successfully @10.51600s +00.00100s
+|`->config-puppet ran successfully @10.51700s +00.00100s
+|`->config-chef ran successfully @10.51800s +00.00100s
+|`->config-mcollective ran successfully @10.51900s +00.00100s
+|`->config-salt-minion ran successfully @10.52100s +00.00000s
+|`->config-rightscale_userdata ran successfully @10.52200s +00.00100s
+|`->config-scripts-vendor ran successfully @10.52300s +00.00100s
+|`->config-scripts-per-once ran successfully @10.52400s +00.00100s
+|`->config-scripts-per-boot ran successfully @10.52500s +00.00000s
+|`->config-scripts-per-instance ran successfully @10.52600s +00.00100s
+|`->config-scripts-user ran successfully @10.52700s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @10.52800s +00.26300s
+|`->config-keys-to-console ran successfully @10.79100s +00.35400s
+|`->config-phone-home ran successfully @11.14500s +00.00200s
+|`->config-final-message ran successfully @11.14700s +00.00400s
+|`->config-power-state-change ran successfully @11.15300s +00.00100s
+Finished stage: (modules-final) 00.69200 seconds 
+
+Total Time: 5.24800 seconds
+
+1 boot records analyzed
+$ ssh ubuntu@$vm_ip grep cc_set_hostname /var/log/cloud-init.log;
+
+2018-04-06 20:33:27,213 - cc_set_hostname.py[DEBUG]: Setting the hostname to my-x1 (my-x1)
+2018-04-06 20:33:28,901 - cc_set_hostname.py[DEBUG]: No hostname changes. Skipping set-hostname
+2018-04-06 20:33:29,610 - stages.py[DEBUG]: Running module set_hostname (<module 'cloudinit.config.cc_set_hostname' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_set_hostname.py'>) with frequency once-per-instance
+2018-04-06 20:33:29,625 - cc_set_hostname.py[DEBUG]: Setting the hostname to my-x1 (SRU-worked)
+
+### END Xenial SRU validation ###
+### START Artful SRU validation ###
+
+az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml 
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugrp10/providers/Microsoft.Compute/virtualMachines/my-a1",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-01-CC-84",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.5",
+  "publicIpAddress": "13.68.22.169",
+  "resourceGroup": "srugrp10",
+  "zones": ""
+}
+$ vm_ip=`az vm list-ip-addresses --name my-a1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+$ ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
+cloud-init	17.2-35-gf576b2a2-0ubuntu1~17.10.2
+$ ssh ubuntu@$vm_ip grep CODE /etc/os-release;
+VERSION_CODENAME=artful
+UBUNTU_CODENAME=artful
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
+
+CHAD
+$ ssh ubuntu@$vm_ip -- sudo systemd-analyze;
+Startup finished in 7.837s (kernel) + 46.094s (userspace) = 53.931s
+$ ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00600s +00.00000s
+|`->found local data from DataSourceAzure @00.04300s +00.24200s
+Finished stage: (init-local) 00.46000 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @15.18900s +00.01900s
+|`->reading and applying user-data @15.41000s +00.00500s
+|`->reading and applying vendor-data @15.41500s +00.00000s
+|`->config-migrator ran successfully @15.81200s +00.00000s
+|`->config-seed_random ran successfully @15.81300s +00.00200s
+|`->config-bootcmd ran successfully @15.81500s +00.00000s
+|`->config-write-files ran successfully @15.81600s +00.00100s
+|`->config-growpart ran successfully @15.81700s +00.07900s
+|`->config-resizefs ran successfully @15.89600s +00.02700s
+|`->config-disk_setup ran successfully @15.92400s +00.25200s
+|`->config-mounts ran successfully @16.17800s +00.02100s
+|`->config-set_hostname ran successfully @16.20100s +00.02700s
+|`->config-update_hostname ran successfully @16.22800s +00.00200s
+|`->config-update_etc_hosts ran successfully @16.23000s +00.00100s
+|`->config-ca-certs ran successfully @16.23100s +00.00500s
+|`->config-rsyslog ran successfully @16.23600s +00.00100s
+|`->config-users-groups ran successfully @16.23700s +00.19200s
+|`->config-ssh ran successfully @16.43000s +00.14600s
+Finished stage: (init-network) 01.40700 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @21.18300s +00.00100s
+|`->config-snap_config ran successfully @21.20600s +00.00100s
+|`->config-ssh-import-id ran successfully @21.21200s +01.19200s
+|`->config-locale ran successfully @22.40700s +00.00200s
+|`->config-set-passwords ran successfully @22.40900s +00.19600s
+|`->config-grub-dpkg ran successfully @22.60600s +01.14100s
+|`->config-apt-pipelining ran successfully @23.75100s +00.01700s
+|`->config-apt-configure ran successfully @23.76900s +15.24800s
+|`->config-ntp ran successfully @39.01700s +00.00200s
+|`->config-timezone ran successfully @39.01900s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @39.02000s +00.00100s
+|`->config-runcmd ran successfully @39.02100s +00.00100s
+|`->config-byobu ran successfully @39.02200s +00.00200s
+Finished stage: (modules-config) 18.49500 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @39.94600s +00.00900s
+|`->config-package-update-upgrade-install ran successfully @39.95600s +00.00000s
+|`->config-fan ran successfully @39.95700s +00.00100s
+|`->config-landscape ran successfully @39.95800s +00.00100s
+|`->config-lxd ran successfully @39.95900s +00.00100s
+|`->config-puppet ran successfully @39.96000s +00.00100s
+|`->config-chef ran successfully @39.96100s +00.00100s
+|`->config-salt-minion ran successfully @39.96200s +00.00100s
+|`->config-mcollective ran successfully @39.96400s +00.00000s
+|`->config-rightscale_userdata ran successfully @39.96500s +00.00100s
+|`->config-scripts-vendor ran successfully @39.96600s +00.00100s
+|`->config-scripts-per-once ran successfully @39.96700s +00.00100s
+|`->config-scripts-per-boot ran successfully @39.96800s +00.00100s
+|`->config-scripts-per-instance ran successfully @39.96900s +00.00100s
+|`->config-scripts-user ran successfully @39.97000s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @39.97100s +00.26600s
+|`->config-keys-to-console ran successfully @40.23800s +00.35300s
+|`->config-phone-home ran successfully @40.59200s +00.00100s
+|`->config-final-message ran successfully @40.59400s +00.00700s
+|`->config-power-state-change ran successfully @40.60100s +00.00100s
+Finished stage: (modules-final) 00.92700 seconds 
+
+Total Time: 21.28900 seconds
+
+1 boot records analyzed
+$ ssh ubuntu@$vm_ip "sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list";
+$ ssh ubuntu@$vm_ip -- sudo apt-get update > /dev/null 2>&1;root@publishing:~# ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
+The following packages will be upgraded:
+  cloud-init...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) over (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+$ ssh ubuntu@$vm_ip -- sudo cloud-init init;
+Cloud-init v. 18.2 running 'init' at Fri, 06 Apr 2018 20:56:58 +0000. Up 453.45 seconds.
+ci-info: +++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | Device |  Up  |  Address  |      Mask     | Scope |     Hw-Address    |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: | eth0:  | True |  10.0.0.5 | 255.255.255.0 |   .   | 00:0d:3a:01:cc:84 |
+ci-info: | eth0:  | True |     .     |       .       |   d   | 00:0d:3a:01:cc:84 |
+ci-info: |  lo:   | True | 127.0.0.1 |   255.0.0.0   |   .   |         .         |
+ci-info: |  lo:   | True |     .     |       .       |   d   |         .         |
+ci-info: +--------+------+-----------+---------------+-------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   2   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   3   |     10.0.0.1    | 0.0.0.0  | 255.255.255.255 |    eth0   |   UH  |
+ci-info: |   4   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   5   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+$ ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
+status: done
+time: Fri, 06 Apr 2018 20:56:59 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+$ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json'; 
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+Connection to 13.68.22.169 closed by remote host.
+$   ssh-keygen -f "/root/.ssh/known_hosts" -R "13.68.22.169"
+$ ssh ubuntu@$vm_ip -- cloud-init status --wait;
+$ ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+$ ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+$ ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
+cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.1
+$ ssh ubuntu@$vm_ip -- cloud-init status --long;
+status: done
+time: Fri, 06 Apr 2018 20:58:35 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+$ ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
+{
+ "base64-encoded-keys": [
+  "ds/meta-data/random_seed",
+  "ds/user-data"
+ ],
+ "ds": {
+  "meta-data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "instance-id": "3EFC2C2F-5F79-7A4D-B89D-AA610E01967B",
+   "local-hostname": "my-a1",
+   "random_seed": "T0VNMGQAAAABFVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ=="
+  },
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkOiBbY2hhZC5zbWl0aF0KaG9zdG5hbWU6IFNSVS13b3JrZWQK",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": null,
+  "cloud-name": "azure",
+  "instance-id": "3EFC2C2F-5F79-7A4D-B89D-AA610E01967B",
+  "local-hostname": "my-a1",
+  "region": null
+ }
+}
+$ ssh ubuntu@$vm_ip -- sudo systemd-analyze;
+Startup finished in 8.741s (kernel) + 45.691s (userspace) = 54.432s
+$ ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00600s +00.00000s
+|`->found local data from DataSourceAzure @00.04100s +00.25000s
+Finished stage: (init-local) 00.47400 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @14.68400s +00.01900s
+|`->reading and applying user-data @14.90900s +00.00400s
+|`->reading and applying vendor-data @14.91400s +00.00000s
+|`->config-migrator ran successfully @15.31100s +00.00000s
+|`->config-seed_random ran successfully @15.31200s +00.00100s
+|`->config-bootcmd ran successfully @15.31300s +00.00100s
+|`->config-write-files ran successfully @15.31400s +00.00100s
+|`->config-growpart ran successfully @15.31500s +00.08400s
+|`->config-resizefs ran successfully @15.39900s +00.02600s
+|`->config-disk_setup ran successfully @15.42600s +00.25700s
+|`->config-mounts ran successfully @15.68300s +00.01800s
+|`->config-set_hostname ran successfully @15.70200s +00.02600s
+|`->config-update_hostname ran successfully @15.72800s +00.00200s
+|`->config-update_etc_hosts ran successfully @15.73000s +00.00100s
+|`->config-ca-certs ran successfully @15.73100s +00.00100s
+|`->config-rsyslog ran successfully @15.73200s +00.00100s
+|`->config-users-groups ran successfully @15.73400s +00.09600s
+|`->config-ssh ran successfully @15.83000s +00.20900s
+Finished stage: (init-network) 01.37500 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @21.62200s +00.00100s
+|`->config-snap ran successfully @21.62300s +00.00100s
+|`->config-snap_config ran successfully @21.62400s +00.02000s
+|`->config-ssh-import-id ran successfully @21.64400s +00.95200s
+|`->config-locale ran successfully @22.59700s +00.00200s
+|`->config-set-passwords ran successfully @22.59900s +00.51800s
+|`->config-grub-dpkg ran successfully @23.11700s +00.39200s
+|`->config-apt-pipelining ran successfully @23.51000s +00.00200s
+|`->config-apt-configure ran successfully @23.51200s +15.14000s
+|`->config-ubuntu-advantage ran successfully @38.65300s +00.00200s
+|`->config-ntp ran successfully @38.65500s +00.00100s
+|`->config-timezone ran successfully @38.65600s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @38.65800s +00.00000s
+|`->config-runcmd ran successfully @38.65900s +00.00100s
+|`->config-byobu ran successfully @38.66000s +00.00100s
+Finished stage: (modules-config) 17.73800 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @39.51300s +00.00900s
+|`->config-package-update-upgrade-install ran successfully @39.52200s +00.00100s
+|`->config-fan ran successfully @39.52300s +00.00100s
+|`->config-landscape ran successfully @39.52400s +00.00100s
+|`->config-lxd ran successfully @39.52600s +00.00000s
+|`->config-puppet ran successfully @39.52700s +00.00100s
+|`->config-chef ran successfully @39.52800s +00.00100s
+|`->config-mcollective ran successfully @39.52900s +00.00100s
+|`->config-salt-minion ran successfully @39.53100s +00.00000s
+|`->config-rightscale_userdata ran successfully @39.53200s +00.00100s
+|`->config-scripts-vendor ran successfully @39.53300s +00.00100s
+|`->config-scripts-per-once ran successfully @39.53400s +00.00100s
+|`->config-scripts-per-boot ran successfully @39.53500s +00.00100s
+|`->config-scripts-per-instance ran successfully @39.53600s +00.00100s
+|`->config-scripts-user ran successfully @39.53700s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @39.53800s +00.27700s
+|`->config-keys-to-console ran successfully @39.81500s +00.33600s
+|`->config-phone-home ran successfully @40.15200s +00.00200s
+|`->config-final-message ran successfully @40.15400s +00.00600s
+|`->config-power-state-change ran successfully @40.16100s +00.00100s
+Finished stage: (modules-final) 00.85900 seconds 
+
+Total Time: 20.44600 seconds
+
+1 boot records analyzed
+$  ssh ubuntu@$vm_ip grep cc_set_hostname /var/log/cloud-init.log;
+2018-04-06 20:57:55,678 - cc_set_hostname.py[DEBUG]: Setting the hostname to my-a1 (my-a1)
+2018-04-06 20:58:10,239 - cc_set_hostname.py[DEBUG]: No hostname changes. Skipping set-hostname
+2018-04-06 20:58:11,032 - stages.py[DEBUG]: Running module set_hostname (<module 'cloudinit.config.cc_set_hostname' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_set_hostname.py'>) with frequency once-per-instance
+2018-04-06 20:58:11,034 - cc_set_hostname.py[DEBUG]: Setting the hostname to my-a1 (SRU-worked)
+### End Artful SRU validation ###
