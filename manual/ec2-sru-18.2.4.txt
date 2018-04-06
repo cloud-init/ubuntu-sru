@@ -278,3 +278,14 @@ cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.1
 
 $ ssh $EC2_INST -- sudo systemd-analyze 
 Startup finished in 5.891s (kernel) + 31.928s (userspace) = 37.820s
+
+# Validate exception_cb behavior differences
+$ ssh $EC2_INST -- sudo systemd-analyze
+
+# Tweak extended_metadata_versions to ensure ec2 gives up on 404 exceptions
+$ ssh $EC2_INST "sudo sed -i \"s/'2016-09-02'/'NOT_HERE', '2016-09-02'/\" /usr/lib/python3/dist-packages/cloudinit/sources/DataSourceEc2.py
+$ ssh $EC2_INST sudo cloud-init clean --reboot --logs
+$ ssh $EC2_INST grep NOT_HERE /var/log/cloud-init.log
+
+# Ensure hostname is set with metadata and again once user-data is processed
+ssh $EC2_INST grep hostname /var/log/cloud-init.log;

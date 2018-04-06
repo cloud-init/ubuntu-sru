@@ -1,0 +1,70 @@
+http://pad.lv/1446804
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1446804
+
+=== Begin SRU Template ===
+[Impact]
+Puppet 4 updated paths could not be configured by cc_puppet module.
+
+[Test Case]
+The basic idea below is:
+ a.) init an instance with proposed version of cloud-init
+ b.) update user-data for the lxc to specify known working puppet configuration.
+ c.) Ensure puppet.conf is updated appropriately and 'puppet apply' succeeds.
+
+
+## create puppet.yml
+$ cat > puppet.yml <<EOF
+#cloud-config
+puppet:
+  conf:
+    agent:
+      server: "puppetmaster.local"
+      certname: "%i.%f"
+# Write a simple site.pp manifest so we can validate puppet apply.
+# This manifest will emit a puppet notification about what type of server
+# we are based on hostname.
+write_files:
+  - encoding: b64
+    content: |
+      Y2xhc3Mgd2Vic2VydmVyIHsKICBub3RpZnkgeyAnSSBhbSBhIHdlYiBzZXJ2ZXInOiB9Cn0KY2xh
+      c3MgZGF0YWJhc2VzZXJ2ZXIgewogIG5vdGlmeSB7ICdJIGFtIGEgZGF0YWJhc2Ugc2VydmVyJzog
+      fQp9CgoKbm9kZSAvXndlYi4qJC8gewogIGluY2x1ZGUgd2Vic2VydmVyCn0Kbm9kZSAvXmRiLiok
+      LyB7CiAgaW5jbHVkZSBkYXRhYmFzZXNlcnZlcgp9Cm5vZGUgZGVmYXVsdCB7CiAgbm90aWZ5IHsn
+      SSBhbSBhIGRlZmF1bHQgbm9kZSc6IH0KfQoK
+    path: /etc/puppet/manifests/site.pp
+    permissions: '0644'
+hostname: webserver123
+runcmd:
+  - puppet apply /etc/puppet/manifests/site.pp
+EOF
+
+# Launch instance under test
+$ for release in xenial artful;
+  do
+    ref=$release-proposed;
+    name=webserver$release;
+    lxc-proposed-snapshot --proposed --publish $release $ref;
+    lxc init $ref $name;
+    lxc config set $name user.user-data - < puppet.yml;
+    lxc start $name;
+    lxc exec $name -- cloud-init status --wait;
+    lxc exec $name -- dpkg-query --show cloud-init
+    lxc exec $name -- dpkg-query --show puppet
+
+    lxc exec $name -- egrep 'certname|server' /etc/puppet/puppet.conf;
+    lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log;   # expect to see 'I am a web server'
+  done
+
+[Regression Potential]
+Regressions for this will be limited to user's configuring puppet in their #cloud-config.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=d67636f7
+
+=== End SRU Template ===
+
+
+
+=== SRU abridged verification Output ===
+=== End SRU abridged verification Output ===
