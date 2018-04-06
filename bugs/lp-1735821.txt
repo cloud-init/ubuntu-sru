@@ -1,0 +1,97 @@
+http://pad.lv/1735821
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1735821
+
+=== Begin SRU Template ===
+[Impact]
+Users of netplan configuring any bridge. Port priority is a very common
+setting to change when setting up bridge devices that might have multiple
+interfaces.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+
+## get render tool
+$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+
+## write the testcase.yaml version 2 network description
+$ cat >testcase.yaml <<EOF
+network:
+    version: 1
+    config:
+        # Physical interfaces.
+        - type: physical
+          name: eth0
+          mac_address: "52:54:00:12:34:00"
+          subnets:
+              - type: dhcp4
+        - type: physical
+          name: eth1
+          mac_address: "52:54:00:12:34:02"
+        - type: physical
+          name: eth2
+          mac_address: "52:54:00:12:34:04"
+        # Bridge
+        - type: bridge
+          name: br0
+          bridge_interfaces:
+            - eth1
+            - eth2
+          mac_address: "aa:bb:cc:dd:ee:ff"
+          params:
+              bridge_ageing: 250
+              bridge_bridgeprio: 22
+              bridge_fd: 150
+              bridge_gcint: 2
+              bridge_hello: 1
+              bridge_maxage: 10
+              bridge_maxwait: 0
+              bridge_pathcost:
+                - eth1 50
+                - eth2 75
+              bridge_portprio:
+                - eth1 28
+                - eth2 14
+              bridge_stp: 'off'
+              bridge_waitport:
+                - 1 eth1
+                - 2 eth2
+          subnets:
+              - type: static
+                address: 192.168.14.2/24
+EOF
+
+## launch an instance and validate
+for release in xenial artful; do
+   name=test-$release;
+   lxc exec $name -- grep CODE /etc/os-release;
+   lxc file push testcase.yaml $name/testcase.yaml;
+   lxc file push net-convert.py $name/net-convert.py;
+   lxc exec $name -- chmod 755 /net-convert.py;
+   MACS="-m eth0,52:54:00:12:34:00 -m eth1,52:54:00:12:34:02 -m eth2,52:54:00:12:34:04"
+   for k in netplan; do
+     lxc exec $name -- /net-convert.py --network-data=/testcase.yaml --kind=yaml --output-kind=$k $MACS --directory=./out.d;
+   done;
+   echo "## RELEASE=$release Netplan content below:";
+   lxc exec $name cat ./out.d/etc/netplan/50-cloud-init.yaml;
+   echo "------------------"
+   echo
+done
+
+
+[Regression Potential]
+On systems using netplan, this might impact STP behavior, such that while the
+port priority for a bridge changes, the general network topology might change
+-- this may lead to loss of connectivity on the bridge itself or on other
+devices on the network, invalid packet traffic (packets showing up where they
+should not), etc.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=b7b7331b9c308d8e1cb0b3dfd4398e6e7cb1b60f
+
+=== End SRU Template ===

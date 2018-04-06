@@ -1,0 +1,93 @@
+http://pad.lv/1750884
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1750884
+
+=== Begin SRU Template ===
+[Impact]
+When deploying Bionic images with MAAS, the global dns configuration
+was placed under physical devices; this meant some scenarios, like
+a bridged interface did not get the correct DNS setting.
+
+Cloud-init netplan rendering was updated to add the global DNS
+settings to any interface that has network addresses but no
+existing DNS setting, and not configured with DHCP.
+
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has the correct format.
+
+## get render tool
+$ wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+
+
+## write the maas-bridge-dns.yaml version 2 network description
+$ cat >maas-bridge-dns.yaml <<EOF
+network:
+    config:
+    - type: physical
+      id: eth0
+      mac_address: b8:ae:ed:7d:16:d0
+      mtu: 1500
+      name: eth0
+      subnets:
+      -   type: manual
+    - type: bridge
+      bridge_interfaces:
+      - eth0
+      id: br0
+      mac_address: b8:ae:ed:7d:16:d0
+      mtu: 1500
+      name: br0
+      params:
+        bridge_fd: 15
+        bridge_stp: 0
+      subnets:
+      - type: static
+        address: 10.90.90.4/24
+        dns_nameservers: []
+        gateway: 10.90.90.1
+    - type: nameserver
+      address:
+        - 10.90.90.1
+      search:
+        - maaslab
+        - maas
+    version: 1
+EOF
+
+## launch an instance and validate
+for release in xenial artful; do
+   name=test-$release;
+   echo "--- Start testing release=$release ---"
+   lxc exec $name -- grep CODE /etc/os-release;
+   lxc file push maas-bridge-dns.yaml $name/maas-bridge-dns.yaml;
+   lxc file push net-convert.py $name/net-convert.py;
+   lxc exec $name -- chmod 755 /net-convert.py;
+   for k in eni netplan; do
+     lxc exec $name -- /net-convert.py --network-data=/maas-bridge-dns.yaml        --kind=yaml --output-kind=$k        -m eth0,aa:ab:ac:ad:ae:00 --directory=./out.d;
+   done;
+   echo "## RELEASE=$release Netplan content below:";
+   lxc exec $name cat ./out.d/etc/netplan/50-cloud-init.yaml;
+   echo "## RELEASE+$release ENI content below:";
+   lxc exec $name cat ./out.d/etc/network/interfaces;
+   lxc exec $name -- dpkg-query --show cloud-init;
+   echo "------------------"
+done
+
+
+[Regression Potential]
+
+MAAS deployed Bionic images in situations where the interface was marked as
+DHCP but the DHCP service in the machines network does not provide any DNS
+values could no longer have any DNS.
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=d29eeccd2c422b8eb3b053fc13ca966ed6d74c78
+
+=== End SRU Template ===

@@ -1,0 +1,54 @@
+http://pad.lv/1721243
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1721243
+
+=== Begin SRU Template ===
+[Impact]
+
+Systems running cloud-init with rootfs of type zfs will see a WARNING
+message indicating that resizefs failed due to missing zpool commands.
+
+Resolve this issue by adding additional checks in cloud-init to
+prevent attempting to resize zfs-base root filesystems unless cloud-init
+has access to /dev/zfs and the zpool command.
+
+[Test Case]
+
+To reproduce the failure, one needs a LXD with zfs storage backend
+And the 18.2-0ubuntu1 package; the only package released with the issue.
+The bionic cloud-image up to 20180404 still contains this package
+
+% lxc storage create pool1 zfs
+% lxc launch ubuntu-daily:bionic b1 -s pool1
+% lxc exec b1 -- dpkg --list | grep cloud-init.*18.2-0ubuntu1
+% lxc exec b1 -- /bin/bash -c cloud-init status --wait
+% lxc file pull b1/var/log/cloud-init.log - | grep WARNING.*resizefs
+
+If the package is broken, the last grep WARNING command will return
+output like:
+
+2018-04-06 15:23:24,182 - util.py[WARNING]: Running module resizefs (<module 'cloudinit.config.cc_resizefs' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_resizefs.py'>) failed
+
+To test the newer package:
+
+% lxc exec b1 -- sed -i 's/ bionic / bionic-proposed /' /etc/apt/sources.list
+% lxc exec b1 -- apt update && apt install cloud-init
+% lxc exec b1 -- dpkg --list | grep cloud-init.*18.2-4
+% lxc exec b1 -- cloud-init clean --logs --reboot
+% lxc exec b1 -- /bin/bash -c cloud-init status --wait
+% lxc file pull b1/var/log/cloud-init.log - | grep WARNING.*resizefs
+
+
+[Regression Potential]
+
+Very low, only Bionic users since 2018-03-29 have had access to a cloud-init
+with this capability and only LXD instances which could have a ZFS filesystem
+would see the Warning; there are no Ubuntu cloud-images with ZFS root
+filesystem so there is no user that could be dependent ubuntu the resizefs
+working on a ZFS rootfs resize command.
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=c436e173c4162c940523a2978799193672ff9cd3
+
+=== End SRU Template ===
