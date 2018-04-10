@@ -1,0 +1,66 @@
+http://pad.lv/1752977
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1752977
+
+=== Begin SRU Template ===
+[Impact]
+Reduce azure pre-provisioning timeouts from 60 seconds to 1 second retries.
+
+[Test Case]
+# Artful on azure
+ az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml;
+vm_ip=`az vm list-ip-addresses --name my-a1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+
+# upgrade cloud-init
+ssh ubuntu@$vm_ip "sudo sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list";
+
+ssh ubuntu@$vm_ip sudo apt-get update > /dev/null 2>&1;
+ssh ubuntu@$vm_ip sudo apt-get install cloud-init;
+ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
+
+# Terminal 1: Run imds poll against a SimpleHTTPServer to check retry on 404
+ssh ubuntu@$vm_ip -- sudo python -m SimpleHTTPServer 80;
+
+# Terminal 2: Run updated poll_imds against endpoint returning 404
+
+# Update IMDS_URL to point out our local SimpleHTTPServer
+ssh ubuntu@$vm_ip;
+
+sudo sed -i 's/http:\/\/169.254.169.254\/metadata\/reprovisiondata/http:\/\/127.0.0.1\/imds/' /usr/lib/python3/dist-packages/cloudinit/sources/DataSourceAzure.py;
+# should block indefitely
+sudo python3 -c "from cloudinit.stages import _pkl_load; cached_ds = _pkl_load('/var/lib/cloud/instance/obj.pkl'); cached_ds._poll_imds()"
+
+# Terminal 3: mkdir imds to generate a 200 and unblock IMDS poll
+ssh ubuntu@$vm_ip mkdir imds;
+
+
+[Regression Potential]
+
+New pre-provisioning IMDS state (unreleased Azure service) could leave the instance inaccessible due to one of the following failure modes:
+  1. instance inaccessible because it is indefinitely locked in pre-provisioning state due to ignoring a successful response from IMDS
+  2. instance insaccessible because it procedes out of pre-provisioning state too early and metadata service is not ready to provide meta-data configuration to cloud-init
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=2d618e27
+
+=== End SRU Template ===
+
+=== START SRU verification Artful ===
+# Retries occurred every second on 404
+root@publishing:~# ssh ubuntu@$vm_ip -- sudo python -m SimpleHTTPServer 80
+127.0.0.1 - - [10/Apr/2018 17:38:27] code 404, message File not found
+127.0.0.1 - - [10/Apr/2018 17:38:27] "GET /imds?api-version=2017-04-02 HTTP/1.1" 404 -
+127.0.0.1 - - [10/Apr/2018 17:38:28] code 404, message File not found
+127.0.0.1 - - [10/Apr/2018 17:38:28] "GET /imds?api-version=2017-04-02 HTTP/1.1" 404 -
+127.0.0.1 - - [10/Apr/2018 17:38:29] code 404, message File not found
+127.0.0.1 - - [10/Apr/2018 17:38:29] "GET /imds?api-version=2017-04-02 HTTP/1.1" 404 -
+...
+
+# Terminal 3 mkdir imds to generate a 200 for cached_ds.poll_imds()
+ssh ubuntu@$vm_ip mkdir imds;
+
+# Terminal 2 blocked indefinitely during retries until 200 occurs
+ubuntu@SRU-worked:~$ sudo python3 -c "from cloudinit.stages import _pkl_load; cached_ds = _pkl_load('/var/lib/cloud/instance/obj.pkl'); cached_ds._poll_imds()"
+
+
