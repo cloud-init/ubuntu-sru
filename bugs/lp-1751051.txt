@@ -1,0 +1,44 @@
+http://pad.lv/1751051
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1751051
+
+=== Begin SRU Template ===
+[Impact]
+Traceback of cloud-init subiquity installs when no locale is set.
+
+[Test Case]
+cat > unicode-user-data <<EOF
+#cloud-config
+hostname: sbqt
+users:
+- gecos: "Andr\xE9 D'Silva"
+  groups: [adm, cdrom, dip, lpadmin, plugdev, sambashare, debian-tor, libvirtd, lxd,
+    sudo]
+  lock-passwd: false
+  name: andre
+  passwd: $6$UaxxahbQam4Ko1g7$WB5tNuCR84DvWwI7ovxDiofIdLP47pG2USPel2iIQV/qzzT3pAb1VtlbelCR2iCNRxCoJgsVafcNtqdfz1/IL1
+  shell: /bin/bash
+EOF
+
+lxc launch ubuntu-daily:artful a1;
+lxc file push unicode-user-data a1/var/lib/cloud/seed/user-data.txt;
+lxc exec a1 sudo cloud-init clean --logs;
+lxc exec a1 -- env -u LANG cloud-init single --name users_groups --frequency always;
+lxc exec a1 grep Trace /var/log/cloud-init.log;
+lxc exec sudo deluser andre;
+lxc exec a1 'sudo sed -i s'/ artful / artful-proposed /' /etc/apt/sources.list';
+lxc exec a1 sudo apt-get update > /dev/null >2&1;
+lxc exec a1 sudo apt-get install cloud-init;
+lxc exec a1 sudo cloud-init clean --logs;
+lxc exec a1 -- env -u LANG cloud-init single --name users_groups --frequency always;
+lxc exec a1 grep Trace /var/log/cloud-init.log;   # expect no trace after upgrade
+
+lxc file push a1/var/lib/cloud/seed/user-data.txt
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
