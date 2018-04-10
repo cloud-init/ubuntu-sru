@@ -16,13 +16,22 @@ Usage: ${0##*/} [ options ] release name
 
    options:
       -i | --install PKGLIST    install these packages.
-      -u | --upgrade PKGLIST    update the packages in PKGLIST
                                 either ',' or space delimited
-                                special 'all'  means all.
-                                default is 'cloud-init'
+      -u | --upgrade PKGLIST    update the packages in PKGLIST using
+                                    apt-get install --upgrade-only
+                                special 'all'  means all. (dist-upgrade)
       -A | --add-archive A      add the apt archive via 'apt-add-repository'
+                                the string 'RELEASE' will be replaced
+                                with the output of 'lsb_release -sc'
       -p | --publish            publish the result as an image named 'name'
       -P | --proposed           enable proposed
+
+    Packages in --upgrade and --install can be either ',' or ' ' delimited.
+    The options can be given more than once.
+
+    If no upgrade or install is provided, then 'cloud-init' then
+    --upgrade=cloud-init is assumed.  Use explicit 'none' to avoid any
+    upgrade or install.
 EOF
 }
 
@@ -54,8 +63,8 @@ enable_proposed() {
 add_archives() {
     local debline="" rel="$(lsb_release -sc)"
     for debline in "$@"; do
-        debug 1 "enabling $debline"
         debline=$(echo "$debline" | sed "s,RELEASE,$rel,")
+        debug 1 "enabling $debline"
         apt-add-repository -y "$debline" || return
     done
 }
@@ -70,10 +79,10 @@ chrooted() {
         { bad_Usage; return; }
 
     local cur="" next=""
-    local upgrade="cloud-init" install="" proposed="false" archives=""
+    local upgrade="" install="" proposed="false" archives=""
+    local upgrade_in="" install_in=""
     archives=( )
 
-    echo "$*"
     while [ $# -ne 0 ]; do
         cur="$1"; next="$2";
         case "$cur" in
@@ -82,21 +91,28 @@ chrooted() {
             -P|--proposed) proposed=true;;
                --proxy) proxy=$next; shift;;
             -u|--upgrade)
-                if [ "$next" = "" -o "$next" = "none" ]; then
-                    upgrade=""
-                else
-                    upgrade="${upgrade:+${upgrade},}$next";
-                fi
+                upgrade_in="${upgrade_in:+${upgrade_in},}$next";
                 shift;;
-            -i|--install) install=${install:+${install},}$next; shift;;
+            -i|--install)
+                install_in="${install_in:+${install_in},}$next";
+                shift;;
             -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
             --) shift; break;;
         esac
         shift;
     done
 
-    upgrade=$(echo "$upgrade" | sed 's/,//g')
-    install=$(echo "$install" | sed 's/,//g')
+    if [ -z "$upgrade_in" -a -z "$install_in" ]; then
+        upgrade="cloud-init"
+    else
+        upgrade=${upgrade_in}
+        install=${install_in}
+    fi
+
+    upgrade=$(echo "$upgrade" |
+        sed -e 's/,/ /g' -e 's/[ ]\+/ /' -e 's/none //g')
+    install=$(echo "$install" |
+        sed -e 's/,/ /g' -e 's/[ ]\+/ /' -e 's/none //g')
 
     export http_proxy=${proxy}
     if [ "$proposed" = "true" ]; then
@@ -111,7 +127,7 @@ chrooted() {
         debug 1 "installing: $install"
         apt-get install --quiet --assume-yes $install </dev/null || return
     fi
-    if [ -n "$upgrade" -a "$upgrade" != "all" ]; then
+    if [ "$upgrade" != "none" -a "$upgrade" != "all" ]; then
         debug 1 "upgrading: $upgrade"
         apt-get install --quiet --assume-yes --only-upgrade \
             $upgrade </dev/null || return
@@ -182,7 +198,7 @@ main() {
         cmd=( sudo mount-image-callback "lxd:$cname" --system-resolvconf
               mchroot -- )
     fi
-    "${cmd[@]}" /bin/bash -s chrooted "$vflag" "${pt[@]}" < "$0" ||
+    "${cmd[@]}" /bin/bash -s chrooted $vflag "${pt[@]}" < "$0" ||
         return
 
     if [ "$publish" = "true" ]; then
