@@ -95,3 +95,457 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=b7b7331b9c308d8e1cb0b3dfd4398e6e7cb1b60f
 
 === End SRU Template ===
+=== START SRU vertification output xenial/artful ===
+csmith@downtown:~/cloud-init ((ubuntu/18.2-4-g05926e48-0ubuntu1_16.04.1))$ cat >testcase.yaml <<EOF
+> network:
+>     version: 1
+>     config:
+>         # Physical interfaces.
+>         - type: physical
+>           name: eth0
+>           mac_address: "52:54:00:12:34:00"
+>           subnets:
+>               - type: dhcp4
+>         - type: physical
+>           name: eth1
+>           mac_address: "52:54:00:12:34:02"
+>         - type: physical
+>           name: eth2
+>           mac_address: "52:54:00:12:34:04"
+>         # Bridge
+>         - type: bridge
+>           name: br0
+>           bridge_interfaces:
+>             - eth1
+>             - eth2
+>           mac_address: "aa:bb:cc:dd:ee:ff"
+>           params:
+>               bridge_ageing: 250
+>               bridge_bridgeprio: 22
+>               bridge_fd: 150
+>               bridge_gcint: 2
+>               bridge_hello: 1
+>               bridge_maxage: 10
+>               bridge_maxwait: 0
+>               bridge_pathcost:
+>                 - eth1 50
+>                 - eth2 75
+>               bridge_portprio:
+>                 - eth1 28
+>                 - eth2 14
+>               bridge_stp: 'off'
+>               bridge_waitport:
+>                 - 1 eth1
+>                 - 2 eth2
+>           subnets:
+>               - type: static
+>                 address: 192.168.14.2/24
+> EOF
+csmith@downtown:~/cloud-init ((ubuntu/18.2-4-g05926e48-0ubuntu1_16.04.1))$ for release in xenial artful; do
+>    name=test-$release;
+>    lxc exec $name -- grep CODE /etc/os-release;
+>    lxc file push testcase.yaml $name/testcase.yaml;
+>    lxc file push net-convert.py $name/net-convert.py;
+>    lxc exec $name -- chmod 755 /net-convert.py;
+>    MACS="-m eth0,52:54:00:12:34:00 -m eth1,52:54:00:12:34:02 -m eth2,52:54:00:12:34:04"
+>    for k in netplan; do
+>      lxc exec $name -- /net-convert.py --network-data=/testcase.yaml --kind=yaml --output-kind=$k $MACS --directory=./out.d;
+>    done;
+>    echo "## RELEASE=$release Netplan content below:";
+>    lxc exec $name cat ./out.d/etc/netplan/50-cloud-init.yaml;
+>    echo "------------------"
+>    echo
+> done
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+Error: open net-convert.py: no such file or directory
+Input YAML
+config:
+-   mac_address: '52:54:00:12:34:00'
+    name: eth0
+    subnets:
+    -   type: dhcp4
+    type: physical
+-   mac_address: '52:54:00:12:34:02'
+    name: eth1
+    type: physical
+-   mac_address: '52:54:00:12:34:04'
+    name: eth2
+    type: physical
+-   bridge_interfaces:
+    - eth1
+    - eth2
+    mac_address: aa:bb:cc:dd:ee:ff
+    name: br0
+    params:
+        bridge_ageing: 250
+        bridge_bridgeprio: 22
+        bridge_fd: 150
+        bridge_gcint: 2
+        bridge_hello: 1
+        bridge_maxage: 10
+        bridge_maxwait: 0
+        bridge_pathcost:
+        - eth1 50
+        - eth2 75
+        bridge_portprio:
+        - eth1 28
+        - eth2 14
+        bridge_stp: 'off'
+        bridge_waitport:
+        - 1 eth1
+        - 2 eth2
+    subnets:
+    -   address: 192.168.14.2/24
+        type: static
+    type: bridge
+version: 1
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+    -   mac_address: '52:54:00:12:34:00'
+        name: eth0
+        subnets:
+        -   type: dhcp4
+        type: physical
+    -   mac_address: '52:54:00:12:34:02'
+        name: eth1
+        type: physical
+    -   mac_address: '52:54:00:12:34:04'
+        name: eth2
+        type: physical
+    -   bridge_interfaces: &id003
+        - eth1
+        - eth2
+        mac_address: aa:bb:cc:dd:ee:ff
+        name: br0
+        params:
+            bridge_ageing: 250
+            bridge_bridgeprio: 22
+            bridge_fd: 150
+            bridge_gcint: 2
+            bridge_hello: 1
+            bridge_maxage: 10
+            bridge_maxwait: 0
+            bridge_pathcost: &id001
+            - eth1 50
+            - eth2 75
+            bridge_portprio: &id002
+            - eth1 28
+            - eth2 14
+            bridge_stp: 'off'
+            bridge_waitport: &id004
+            - 1 eth1
+            - 2 eth2
+        subnets:
+        -   address: 192.168.14.2/24
+            type: static
+        type: bridge
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        br0:
+            address: null
+            bridge_ageing: 250
+            bridge_bridgeprio: 22
+            bridge_fd: 150
+            bridge_gcint: 2
+            bridge_hello: 1
+            bridge_maxage: 10
+            bridge_maxwait: 0
+            bridge_pathcost: *id001
+            bridge_portprio: *id002
+            bridge_ports: *id003
+            bridge_stp: false
+            bridge_waitport: *id004
+            gateway: null
+            inet: inet
+            mac_address: aa:bb:cc:dd:ee:ff
+            mode: manual
+            mtu: null
+            name: br0
+            subnets:
+            -   address: 192.168.14.2
+                netmask: 255.255.255.0
+                prefix: 24
+                routes: []
+                type: static
+            type: bridge
+        eth0:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:00'
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: physical
+        eth1:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:02'
+            mode: manual
+            mtu: null
+            name: eth1
+            subnets: []
+            type: physical
+        eth2:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:04'
+            mode: manual
+            mtu: null
+            name: eth2
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 1
+use_ipv6: false
+
+## RELEASE=xenial Netplan content below:
+
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: '52:54:00:12:34:00'
+            set-name: eth0
+        eth1:
+            match:
+                macaddress: '52:54:00:12:34:02'
+            set-name: eth1
+        eth2:
+            match:
+                macaddress: '52:54:00:12:34:04'
+            set-name: eth2
+    bridges:
+        br0:
+            addresses:
+            - 192.168.14.2/24
+            interfaces:
+            - eth1
+            - eth2
+            parameters:
+                ageing-time: 250
+                forward-delay: 150
+                hello-time: 1
+                max-age: 10
+                path-cost:
+                    eth1: 50
+                    eth2: 75
+                port-priority:
+                    eth1: 28
+                    eth2: 14
+                priority: 22
+                stp: false
+------------------
+
+VERSION_CODENAME=artful
+UBUNTU_CODENAME=artful
+Error: open net-convert.py: no such file or directory
+Input YAML
+config:
+-   mac_address: '52:54:00:12:34:00'
+    name: eth0
+    subnets:
+    -   type: dhcp4
+    type: physical
+-   mac_address: '52:54:00:12:34:02'
+    name: eth1
+    type: physical
+-   mac_address: '52:54:00:12:34:04'
+    name: eth2
+    type: physical
+-   bridge_interfaces:
+    - eth1
+    - eth2
+    mac_address: aa:bb:cc:dd:ee:ff
+    name: br0
+    params:
+        bridge_ageing: 250
+        bridge_bridgeprio: 22
+        bridge_fd: 150
+        bridge_gcint: 2
+        bridge_hello: 1
+        bridge_maxage: 10
+        bridge_maxwait: 0
+        bridge_pathcost:
+        - eth1 50
+        - eth2 75
+        bridge_portprio:
+        - eth1 28
+        - eth2 14
+        bridge_stp: 'off'
+        bridge_waitport:
+        - 1 eth1
+        - 2 eth2
+    subnets:
+    -   address: 192.168.14.2/24
+        type: static
+    type: bridge
+version: 1
+
+
+Internal State
+!!python/object:cloudinit.net.network_state.NetworkState
+_network_state:
+    config:
+    -   mac_address: '52:54:00:12:34:00'
+        name: eth0
+        subnets:
+        -   type: dhcp4
+        type: physical
+    -   mac_address: '52:54:00:12:34:02'
+        name: eth1
+        type: physical
+    -   mac_address: '52:54:00:12:34:04'
+        name: eth2
+        type: physical
+    -   bridge_interfaces: &id003
+        - eth1
+        - eth2
+        mac_address: aa:bb:cc:dd:ee:ff
+        name: br0
+        params:
+            bridge_ageing: 250
+            bridge_bridgeprio: 22
+            bridge_fd: 150
+            bridge_gcint: 2
+            bridge_hello: 1
+            bridge_maxage: 10
+            bridge_maxwait: 0
+            bridge_pathcost: &id001
+            - eth1 50
+            - eth2 75
+            bridge_portprio: &id002
+            - eth1 28
+            - eth2 14
+            bridge_stp: 'off'
+            bridge_waitport: &id004
+            - 1 eth1
+            - 2 eth2
+        subnets:
+        -   address: 192.168.14.2/24
+            type: static
+        type: bridge
+    dns:
+        nameservers: []
+        search: []
+    interfaces:
+        br0:
+            address: null
+            bridge_ageing: 250
+            bridge_bridgeprio: 22
+            bridge_fd: 150
+            bridge_gcint: 2
+            bridge_hello: 1
+            bridge_maxage: 10
+            bridge_maxwait: 0
+            bridge_pathcost: *id001
+            bridge_portprio: *id002
+            bridge_ports: *id003
+            bridge_stp: false
+            bridge_waitport: *id004
+            gateway: null
+            inet: inet
+            mac_address: aa:bb:cc:dd:ee:ff
+            mode: manual
+            mtu: null
+            name: br0
+            subnets:
+            -   address: 192.168.14.2
+                netmask: 255.255.255.0
+                prefix: 24
+                routes: []
+                type: static
+            type: bridge
+        eth0:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:00'
+            mode: manual
+            mtu: null
+            name: eth0
+            subnets:
+            -   routes: []
+                type: dhcp4
+            type: physical
+        eth1:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:02'
+            mode: manual
+            mtu: null
+            name: eth1
+            subnets: []
+            type: physical
+        eth2:
+            address: null
+            gateway: null
+            inet: inet
+            mac_address: '52:54:00:12:34:04'
+            mode: manual
+            mtu: null
+            name: eth2
+            subnets: []
+            type: physical
+    routes: []
+    use_ipv6: false
+_version: 1
+use_ipv6: false
+
+## RELEASE=artful Netplan content below:
+
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: '52:54:00:12:34:00'
+            set-name: eth0
+        eth1:
+            match:
+                macaddress: '52:54:00:12:34:02'
+            set-name: eth1
+        eth2:
+            match:
+                macaddress: '52:54:00:12:34:04'
+            set-name: eth2
+    bridges:
+        br0:
+            addresses:
+            - 192.168.14.2/24
+            interfaces:
+            - eth1
+            - eth2
+            parameters:
+                ageing-time: 250
+                forward-delay: 150
+                hello-time: 1
+                max-age: 10
+                path-cost:
+                    eth1: 50
+                    eth2: 75
+                port-priority:
+                    eth1: 28
+                    eth2: 14
+                priority: 22
+                stp: false
+------------------
+
+=== END SRU vertification output xenial/artful ===

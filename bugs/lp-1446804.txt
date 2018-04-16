@@ -41,18 +41,24 @@ EOF
 # Launch instance under test
 $ for release in xenial artful;
   do
-    ref=$release-proposed;
     name=webserver$release;
-    lxc-proposed-snapshot --proposed --publish $release $ref;
-    lxc init $ref $name;
-    lxc config set $name user.user-data - < puppet.yml;
-    lxc start $name;
-    lxc exec $name -- cloud-init status --wait;
+    lxc launch ubuntu-daily:$release $name;
+    lxc exec $name -- cloud-init status --wait --long;
+    lxc exec $name -- sh -c '
+      mirror=http://archive.ubuntu.com/ubuntu
+      echo deb $mirror $(lsb_release -sc)-proposed main |
+         tee /etc/apt/sources.list.d/proposed.list
+      apt-get update -q
+      apt-get install -qy cloud-init';
+    lxc file push puppet.yml  $name//var/lib/cloud/seed/nocloud-net/user-data;
+    lxc exec $name -- cloud-init clean --reboot --logs;
+    sleep 3;
+    lxc exec $name -- cloud-init status --wait --long;
     lxc exec $name -- dpkg-query --show cloud-init
     lxc exec $name -- dpkg-query --show puppet
 
     lxc exec $name -- egrep 'certname|server' /etc/puppet/puppet.conf;
-    lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log;   # expect to see 'I am a web server'
+    lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log';
   done
 
 [Regression Potential]
@@ -67,4 +73,212 @@ Upstream commit at
 
 
 === SRU abridged verification Output ===
+$ for release in xenial artful;
+>   do
+>     name=webserver$release;
+>     lxc launch ubuntu-daily:$release $name;
+>     lxc exec $name -- cloud-init status --wait --long;
+>     lxc exec $name -- sh -c '
+>       mirror=http://archive.ubuntu.com/ubuntu
+>       echo deb $mirror $(lsb_release -sc)-proposed main |
+>          tee /etc/apt/sources.list.d/proposed.list
+>       apt-get update -q
+>       apt-get install -qy cloud-init';
+>     lxc file push puppet.yml  $name//var/lib/cloud/seed/nocloud-net/user-data;
+>     lxc exec $name -- cloud-init clean --reboot --logs;
+>     sleep 3;
+>     lxc exec $name -- cloud-init status --wait --long;
+>     lxc exec $name -- dpkg-query --show cloud-init
+>     lxc exec $name -- dpkg-query --show puppet
+> 
+>     lxc exec $name -- egrep 'certname|server' /etc/puppet/puppet.conf;
+>     lxc exec $name -- grep 'Notice /var/log/cloud-init-output.log';
+>   done
+Creating webserverxenial
+Starting webserverxenial
+..........................
+status: done
+time: Mon, 16 Apr 2018 19:16:43 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [102 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [102 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main Sources [120 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [102 kB]
+Get:6 http://security.ubuntu.com/ubuntu xenial-security/restricted Sources [2116 B]
+Get:7 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [253 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe Sources [63.5 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/multiverse Sources [1516 B]
+Get:10 http://archive.ubuntu.com/ubuntu xenial/main Sources [868 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [473 kB]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [341 kB]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/restricted Sources [4808 B]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/universe Sources [7728 kB]
+Get:15 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [128 kB]
+Get:16 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [3208 B]
+Get:17 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [1408 B]
+Get:18 http://archive.ubuntu.com/ubuntu xenial/multiverse Sources [179 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:22 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-updates/main Sources [305 kB]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-updates/restricted Sources [2524 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-updates/universe Sources [201 kB]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Sources [7944 B]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [757 kB]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [314 kB]
+Get:29 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [620 kB]
+Get:30 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [250 kB]
+Get:31 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.2 kB]
+Get:32 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8076 B]
+Get:33 http://archive.ubuntu.com/ubuntu xenial-backports/main Sources [3432 B]
+Get:34 http://archive.ubuntu.com/ubuntu xenial-backports/universe Sources [5816 B]
+Get:35 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [4836 B]
+Get:36 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [3220 B]
+Get:37 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [7104 B]
+Get:38 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [3844 B]
+Get:39 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [48.3 kB]
+Get:40 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [22.0 kB]
+Fetched 25.2 MB in 6s (3940 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 25 not upgraded.
+Need to get 355 kB of archives.
+After this operation, 51.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.2-4-g05926e48-0ubuntu1~16.04.1 [355 kB]
+Fetched 355 kB in 0s (398 kB/s)
+Preconfiguring packages ...
+(Reading database ... 25552 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.2-4-g05926e48-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) over (17.2-35-gf576b2a2-0ubuntu1~16.04.2) ...
+Processing triggers for ureadahead (0.100.0-19) ...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+...........................cloud-init	18.2-4-g05926e48-0ubuntu1~16.04.1
+dpkg-query: no packages found matching puppet
+grep: /etc/puppet/puppet.conf: No such file or directory
+Creating webserverartful
+Starting webserverartful
+.............................
+status: done
+time: Mon, 16 Apr 2018 19:17:32 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+deb http://archive.ubuntu.com/ubuntu artful-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu artful InRelease
+Get:2 http://security.ubuntu.com/ubuntu artful-security InRelease [78.6 kB]
+Get:3 http://archive.ubuntu.com/ubuntu artful-updates InRelease [81.7 kB]
+Get:4 http://archive.ubuntu.com/ubuntu artful-backports InRelease [72.2 kB]
+Get:5 http://security.ubuntu.com/ubuntu artful-security/main Sources [49.2 kB]
+Get:6 http://archive.ubuntu.com/ubuntu artful-proposed InRelease [235 kB]
+Get:7 http://security.ubuntu.com/ubuntu artful-security/restricted Sources [960 B]
+Get:8 http://security.ubuntu.com/ubuntu artful-security/universe Sources [16.4 kB]
+Get:9 http://security.ubuntu.com/ubuntu artful-security/multiverse Sources [1168 B]
+Get:10 http://archive.ubuntu.com/ubuntu artful/restricted Sources [5392 B]
+Get:11 http://security.ubuntu.com/ubuntu artful-security/main amd64 Packages [152 kB]
+Get:12 http://archive.ubuntu.com/ubuntu artful/universe Sources [8721 kB]
+Get:13 http://security.ubuntu.com/ubuntu artful-security/main Translation-en [65.5 kB]
+Get:14 http://security.ubuntu.com/ubuntu artful-security/universe amd64 Packages [60.0 kB]
+Get:15 http://security.ubuntu.com/ubuntu artful-security/universe Translation-en [35.2 kB]
+Get:16 http://security.ubuntu.com/ubuntu artful-security/multiverse amd64 Packages [1824 B]
+Get:17 http://security.ubuntu.com/ubuntu artful-security/multiverse Translation-en [1124 B]
+Get:18 http://archive.ubuntu.com/ubuntu artful/multiverse Sources [182 kB]
+Get:19 http://archive.ubuntu.com/ubuntu artful/main Sources [849 kB]
+Get:20 http://archive.ubuntu.com/ubuntu artful/universe amd64 Packages [8103 kB]
+Get:21 http://archive.ubuntu.com/ubuntu artful/universe Translation-en [4789 kB]
+Get:22 http://archive.ubuntu.com/ubuntu artful/multiverse amd64 Packages [150 kB]
+Get:23 http://archive.ubuntu.com/ubuntu artful/multiverse Translation-en [108 kB]
+Get:24 http://archive.ubuntu.com/ubuntu artful-updates/restricted Sources [960 B]
+Get:25 http://archive.ubuntu.com/ubuntu artful-updates/universe Sources [34.7 kB]
+Get:26 http://archive.ubuntu.com/ubuntu artful-updates/multiverse Sources [2892 B]
+Get:27 http://archive.ubuntu.com/ubuntu artful-updates/main Sources [98.0 kB]
+Get:28 http://archive.ubuntu.com/ubuntu artful-updates/main amd64 Packages [246 kB]
+Get:29 http://archive.ubuntu.com/ubuntu artful-updates/main Translation-en [109 kB]
+Get:30 http://archive.ubuntu.com/ubuntu artful-updates/universe amd64 Packages [108 kB]
+Get:31 http://archive.ubuntu.com/ubuntu artful-updates/universe Translation-en [60.1 kB]
+Get:32 http://archive.ubuntu.com/ubuntu artful-updates/multiverse amd64 Packages [4128 B]
+Get:33 http://archive.ubuntu.com/ubuntu artful-updates/multiverse Translation-en [2264 B]
+Get:34 http://archive.ubuntu.com/ubuntu artful-backports/main Sources [1192 B]
+Get:35 http://archive.ubuntu.com/ubuntu artful-backports/universe Sources [2484 B]
+Get:36 http://archive.ubuntu.com/ubuntu artful-backports/main amd64 Packages [1516 B]
+Get:37 http://archive.ubuntu.com/ubuntu artful-backports/main Translation-en [668 B]
+Get:38 http://archive.ubuntu.com/ubuntu artful-backports/universe amd64 Packages [3868 B]
+Get:39 http://archive.ubuntu.com/ubuntu artful-backports/universe Translation-en [1948 B]
+Get:40 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [23.3 kB]
+Get:41 http://archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [12.1 kB]
+Fetched 24.5 MB in 6s (3973 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 17 not upgraded.
+Need to get 352 kB of archives.
+After this operation, 51.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.2-4-g05926e48-0ubuntu1~17.10.1 [352 kB]
+Fetched 352 kB in 0s (404 kB/s)
+Preconfiguring packages ...
+(Reading database ... 26650 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.2-4-g05926e48-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) over (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+Processing triggers for rsyslog (8.16.0-1ubuntu9) ...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+..........................................................................................
+status: done
+time: Mon, 16 Apr 2018 19:18:15 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.1
+puppet	4.10.4-2ubuntu1
+certname = webserverartful.webserver123
+server = puppetmaster.local
+
+
+
+
+
+
+
+$ lxc exec webserverxenial dpkg-query --show puppet
+Error: unknown flag: --show
+$ lxc exec webserverxenial -- dpkg-query --show puppet
+puppet	3.8.5-2ubuntu0.1
+$ lxc exec webserverxenial -- egrep 'certname|server' /etc/puppet/puppet.conf;
+certname = webserverxenial.webserver123
+server = puppetmaster.local
+$ lxc exec webserverxenial -- egrep 'Notice' /var/log/cloud-init-output.log;
+Notice: Compiled catalog for webserver123.lxd in environment production in 0.01 seconds
+Notice: I am a web server
+Notice: /Stage[main]/Webserver/Notify[I am a web server]/message: defined 'message' as 'I am a web server'
+Notice: Finished catalog run in 0.15 seconds
+$ lxc exec webserverartful -- dpkg-query --show puppetpuppet	4.10.4-2ubuntu1
+$ lxc exec webserverartful -- egrep 'certname|server' /etc/puppet/puppet.conf;
+certname = webserverartful.webserver123
+server = puppetmaster.local
+$ lxc exec webserverartful -- egrep 'Notice' /var/log/cloud-init-output.log;
+Notice: Compiled catalog for webserver123.lxd in environment production in 0.08 seconds
+Notice: I am a web server
+Notice: /Stage[main]/Webserver/Notify[I am a web server]/message: defined 'message' as 'I am a web server'
+Notice: Applied catalog in 0.03 seconds
+$ 
+
+
+
+
 === End SRU abridged verification Output ===
