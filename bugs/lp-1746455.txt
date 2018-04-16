@@ -1,0 +1,38 @@
+http://pad.lv/1746455
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1746455
+
+=== Begin SRU Template ===
+[Impact]
+Base image hostname of (ubuntu) sent out with every dhcp request for juju-deployed units in vsphere.
+As a result certain bundle deployments such as kubernetes break during install because in DDNS environments which update the hostname of ubuntu to each new unit's DHCPREQUEST.
+
+
+[Test Case]
+The flow:
+ a) juju add-unit ubuntu
+ b) upgrade to xenial-proposed cloud-init
+ c) set hostname to something non-juju
+ d) set re-run cloud-init clean
+ e)  tail /var/log/syslog on MAAS server to ensure the first DHCPREQUEST matches the juju-hostname instead of the non-juju 'original' hostname
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
+
+
+# Validated on our vsphere test environment:
+juju add-unit ubuntu;
+juju ssh ubuntu/29 -- sudo hostname BROKEN;
+juju ssh ubuntu/29 -- sudo cloud-init clean --reboot --logs;
+
+# On maas
+tail -f /var/log/syslog | grep DHCP
+... 
+Apr 16 16:35:59 maas2 dhcpd[3988]: DHCPREQUEST for 10.245.201.78 from 00:50:56:98:32:99 via br0
+DHCPACK on 10.245.201.79 to 00:50:56:98:32:99 (juju-58796-26) via br0
+
+# Note no BROKEN hostname being requested
