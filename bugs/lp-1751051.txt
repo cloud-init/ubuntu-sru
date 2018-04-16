@@ -18,21 +18,18 @@ users:
   passwd: $6$UaxxahbQam4Ko1g7$WB5tNuCR84DvWwI7ovxDiofIdLP47pG2USPel2iIQV/qzzT3pAb1VtlbelCR2iCNRxCoJgsVafcNtqdfz1/IL1
   shell: /bin/bash
 EOF
+for release in xenial artful; do
+  lxc init ubuntu-daily:$release test-$release;
+  lxc config set test-$release user.user-data - < unicode-user-data
+  lxc start test-$release;
+  lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+  lxc exec test-$release "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list";
+  lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+  lxc exec test-$release sudo apt-get install cloud-init;
+  lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+  lxc exec test-$release -- cloud-init status --wait --long;  # Expect no error
+done;
 
-lxc launch ubuntu-daily:artful a1;
-lxc file push unicode-user-data a1/var/lib/cloud/seed/user-data.txt;
-lxc exec a1 sudo cloud-init clean --logs;
-lxc exec a1 -- env -u LANG cloud-init single --name users_groups --frequency always;
-lxc exec a1 grep Trace /var/log/cloud-init.log;
-lxc exec sudo deluser andre;
-lxc exec a1 'sudo sed -i s'/ artful / artful-proposed /' /etc/apt/sources.list';
-lxc exec a1 sudo apt-get update > /dev/null >2&1;
-lxc exec a1 sudo apt-get install cloud-init;
-lxc exec a1 sudo cloud-init clean --logs;
-lxc exec a1 -- env -u LANG cloud-init single --name users_groups --frequency always;
-lxc exec a1 grep Trace /var/log/cloud-init.log;   # expect no trace after upgrade
-
-lxc file push a1/var/lib/cloud/seed/user-data.txt
 
 
 [Regression Potential]
@@ -42,3 +39,64 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
 
 === End SRU Template ===
+
+=== START Xenial Verification Output ===
+$   lxc init ubuntu-daily:$release test-$release;
+Creating test-xenial
+$   lxc config set test-$release user.user-data - < unicode-user-data
+$   lxc start test-$release;
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+......
+status: error
+time: Mon, 16 Apr 2018 15:47:13 +0000
+detail:
+('users-groups', UnicodeEncodeError('ascii', "André D'Silva", 4, 5, 'ordinal not in range(128)'))
+root@sbqt:~# sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+$   lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+$   lxc exec test-$release sudo apt-get install cloud-init;
+The following packages will be upgraded:
+  cloud-init...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) ...
+$   lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+sudo: unable to resolve host sbqt: Connection timed out
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect no error
+......
+status: done
+time: Mon, 16 Apr 2018 15:49:27 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+
+### START Artful SRU verification ###
+$ release=artful
+$   lxc init ubuntu-daily:$release test-$release;
+Creating test-artful
+$   lxc config set test-$release user.user-data - < unicode-user-data
+$   lxc start test-$release;
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+....................
+status: done
+time: Mon, 16 Apr 2018 15:50:20 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec test-$release deluser andre
+Removing user `andre' ...
+Warning: group `andre' has no more members.
+Done.
+root@sbqt:~# sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+$  lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+$ lxc exec test-$release sudo apt-get install cloud-init;
+The following packages will be upgraded:
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) over (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+$ lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+$ lxc exec test-$release -- cloud-init status --wait --long;
+..........
+status: done
+time: Mon, 16 Apr 2018 15:55:08 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec test-$release bash;
+root@sbqt:~# ls /home/
+andre  ubuntu
+
+
+=== END Artful Verification Output ===
