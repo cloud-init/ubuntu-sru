@@ -50,26 +50,6 @@ debug() {
     error "${@}"
 }
 
-enable_proposed() {
-    local rel="" line="" file="/etc/apt/sources.list.d/proposed.list"
-    rel=$(lsb_release -sc)
-    line=$(awk '$1 == "deb" && $2 ~ /ubuntu.com/ {
-          printf("%s %s %s-proposed main universe\n", $1, $2, rel); exit(0) };
-          ' "rel=$rel" /etc/apt/sources.list)
-    debug 1 "Enabling proposed in $file: $line"
-    echo "$line" > "$file" ||
-        { error "failed enabling proposed with '$line'"; return 1; }
-}
-
-add_archives() {
-    local debline="" rel="$(lsb_release -sc)"
-    for debline in "$@"; do
-        debline=$(echo "$debline" | sed "s,RELEASE,$rel,")
-        debug 1 "enabling '$debline' via apt-add-repository"
-        apt-add-repository -y "$debline" || return
-    done
-}
-
 find_command() {
     local cmd="$1" mydir="${0%/*}" fpath=""
     command -v "$cmd" >/dev/null 2>&1 && _RET="$cmd" && return 0
@@ -80,75 +60,6 @@ find_command() {
     return 1
 }
 
-chrooted() {
-    local short_opts="aA:hiPu:v"
-    local long_opts="add-archive:,help,install:,proposed,proxy:,upgrade:,verbose"
-    local getopt_out=""
-    getopt_out=$(getopt --name "${0##*/}" \
-        --options "${short_opts}" --long "${long_opts}" -- "$@") &&
-        eval set -- "${getopt_out}" ||
-        { bad_Usage; return; }
-
-    local cur="" next=""
-    local upgrade="" install="" proposed="false" archives=""
-    local upgrade_in="" install_in=""
-    archives=( )
-
-    while [ $# -ne 0 ]; do
-        cur="$1"; next="$2";
-        case "$cur" in
-            -A|--add-archive) archives[${#archives[@]}]="$next"; shift;;
-            -h|--help) Usage ; exit 0;;
-            -P|--proposed) proposed=true;;
-               --proxy) proxy=$next; shift;;
-            -u|--upgrade)
-                upgrade_in="${upgrade_in:+${upgrade_in},}$next";
-                shift;;
-            -i|--install)
-                install_in="${install_in:+${install_in},}$next";
-                shift;;
-            -v|--verbose) VERBOSITY=$((${VERBOSITY}+1));;
-            --) shift; break;;
-        esac
-        shift;
-    done
-
-    if [ -z "$upgrade_in" -a -z "$install_in" ]; then
-        upgrade="cloud-init"
-    else
-        upgrade=${upgrade_in}
-        install=${install_in}
-    fi
-
-    upgrade=$(echo "$upgrade" |
-        sed -e 's/,/ /g' -e 's/[ ]\+/ /' -e 's/none //g')
-    install=$(echo "$install" |
-        sed -e 's/,/ /g' -e 's/[ ]\+/ /' -e 's/none //g')
-
-    export http_proxy=${proxy}
-    if [ "$proposed" = "true" ]; then
-        enable_proposed || return
-    fi
-    add_archives "${archives[@]}" || return
-
-    apt-get update -q || return
-
-    export DEBIAN_FRONTEND=noninteractive
-    if [ -n "$install" ]; then
-        debug 1 "installing: $install"
-        apt-get install --quiet --assume-yes $install </dev/null || return
-    fi
-    if [ "$upgrade" != "none" -a "$upgrade" != "all" ]; then
-        debug 1 "upgrading: $upgrade"
-        apt-get install --quiet --assume-yes --only-upgrade \
-            $upgrade </dev/null || return
-    elif [ "$upgrade" = "all" ]; then
-        debug 1 "dist-upgrading"
-        apt-get dist-upgrade --quiet --assume-yes </dev/null || return
-    fi
-
-    return 0
-}
 
 main() {
     local short_opts="aA:hiPpu:v"
@@ -182,7 +93,7 @@ main() {
     [ $# -eq 0 ] && { bad_Usage "must provide release and name."; return 1; }
     [ $# -eq 2 ] || { bad_Usage "Expected 2 args, got $# ($*)"; return; }
     local release="$1" cname="$2" pubname="" clean=""
-    local src="ubuntu-daily:$release"
+    local src="ubuntu-daily:$release" update_root=""
     clean="$cname"
 
     local lxc_ver="" cmd=""
@@ -199,6 +110,10 @@ main() {
         { error "Unable to find command 'lxc-pstart'."; return 1; }
     cmd="$_RET"
 
+    find_command update-root ||
+        { error "Unable to find command 'update-root'."; return 1; }
+    update_root="$_RET"
+
     if [ "$publish" = "true" ]; then
         pubname="$cname"
         cname="${cname}-${RANDOM}${RANDOM}"
@@ -212,7 +127,8 @@ main() {
     }
     CONTAINER_NAME="$clean"
 
-    "$cmd" "$cname" -- /bin/bash -s chrooted $vflag "${pt[@]}" < "$0" || return
+    "$cmd" "$cname" -- /bin/bash -s update-root $vflag "${pt[@]}" \
+        < "$update_root" || return
 
     if [ "$publish" = "true" ]; then
         debug 1 "publishing $cname to alias $pubname"
