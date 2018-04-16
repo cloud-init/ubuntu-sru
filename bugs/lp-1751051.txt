@@ -1,0 +1,102 @@
+http://pad.lv/1751051
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1751051
+
+=== Begin SRU Template ===
+[Impact]
+Traceback of cloud-init subiquity installs when no locale is set.
+
+[Test Case]
+cat > unicode-user-data <<EOF
+#cloud-config
+hostname: sbqt
+users:
+- gecos: "Andr\xE9 D'Silva"
+  groups: [adm, cdrom, dip, lpadmin, plugdev, sambashare, debian-tor, libvirtd, lxd,
+    sudo]
+  lock-passwd: false
+  name: andre
+  passwd: $6$UaxxahbQam4Ko1g7$WB5tNuCR84DvWwI7ovxDiofIdLP47pG2USPel2iIQV/qzzT3pAb1VtlbelCR2iCNRxCoJgsVafcNtqdfz1/IL1
+  shell: /bin/bash
+EOF
+for release in xenial artful; do
+  lxc init ubuntu-daily:$release test-$release;
+  lxc config set test-$release user.user-data - < unicode-user-data
+  lxc start test-$release;
+  lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+  lxc exec test-$release "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list";
+  lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+  lxc exec test-$release sudo apt-get install cloud-init;
+  lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+  lxc exec test-$release -- cloud-init status --wait --long;  # Expect no error
+done;
+
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
+
+=== START Xenial Verification Output ===
+$   lxc init ubuntu-daily:$release test-$release;
+Creating test-xenial
+$   lxc config set test-$release user.user-data - < unicode-user-data
+$   lxc start test-$release;
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+......
+status: error
+time: Mon, 16 Apr 2018 15:47:13 +0000
+detail:
+('users-groups', UnicodeEncodeError('ascii', "André D'Silva", 4, 5, 'ordinal not in range(128)'))
+root@sbqt:~# sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list
+$   lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+$   lxc exec test-$release sudo apt-get install cloud-init;
+The following packages will be upgraded:
+  cloud-init...
+Setting up cloud-init (18.2-4-g05926e48-0ubuntu1~16.04.1) ...
+$   lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+sudo: unable to resolve host sbqt: Connection timed out
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect no error
+......
+status: done
+time: Mon, 16 Apr 2018 15:49:27 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+
+### START Artful SRU verification ###
+$ release=artful
+$   lxc init ubuntu-daily:$release test-$release;
+Creating test-artful
+$   lxc config set test-$release user.user-data - < unicode-user-data
+$   lxc start test-$release;
+$   lxc exec test-$release -- cloud-init status --wait --long;  # Expect error
+....................
+status: done
+time: Mon, 16 Apr 2018 15:50:20 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec test-$release deluser andre
+Removing user `andre' ...
+Warning: group `andre' has no more members.
+Done.
+root@sbqt:~# sed -i 's/ artful / artful-proposed /' /etc/apt/sources.list
+$  lxc exec test-$release sudo apt-get update > /dev/null 2>&1;
+$ lxc exec test-$release sudo apt-get install cloud-init;
+The following packages will be upgraded:
+Unpacking cloud-init (18.2-4-g05926e48-0ubuntu1~17.10.1) over (17.2-35-gf576b2a2-0ubuntu1~17.10.2) ...
+$ lxc exec test-$release -- sudo cloud-init clean --logs --reboot;
+$ lxc exec test-$release -- cloud-init status --wait --long;
+..........
+status: done
+time: Mon, 16 Apr 2018 15:55:08 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec test-$release bash;
+root@sbqt:~# ls /home/
+andre  ubuntu
+
+
+=== END Artful Verification Output ===
