@@ -18,11 +18,11 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1702160](http://pad.lv/1702160) | ✔ [verification output](../bugs/lp-1702160.txt) |
 | [# 1750884](http://pad.lv/1750884) | ✔ [verification output](../bugs/lp-1750884.txt) |
 | [# 1752391](http://pad.lv/1752391) | ✔ [verification output](../bugs/lp-1752391.txt) |
-| [# 1735821](http://pad.lv/1735821) | ✗ [verification output](../bugs/lp-1735821.txt) |
+| [# 1735821](http://pad.lv/1735821) | ✔ [verification output](../bugs/lp-1735821.txt) |
 | [# 1746455](http://pad.lv/1746455) | ✗ [verification output](../bugs/lp-1746455.txt) |
 | [# 1721503](http://pad.lv/1721503) | ✗ [verification output](../bugs/lp-1721503.txt) |
-| [# 1752711](http://pad.lv/1752711) | ✗ [verification output](../bugs/lp-1752711.txt) |
-| [# 1446804](http://pad.lv/1446804) | ✗ [verification output](../bugs/lp-1446804.txt) |
+| [# 1752711](http://pad.lv/1752711) | ✔ [verification output](../manual/gce-sru-18.2.4.txt) |
+| [# 1446804](http://pad.lv/1446804) | ✔ [verification output](../bugs/lp-1446804.txt) |
 | [# 1751051](http://pad.lv/1751051) | ✗ [verification output](../bugs/lp-1751051.txt) |
 | [# 1749980](http://pad.lv/1749980) | ✗ [verification output](../bugs/lp-1749980.txt) |
 | [# 1747070](http://pad.lv/1747070) | ✗ [verification output](../bugs/lp-1747070.txt) |
