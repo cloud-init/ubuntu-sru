@@ -15,9 +15,8 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 | [# 1721243](http://pad.lv/1721243) | ✗ [verification output](../bugs/lp-1721243.txt) |
 | [# 1752977](http://pad.lv/1752977) | ✔ [verification output](../bugs/lp-1752977.txt) |
-| [# 1702160](http://pad.lv/1702160) | ✗ [verification output](../bugs/lp-1702160.txt) |
-| [# 1750884](http://pad.lv/1750884) | ✗ [verification output](../bugs/lp-1750884.txt) |
-| [# 1756471](http://pad.lv/1756471) | ✗ [verification output](../bugs/lp-1756471.txt) |
+| [# 1702160](http://pad.lv/1702160) | ✔ [verification output](../bugs/lp-1702160.txt) |
+| [# 1750884](http://pad.lv/1750884) | ✔ [verification output](../bugs/lp-1750884.txt) |
 | [# 1752391](http://pad.lv/1752391) | ✔ [verification output](../bugs/lp-1752391.txt) |
 | [# 1735821](http://pad.lv/1735821) | ✗ [verification output](../bugs/lp-1735821.txt) |
 | [# 1746455](http://pad.lv/1746455) | ✗ [verification output](../bugs/lp-1746455.txt) |
