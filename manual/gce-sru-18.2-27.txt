@@ -18,7 +18,8 @@ EOF
 IMAGE_VERSION=`image-status gce xenial | grep us-central | awk '{print $2}'`;
 
 # part 1 deploy with user-data
-gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
+# Europe west region exhibited the timing issues preventing cloud-init from setting up the network # 1767166
+gcloud compute instances create xenial-sru-test --zone=europe-west1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
 
 GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
 ssh $GCE_VM -- dpkg-query --show cloud-init;
@@ -30,10 +31,11 @@ ssh $GCE_VM systemd-analyze blame;
 ssh $GCE_VM cloud-init analyze show;
 ssh $GCE_VM cloud-init analyze blame;
 # part 2 upgrade cloud-init on live system
-ssh $GCE_VM "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
-ssh $GCE_VM sudo apt-get update > /dev/null 2>&1;
-ssh $GCE_VM grep Trace /var/log/cloud-init.log;
-ssh $GCE_VM sudo apt install cloud-init;
+ssh $GCE_VM -- sh -c '
+> mirror=http://archive.ubuntu.com/ubuntu
+> echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+> apt-get update -q
+> apt-get install -qy cloud-init 2>&1 > /dev/null';
 ssh $GCE_VM -- dpkg-query --show cloud-init;
 ssh $GCE_VM sudo cloud-init init;
 # part 3 clean boot cloud-init

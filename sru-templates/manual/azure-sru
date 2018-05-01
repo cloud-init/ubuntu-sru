@@ -20,9 +20,11 @@ ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
 ssh ubuntu@$vm_ip grep CODE /etc/os-release;
 ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
 ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
-ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
-ssh ubuntu@$vm_ip -- sudo apt-get update > /dev/null 2>&1;
-ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
+ssh ubuntu@$vm_ip -- sh -c '
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init';
 ssh ubuntu@$vm_ip -- sudo cloud-init init;
 ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
 ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
