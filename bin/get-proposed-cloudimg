@@ -63,8 +63,9 @@ find_command() {
 sstream_check() {
     local kpath="/usr/share/keyrings/ubuntu-cloudimage-keyring.gpg"
     command -v sstream-query >/dev/null 2>&1 || return
-    if [ -f "$f" ]; then
-        KEYRING="--keyring=$kpath"
+    if [ -f "$kpath" ]; then
+        KEYRING="$kpath"
+        return 0
     else
         # is it in the default keyring?
         local fprint="4A3CE3CD565D7EB5C810E2B97FF3F408476CF100"
@@ -103,8 +104,9 @@ download_image() {
     local url="$1" output="$2" sha256="$3"
     local tmp="$output.tmp.$$" r=""
     error "Downloading $url to $output${sha256:+ verifying sha256 $sha256}."
-    wget --progress=dot:giga "$rurl" -O "$tmp" || {
-        rerror "Failed download of $rurl"
+    wget --progress=dot:giga "$url" -O "$tmp" || {
+        rerror "Failed download of $url"
+        rm -f "$tmp"
         return
     }
     if [ -n "$sha256" ]; then
@@ -187,19 +189,23 @@ main() {
     fname=$release-server-cloudimg-amd64.img
     ofname="$fname"
     case "$release" in
-        precise|trusty|xenial)
+        precise|trusty)
             ofname="$release-server-cloudimg-amd64-disk1.img";;
+        xenial)
+            ofname="$release-server-cloudimg-amd64-uefi1.img"
+            ftype="uefi1.img";;
     esac
 
     local rawimg="${fname%.img}.raw" backing="$fname"
     if [ ! -f "$fname" ]; then
         if sstream_check; then
             error "getting image via simplestreams to $fname."
-            sstream_get_image "$release" "$fname" || exit
+            sstream_get_image "$release" "$fname" "$ftype" || exit
         else
             local burl="http://cloud-images.ubuntu.com/daily/server"
             error "No simplestreams, so using wget to get $fname."
-            download_image "$burl/$release/current/$ofname" "$fname" || {
+            download_image "$burl/$release/current/$ofname" \
+                    "$fname" || {
                 rerror "Failed download $burl/$release/current/$ofname"
                 return
             }
