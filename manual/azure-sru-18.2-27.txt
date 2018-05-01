@@ -1,0 +1,41 @@
+# Manually deploy xenial and artful on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+cat > sethostname.yaml <<EOF
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked
+EOF
+
+
+# Xenial
+az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+# Artful
+az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+
+vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+
+echo $vm_ip;
+ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
+ssh ubuntu@$vm_ip grep CODE /etc/os-release;
+ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
+ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
+ssh ubuntu@$vm_ip -- sudo apt-get update > /dev/null 2>&1;
+ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
+ssh ubuntu@$vm_ip -- sudo cloud-init init;
+ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
+ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+ssh ubuntu@$vm_ip -- cloud-init status --wait;
+ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
+ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
+ssh ubuntu@$vm_ip -- cloud-init status --long;
+ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
+ssh ubuntu@$vm_ip -- sudo systemd-analyze;
+ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
+
+# TODO add cloud-specific verification steps for this particular SRU
+
