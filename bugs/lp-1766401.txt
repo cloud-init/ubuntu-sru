@@ -1,0 +1,42 @@
+http://pad.lv/1766401
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1766401
+
+=== Begin SRU Template ===
+[Impact]
+Upgrades of cloud-init on official Ubuntu 16.04 and 17.10 images
+running on IBM public cloud will be unreachable after a reboot.
+
+This is because cloud-init incorrectly recognizes the newly added
+'IBMCloud' as the datasource to use and skips use of the previously used
+ConfigDrive or NoCloud datasource.  This is because
+a.) Official 16.04 and 17.10 images of Ubuntu have seeded data
+ in their /var/lib/cloud/seed/ directory that was used on first
+ boot and should be continued to be used.
+b.) IBMCloud's datasource in some scenarios appears looks similar
+ to that of Config Drive.  The version of cloud-init in xenial and
+ artful checks to disable config-drive in order to identify the
+ IBMCloud datasource.  That should not happen unless the IBMCloud
+ datasource is enabled, which is configured off in those images.
+
+The fix is to continue using the existing datasource on those images.
+
+[Test Case]
+ * Launch an image on IBM public cloud.
+ * add -proposed
+ * apt-get update && apt-get install cloud-init
+ * reboot
+ * ssh back in
+
+If you are able to ssh back in, then this bug has been fixed.
+
+[Regression Potential]
+This specific fix is tightly contained down the path involved in
+IBM cloud.   The most likely failure scenario would be failure
+in 18.04 images which do not have the additional datasources built
+into the images.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=11172924
+
+=== End SRU Template ===
