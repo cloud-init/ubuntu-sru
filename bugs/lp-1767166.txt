@@ -1,0 +1,41 @@
+http://pad.lv/1767166
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1767166
+
+=== Begin SRU Template ===
+[Impact]
+Cloud-init is disabled in the provisioning state. If provisioning
+artifacts are left around after debug mode, cloud-init remains disabled
+and doesn't properly configure the instance.
+
+[Test Case]
+cat > sethostname.yaml <<EOF
+#cloud-config
+ssh_import_id: [chad.smith]
+hostname: SRU-worked
+EOF
+
+VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u sethostname.yaml -i os:xenial | awk '/primary ip/{printf "root@%s", $3}'`
+
+ssh $VM_IP -- dpkg-query --show cloud-init;
+ssh $VM_IP -- cloud-init status --long;
+ssh $VM_IP -- cloud-init analyze show;
+ssh $VM_IP -- sh -c '
+> mirror=http://archive.ubuntu.com/ubuntu
+> echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+> apt-get update -q
+> apt-get install -qy cloud-init';
+ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
+ssh $VM_IP -- cloud-init clean --logs --reboot;
+ssh $VM_IP -- egrep 'provisioning|swinstall' /var/log/cloud-init.log
+ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log
+
+
+[Regression Potential]
+Regression will still be limited to softlayer instances as code changes are limited
+to softlayer datasource detection in ds-identify and DataSourceIBMCloud.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=44a44ae18
+
+=== End SRU Template ===
