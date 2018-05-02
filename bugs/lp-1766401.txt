@@ -29,6 +29,19 @@ The fix is to continue using the existing datasource on those images.
 
 If you are able to ssh back in, then this bug has been fixed.
 
+VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u sethostname.yaml -i os:xenial | awk '/primary ip/{printf "root@%s", $3}'`
+ssh $VM_IP -- dpkg-query --show cloud-init;
+ssh $VM_IP -- cloud-init status --long;
+ssh $VM_IP -- sh -c '
+  mirror=http://archive.ubuntu.com/ubuntu
+  echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+  apt-get update -q
+  apt-get install -qy cloud-init';
+ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
+ssh $VM_IP -- dpkg-query --show cloud-init;
+ssh $VM_IP -- cloud-init clean --logs --reboot;
+ssh $VM_IP -- cloud-init status --long;
+
 [Regression Potential]
 This specific fix is tightly contained down the path involved in
 IBM cloud.   The most likely failure scenario would be failure

@@ -14,26 +14,32 @@ tag, and bug does not reproduce.
 As such, it is believed that a regular end user is not really able to produce.
 
 [Test Case]
-cat > sethostname.yaml <<EOF
+cat > runcmd.yaml <<EOF
 #cloud-config
 runcmd:
  - [sh, '-c', 'cat /proc/uptime > /run/runcmd-ran.txt']
 EOF
 
-VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u sethostname.yaml -i os:xenial | awk '/primary ip/{printf "root@%s", $3}'`
+VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u runcmd.yaml -i xenial | awk '/primary ip/{printf "root@%s", $3}'`
 
-ssh root@$VM_IP -- dpkg-query --show cloud-init;
-ssh root@$VM_IP -- cloud-init status --long;
-ssh root@$VM_IP -- cloud-init analyze show;
-ssh root@$VM_IP -- sh -c '
+ssh $VM_IP -- dpkg-query --show cloud-init;
+ssh $VM_IP -- cat /run/cloud-init/result.json
+ssh $VM_IP -- cloud-init analyze show;
+ssh $VM_IP -- sh -c '
   mirror=http://archive.ubuntu.com/ubuntu
   echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
   apt-get update -q
   apt-get install -qy cloud-init';
-ssh root@$VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
-ssh root@$VM_IP -- cloud-init clean --logs --reboot;
-ssh root@$VM_IP -- egrep 'provisioning|swinstall' /var/log/cloud-init.log
-ssh root@$VM_IP -- grep provision /run/cloud-init/ds-identify.log
+ssh $VM_IP -- dpkg-query --show cloud-init;
+ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
+ssh $VM_IP -- cat /run/runcmd-ran.txt;
+ssh $VM_IP -- rm /run/runcmd-ran.txt;
+ssh $VM_IP -- cloud-init clean --logs --reboot;
+ssh $VM_IP -- egrep 'provisioning' /var/log/cloud-init.log  # Expect nothing
+ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log  # Expect nothing
+ssh $VM_IP -- cat /run/runcmd-ran.txt;
+ssh $VM_IP -- cloud-init status --long;
+ssh $VM_IP -- cloud-init analyze show;
 
 [Regression Potential]
 Regression will still be limited to softlayer instances as code changes are

@@ -1,4 +1,4 @@
-Ubuntu SRU xenial: 04/30/2018 18.2-4-g05926e48-0ubuntu1~16.04.2
+Ubuntu SRU xenial/artful: 04/30/2018 18.2-4-g05926e48-0ubuntu1~(16.04.2|17.10.2)
 =====
 This Readme hosts the manual SRU verification logs for bugs related to the cloud-init Xenial SRU started on 04/30/2018
 
@@ -13,4 +13,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 | [# 1767166](http://pad.lv/1767166) | [verification output](../bugs/lp-1767166.txt) |
 | [# 1766401](http://pad.lv/1766401) | [verification output](../bugs/lp-1766401.txt) |
-| integration proposed ec2 test | [verification output](../manual/ec2-sru-18.2-27.txt) |
+| integration proposed ec2 test | [verification output](../manual/ec2-sru-18.2-4.txt) |
