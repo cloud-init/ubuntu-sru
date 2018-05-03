@@ -16,6 +16,7 @@ As such, it is believed that a regular end user is not really able to produce.
 [Test Case]
 cat > runcmd.yaml <<EOF
 #cloud-config
+hostname: SRU-worked
 runcmd:
  - [sh, '-c', 'cat /proc/uptime > /run/runcmd-ran.txt']
 EOF
@@ -32,12 +33,13 @@ ssh $VM_IP -- sh -c '
   apt-get install -qy cloud-init';
 ssh $VM_IP -- dpkg-query --show cloud-init;
 ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
-ssh $VM_IP -- cat /run/runcmd-ran.txt;
-ssh $VM_IP -- rm /run/runcmd-ran.txt;
+ssh $VM_IP -- reboot;
+ssh $VM_IP -- cloud-init status --long;  # Should still be configdrive
 ssh $VM_IP -- cloud-init clean --logs --reboot;
+ssh $VM_IP -- cloud-init status --long;  # Should get re-configured as configdrive
 ssh $VM_IP -- egrep 'provisioning' /var/log/cloud-init.log  # Expect nothing
 ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log  # Expect nothing
-ssh $VM_IP -- cat /run/runcmd-ran.txt;
+ssh $VM_IP -- hostname;
 ssh $VM_IP -- cloud-init status --long;
 ssh $VM_IP -- cloud-init analyze show;
 
@@ -55,3 +57,337 @@ This bug is currently fixed in bionic-proposed version
 cloud-init trunk, so first upload to ubuntu 'cc' will have it fixed.
 
 === End SRU Template ===
+
+=== BEGIN SRU Validation Xenial ===
+root@publishing:~# cat > runcmd.yaml <<EOF
+> #cloud-config
+> hostname: SRU-worked
+> runcmd:
+>  - [sh, '-c', 'cat /proc/uptime > /run/runcmd-ran.txt']
+> EOF
+root@publishing:~# VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u runcmd.yaml -i xenial | awk '/primary ip/{printf "root@%s", $3}'`
+Destroy instance with:
+  slcli virtual cancel 54555262
+root@publishing:~# ssh $VM_IP -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]",
+  "errors": []
+ }
+}
+root@publishing:~# ssh $VM_IP -- cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01600s +00.00000s
+|`->found local data from DataSourceConfigDrive @00.05300s +00.00500s
+Finished stage: (init-local) 00.24200 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @01.00900s +00.00500s
+|`->reading and applying user-data @01.10100s +00.00500s
+|`->reading and applying vendor-data @01.10600s +00.00000s
+|`->config-migrator ran successfully @01.42800s +00.00000s
+|`->config-seed_random ran successfully @01.42900s +00.00500s
+|`->config-bootcmd ran successfully @01.43400s +00.00100s
+|`->config-write-files ran successfully @01.43500s +00.00100s
+|`->config-growpart ran successfully @01.43700s +00.24800s
+|`->config-resizefs ran successfully @01.68600s +00.04900s
+|`->config-disk_setup ran successfully @01.73500s +00.00200s
+|`->config-mounts ran successfully @01.73700s +00.22200s
+|`->config-set_hostname ran successfully @01.96000s +00.01500s
+|`->config-update_hostname ran successfully @01.97600s +00.00200s
+|`->config-update_etc_hosts ran successfully @01.97800s +00.00200s
+|`->config-ca-certs ran successfully @01.98000s +00.00100s
+|`->config-rsyslog ran successfully @01.98200s +00.00100s
+|`->config-users-groups ran successfully @01.98300s +00.06100s
+|`->config-ssh ran successfully @02.04400s +00.58000s
+Finished stage: (init-network) 01.64600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @05.04800s +00.00000s
+|`->config-snap_config ran successfully @05.04800s +00.00100s
+|`->config-ssh-import-id ran successfully @05.05000s +00.00100s
+|`->config-locale ran successfully @05.05100s +01.30800s
+|`->config-set-passwords ran successfully @06.36000s +00.08500s
+|`->config-grub-dpkg ran successfully @06.44500s +00.50100s
+|`->config-apt-pipelining ran successfully @06.94600s +00.00400s
+|`->config-apt-configure ran successfully @06.95000s +00.19600s
+|`->config-ntp ran successfully @07.14700s +00.00100s
+|`->config-timezone ran successfully @07.14900s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.15000s +00.00000s
+|`->config-runcmd ran successfully @07.15100s +00.00200s
+|`->config-byobu ran successfully @07.15300s +00.00100s
+Finished stage: (modules-config) 02.16900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @26.36800s +00.00300s
+|`->config-package-update-upgrade-install ran successfully @26.37100s +00.00100s
+|`->config-fan ran successfully @26.37200s +00.00100s
+|`->config-landscape ran successfully @26.37400s +00.00100s
+|`->config-lxd ran successfully @26.37500s +00.00100s
+|`->config-puppet ran successfully @26.37600s +00.00100s
+|`->config-chef ran successfully @26.37700s +00.00100s
+|`->config-salt-minion ran successfully @26.37900s +00.00100s
+|`->config-mcollective ran successfully @26.38000s +00.00100s
+|`->config-rightscale_userdata ran successfully @26.38100s +00.00100s
+|`->config-scripts-vendor ran successfully @26.38300s +00.00000s
+|`->config-scripts-per-once ran successfully @26.38400s +00.00100s
+|`->config-scripts-per-boot ran successfully @26.38500s +00.00000s
+|`->config-scripts-per-instance ran successfully @26.38600s +00.00100s
+|`->config-scripts-user ran successfully @26.38700s +00.00700s
+|`->config-ssh-authkey-fingerprints ran successfully @26.39500s +00.01500s
+|`->config-keys-to-console ran successfully @26.41100s +00.09900s
+|`->config-phone-home ran successfully @26.51100s +00.00200s
+|`->config-final-message ran successfully @26.51300s +00.00600s
+|`->config-power-state-change ran successfully @26.51900s +00.00100s
+Finished stage: (modules-final) 00.21400 seconds 
+
+Total Time: 4.27100 seconds
+
+-- Boot Record 02 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->restored from checked cache: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.01700s +00.02400s
+Finished stage: (init-local) 00.14000 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.88800s +00.00600s
+|`->reading and applying user-data @00.97600s +00.00600s
+|`->reading and applying vendor-data @00.98200s +00.00100s
+|`->config-migrator ran successfully @01.19600s +00.00700s
+|`->config-seed_random previously ran @01.20300s +00.00000s
+|`->config-bootcmd ran successfully @01.20400s +00.00000s
+|`->config-write-files previously ran @01.20500s +00.00000s
+|`->config-growpart ran successfully @01.20500s +00.14500s
+|`->config-resizefs ran successfully @01.35100s +00.05200s
+|`->config-disk_setup previously ran @01.40300s +00.00100s
+|`->config-mounts previously ran @01.40400s +00.00000s
+|`->config-set_hostname previously ran @01.40500s +00.00000s
+|`->config-update_hostname ran successfully @01.40500s +00.00700s
+|`->config-update_etc_hosts ran successfully @01.41300s +00.00000s
+|`->config-ca-certs previously ran @01.41300s +00.00100s
+|`->config-rsyslog previously ran @01.41400s +00.00000s
+|`->config-users-groups previously ran @01.41500s +00.00000s
+|`->config-ssh previously ran @01.41500s +00.00000s
+Finished stage: (init-network) 00.55300 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @03.51600s +00.00100s
+|`->config-snap_config previously ran @03.51800s +00.00000s
+|`->config-ssh-import-id previously ran @03.51800s +00.00000s
+|`->config-locale previously ran @03.51900s +00.00000s
+|`->config-set-passwords previously ran @03.51900s +00.00000s
+|`->config-grub-dpkg previously ran @03.52200s +00.00000s
+|`->config-apt-pipelining previously ran @03.52200s +00.00100s
+|`->config-apt-configure previously ran @03.52300s +00.00000s
+|`->config-ntp previously ran @03.52400s +00.00000s
+|`->config-timezone previously ran @03.52400s +00.00000s
+|`->config-disable-ec2-metadata ran successfully @03.52500s +00.00000s
+|`->config-runcmd previously ran @03.52500s +00.00100s
+|`->config-byobu previously ran @03.52600s +00.00000s
+Finished stage: (modules-config) 00.06800 seconds 
+
+Starting stage: modules-final
+|`->config-snappy previously ran @04.74600s +00.00100s
+|`->config-package-update-upgrade-install previously ran @04.74700s +00.00000s
+|`->config-fan previously ran @04.74800s +00.00000s
+|`->config-landscape previously ran @04.74800s +00.00100s
+|`->config-lxd previously ran @04.74900s +00.00000s
+|`->config-puppet previously ran @04.74900s +00.00100s
+|`->config-chef previously ran @04.75000s +00.00000s
+|`->config-salt-minion previously ran @04.75100s +00.00000s
+|`->config-mcollective previously ran @04.75100s +00.00000s
+|`->config-rightscale_userdata previously ran @04.75200s +00.00000s
+|`->config-scripts-vendor previously ran @04.75200s +00.00000s
+|`->config-scripts-per-once previously ran @04.75300s +00.00000s
+|`->config-scripts-per-boot ran successfully @04.75300s +00.00100s
+|`->config-scripts-per-instance previously ran @04.75500s +00.00000s
+|`->config-scripts-user previously ran @04.75500s +00.00000s
+|`->config-ssh-authkey-fingerprints previously ran @04.75600s +00.00000s
+|`->config-keys-to-console previously ran @04.75600s +00.00000s
+|`->config-phone-home previously ran @04.75700s +00.00000s
+|`->config-final-message ran successfully @04.75700s +00.00500s
+|`->config-power-state-change previously ran @04.76300s +00.00000s
+Finished stage: (modules-final) 00.10200 seconds 
+
+Starting stage: single
+Total Time: 0.86300 seconds
+
+2 boot records analyzed
+
+# upgrade to xenial-proposed
+root@publishing:~# ssh $VM_IP -- sh -c '
+>   mirror=http://archive.ubuntu.com/ubuntu
+>   echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+>   apt-get update -q
+>   apt-get install -qy cloud-init';
+The authenticity of host '75.126.3.99 (75.126.3.99)' can't be established.
+ECDSA key fingerprint is SHA256:ayc9jHESzNpI9fzU940Kv1/KfCCRgBvRmE/vJ2o9vR4.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '75.126.3.99' (ECDSA) to the list of known hosts.
+Enter passphrase for key '/root/.ssh/id_rsa': 
+sh: 0: -c requires an argument
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+...
+The following packages will be upgraded:
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.2-4-g05926e48-0ubuntu1~16.04.2 [355 kB]
+root@publishing:~# ssh $VM_IP -- dpkg-query --show cloud-init;
+cloud-init	18.2-4-g05926e48-0ubuntu1~16.04.2
+
+# provisioning messages aren't fielded on stock xenial because IBMCloud datasource is not configured in these images.
+root@publishing:~# ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
+
+root@publishing:~# ssh $VM_IP -- cat /run/runcmd-ran.txt;
+cat: /run/runcmd-ran.txt: No such file or directory
+root@publishing:~# ssh $VM_IP -- hostname
+SRU-worked
+# Reboot of system should not re-detect a different datasource
+root@publishing:~# ssh $VM_IP -- reboot;
+Connection to 75.126.3.99 closed by remote host.
+root@publishing:~# ssh $VM_IP -- cloud-init status --long;
+status: done
+time: Thu, 03 May 2018 02:27:22 +0000
+detail:
+DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]
+
+# clean reboot should not detect a different datasource than ConfigDrive
+root@publishing:~# ssh $VM_IP -- cloud-init clean --logs --reboot;
+Connection to 75.126.3.99 closed by remote host.
+root@publishing:~# ssh $VM_IP -- cloud-init status --long;
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:eAzDOPLjq9OJkoF82/PH7iG6EAPBl8C/VgQQipFslM0.
+Please contact your system administrator.
+Add correct host key in /root/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /root/.ssh/known_hosts:71
+  remove with:
+  ssh-keygen -f "/root/.ssh/known_hosts" -R "75.126.3.99"
+ECDSA host key for 75.126.3.99 has changed and you have requested strict checking.
+Host key verification failed.
+root@publishing:~#   ssh-keygen -f "/root/.ssh/known_hosts" -R "75.126.3.99"
+# Host 75.126.3.99 found: line 71
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+root@publishing:~# ssh $VM_IP -- cloud-init status --long;
+The authenticity of host '75.126.3.99 (75.126.3.99)' can't be established.
+ECDSA key fingerprint is SHA256:eAzDOPLjq9OJkoF82/PH7iG6EAPBl8C/VgQQipFslM0.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '75.126.3.99' (ECDSA) to the list of known hosts.
+status: done
+time: Thu, 03 May 2018 02:28:47 +0000
+detail:
+DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]
+root@publishing:~# ssh $VM_IP -- egrep 'provisioning' /var/log/cloud-init.log
+root@publishing:~# ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log
+root@publishing:~# ssh $VM_IP -- hostname
+SRU-worked
+root@publishing:~# ssh $VM_IP -- cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00700s +00.00000s
+|`->found local data from DataSourceConfigDrive @00.03100s +00.00700s
+Finished stage: (init-local) 00.13900 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.86600s +00.00500s
+|`->reading and applying user-data @00.95500s +00.00500s
+|`->reading and applying vendor-data @00.96000s +00.00100s
+|`->config-migrator ran successfully @01.13500s +00.00000s
+|`->config-seed_random ran successfully @01.13600s +00.00100s
+|`->config-bootcmd ran successfully @01.13700s +00.00000s
+|`->config-write-files ran successfully @01.13800s +00.00500s
+|`->config-growpart ran successfully @01.14400s +00.13400s
+|`->config-resizefs ran successfully @01.28300s +00.05600s
+|`->config-disk_setup ran successfully @01.33900s +00.00200s
+|`->config-mounts ran successfully @01.34100s +00.09700s
+|`->config-set_hostname ran successfully @01.44200s +00.01400s
+|`->config-update_hostname ran successfully @01.45700s +00.00600s
+|`->config-update_etc_hosts ran successfully @01.46400s +00.00000s
+|`->config-ca-certs ran successfully @01.46500s +00.00100s
+|`->config-rsyslog ran successfully @01.47100s +00.00100s
+|`->config-users-groups ran successfully @01.47200s +00.03700s
+|`->config-ssh ran successfully @01.51000s +00.15900s
+Finished stage: (init-network) 00.82800 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @03.81200s +00.00100s
+|`->config-snap ran successfully @03.81300s +00.00100s
+|`->config-snap_config ran successfully @03.81400s +00.00100s
+|`->config-ssh-import-id ran successfully @03.81600s +00.00100s
+|`->config-locale ran successfully @03.81700s +00.00200s
+|`->config-set-passwords ran successfully @03.81900s +00.07300s
+|`->config-grub-dpkg ran successfully @03.89200s +00.34800s
+|`->config-apt-pipelining ran successfully @04.24100s +00.00300s
+|`->config-apt-configure ran successfully @04.24500s +00.22300s
+|`->config-ubuntu-advantage ran successfully @04.46900s +00.00100s
+|`->config-ntp ran successfully @04.47100s +00.00100s
+|`->config-timezone ran successfully @04.47200s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @04.47300s +00.00100s
+|`->config-runcmd ran successfully @04.47400s +00.00200s
+|`->config-byobu ran successfully @04.47700s +00.00100s
+Finished stage: (modules-config) 00.72500 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @05.03400s +00.00300s
+|`->config-package-update-upgrade-install ran successfully @05.03700s +00.00100s
+|`->config-fan ran successfully @05.03800s +00.00100s
+|`->config-landscape ran successfully @05.04000s +00.00100s
+|`->config-lxd ran successfully @05.04100s +00.00100s
+|`->config-puppet ran successfully @05.04200s +00.00100s
+|`->config-chef ran successfully @05.04400s +00.00100s
+|`->config-mcollective ran successfully @05.04500s +00.00100s
+|`->config-salt-minion ran successfully @05.04600s +00.00100s
+|`->config-rightscale_userdata ran successfully @05.04700s +00.00100s
+|`->config-scripts-vendor ran successfully @05.04900s +00.00100s
+|`->config-scripts-per-once ran successfully @05.05000s +00.00100s
+|`->config-scripts-per-boot ran successfully @05.05100s +00.00100s
+|`->config-scripts-per-instance ran successfully @05.05200s +00.00100s
+|`->config-scripts-user ran successfully @05.05300s +00.00700s
+|`->config-ssh-authkey-fingerprints ran successfully @05.06100s +00.02000s
+|`->config-keys-to-console ran successfully @05.08200s +00.15900s
+|`->config-phone-home ran successfully @05.24200s +00.00100s
+|`->config-final-message ran successfully @05.24400s +00.00600s
+|`->config-power-state-change ran successfully @05.25000s +00.00100s
+Finished stage: (modules-final) 00.27900 seconds 
+
+Total Time: 1.97100 seconds
+
+1 boot records analyzed
+
+# No significant negative impact to cloud-init startup cost after upgrade
+root@publishing:~# # End Xenial validation
+
+=== END SRU Validation Xenial ===
+
+
+=== BEGIN SRU Validation Artful ===
+IBM Cloud only provides Ubuntu at LTS versions, so there is no
+artful image that we can launch. Thus, this test is a bit contrived
+and the bug is quite unlikely to affect a user there.
+
+
+VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u runcmd.yaml -i xenial | awk '/primary ip/{printf "root@%s", $3}'`;
+ssh $VM_IP -- apt-get update -qy;
+ssh $VM_IP -- apt-get -qy dist-upgrade;
+ssh $VM_IP  "sed -i 's,xenial,artful,g' /etc/apt/sources.list";
+ssh $VM_IP -- apt-get -qy update;
+ssh $VM_IP --  apt-get dist-upgrade -qy;
+ssh $VM_IP --  apt-get -qy autoremove;
+
+
+=== END SRU Validation Artful ===
+
