@@ -35,7 +35,9 @@ ssh $VM_IP -- dpkg-query --show cloud-init;
 ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
 ssh $VM_IP -- reboot;
 ssh $VM_IP -- cloud-init status --long;  # Should still be configdrive
-ssh $VM_IP -- cloud-init clean --logs --reboot;
+ssh $VM_IP -- cloud-init clean --logs;
+ssh $VM_IP -- systemctl restart cloud-init-local.service;
+ssh $VM_IP -- systemctl restart cloud-init.service;
 ssh $VM_IP -- cloud-init status --long;  # Should get re-configured as configdrive
 ssh $VM_IP -- egrep 'provisioning' /var/log/cloud-init.log  # Expect nothing
 ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log  # Expect nothing
@@ -387,7 +389,302 @@ ssh $VM_IP  "sed -i 's,xenial,artful,g' /etc/apt/sources.list";
 ssh $VM_IP -- apt-get -qy update;
 ssh $VM_IP --  apt-get dist-upgrade -qy;
 ssh $VM_IP --  apt-get -qy autoremove;
+CHAD
+root@publishing:~# VM_IP=`launch-softlayer --pubkey-file ~/.ssh/id_rsa.pub -u runcmd.yaml -i xenial | awk '/primary ip/{printf "root@%s", $3}'`
+Destroy instance with:
+  slcli virtual cancel 54654556
+root@publishing:~# ssh $VM_IP -- apt-get update -qy;The authenticity of host '75.126.220.124 (75.126.220.124)' can't be established.
+ECDSA key fingerprint is SHA256:QjjHTKCL4Z0d7JSZEvqy59+nXfBfgB0WwBfjcc6WM8E.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '75.126.220.124' (ECDSA) to the list of known hosts.
+Get:1 http://mirrors.service.networklayer.com/ubuntu xenial InRelease [247 kB]
+...
+root@publishing:~# ssh $VM_IP  "sed -i 's,xenial,artful,g' /etc/apt/sources.list";
+root@publishing:~# ssh $VM_IP -- apt-get -qy update;
+Get:1 http://mirrors.service.networklayer.com/ubuntu artful InRelease [237 kB]
+Get:2 http://mirrors.service.networklayer.com/ubuntu artful-updates InRelease [88.7 kB]
+...
+Get:475 http://mirrors.service.networklayer.com/ubuntu artful/main amd64 zerofree amd64 1.0.4-1 [8,112 B]
+...
+Processing triggers for libc-bin (2.26-0ubuntu2.1) ...
+root@publishing:~# ssh $VM_IP  -- hostname BOGUS
+root@publishing:~# ssh $VM_IP -- dpkg-query --show cloud-init
+cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.1
+root@publishing:~# ssh $VM_IP  -- cloud-init status --long
+status: done
+time: Thu, 03 May 2018 21:17:40 +0000
+detail:
+DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]
+root@publishing:~# ssh $VM_IP cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
 
+Starting stage: init-local
+|`->no cache found @00.00600s +00.00000s
+|`->found local data from DataSourceConfigDrive @00.02300s +00.00500s
+Finished stage: (init-local) 00.11900 seconds 
 
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.66900s +00.00400s
+|`->reading and applying user-data @00.75000s +00.00400s
+|`->reading and applying vendor-data @00.75400s +00.00000s
+|`->config-migrator ran successfully @00.95200s +00.00000s
+|`->config-seed_random ran successfully @00.95300s +00.00100s
+|`->config-bootcmd ran successfully @00.95400s +00.00000s
+|`->config-write-files ran successfully @00.95500s +00.00100s
+|`->config-growpart ran successfully @00.96000s +00.10200s
+|`->config-resizefs ran successfully @01.06200s +00.10100s
+|`->config-disk_setup ran successfully @01.16300s +00.00200s
+|`->config-mounts ran successfully @01.16500s +00.12100s
+|`->config-set_hostname ran successfully @01.28700s +00.01100s
+|`->config-update_hostname ran successfully @01.29800s +00.00200s
+|`->config-update_etc_hosts ran successfully @01.30000s +00.00100s
+|`->config-ca-certs ran successfully @01.30200s +00.00100s
+|`->config-rsyslog ran successfully @01.30300s +00.00100s
+|`->config-users-groups ran successfully @01.30400s +00.04900s
+|`->config-ssh ran successfully @01.35300s +00.20200s
+Finished stage: (init-network) 00.90600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @03.32200s +00.00100s
+|`->config-snap_config ran successfully @03.32300s +00.00100s
+|`->config-ssh-import-id ran successfully @03.32400s +00.00100s
+|`->config-locale ran successfully @03.32600s +01.29900s
+|`->config-set-passwords ran successfully @04.62500s +00.05200s
+|`->config-grub-dpkg ran successfully @04.67700s +00.47800s
+|`->config-apt-pipelining ran successfully @05.15500s +00.00400s
+|`->config-apt-configure ran successfully @05.15900s +00.11400s
+|`->config-ntp ran successfully @05.27400s +00.00100s
+|`->config-timezone ran successfully @05.27500s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @05.27700s +00.00000s
+|`->config-runcmd ran successfully @05.27700s +00.00200s
+|`->config-byobu ran successfully @05.28000s +00.00000s
+Finished stage: (modules-config) 02.01300 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @25.05300s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @25.05500s +00.00100s
+|`->config-fan ran successfully @25.05700s +00.00100s
+|`->config-landscape ran successfully @25.05800s +00.00100s
+|`->config-lxd ran successfully @25.05900s +00.00100s
+|`->config-puppet ran successfully @25.06100s +00.00000s
+|`->config-chef ran successfully @25.06200s +00.00000s
+|`->config-salt-minion ran successfully @25.06300s +00.00100s
+|`->config-mcollective ran successfully @25.06400s +00.00100s
+|`->config-rightscale_userdata ran successfully @25.06500s +00.00100s
+|`->config-scripts-vendor ran successfully @25.06600s +00.00100s
+|`->config-scripts-per-once ran successfully @25.06800s +00.00000s
+|`->config-scripts-per-boot ran successfully @25.06900s +00.00000s
+|`->config-scripts-per-instance ran successfully @25.06900s +00.00100s
+|`->config-scripts-user ran successfully @25.07000s +00.00400s
+|`->config-ssh-authkey-fingerprints ran successfully @25.07500s +00.01000s
+|`->config-keys-to-console ran successfully @25.08500s +00.07200s
+|`->config-phone-home ran successfully @25.15700s +00.00100s
+|`->config-final-message ran successfully @25.15900s +00.00400s
+|`->config-power-state-change ran successfully @25.16400s +00.00100s
+Finished stage: (modules-final) 00.16700 seconds 
+
+Total Time: 3.20500 seconds
+
+-- Boot Record 02 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->restored from checked cache: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.01500s +00.01600s
+Finished stage: (init-local) 00.11800 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @00.68600s +00.00400s
+|`->reading and applying user-data @00.77000s +00.00500s
+|`->reading and applying vendor-data @00.77500s +00.00000s
+|`->config-migrator ran successfully @00.95300s +00.00400s
+|`->config-seed_random previously ran @00.95800s +00.00000s
+|`->config-bootcmd ran successfully @00.95800s +00.00100s
+|`->config-write-files previously ran @00.95900s +00.00000s
+|`->config-growpart ran successfully @00.96000s +00.07700s
+|`->config-resizefs ran successfully @01.04100s +00.02700s
+|`->config-disk_setup previously ran @01.06800s +00.00000s
+|`->config-mounts previously ran @01.06900s +00.00300s
+|`->config-set_hostname previously ran @01.07200s +00.00000s
+|`->config-update_hostname ran successfully @01.07300s +00.00400s
+|`->config-update_etc_hosts ran successfully @01.07800s +00.00000s
+|`->config-ca-certs previously ran @01.07900s +00.00000s
+|`->config-rsyslog previously ran @01.07900s +00.00000s
+|`->config-users-groups previously ran @01.08000s +00.00000s
+|`->config-ssh previously ran @01.08000s +00.00000s
+Finished stage: (init-network) 00.41600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @02.59500s +00.00000s
+|`->config-snap_config previously ran @02.59600s +00.00000s
+|`->config-ssh-import-id previously ran @02.59600s +00.00000s
+|`->config-locale previously ran @02.59700s +00.00000s
+|`->config-set-passwords previously ran @02.59700s +00.00000s
+|`->config-grub-dpkg previously ran @02.59800s +00.00000s
+|`->config-apt-pipelining previously ran @02.59800s +00.00000s
+|`->config-apt-configure previously ran @02.59900s +00.00000s
+|`->config-ntp previously ran @02.59900s +00.00000s
+|`->config-timezone previously ran @02.60000s +00.00000s
+|`->config-disable-ec2-metadata ran successfully @02.60000s +00.00100s
+|`->config-runcmd previously ran @02.60100s +00.00000s
+|`->config-byobu previously ran @02.60200s +00.00000s
+Finished stage: (modules-config) 00.05900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy previously ran @03.73700s +00.00000s
+|`->config-package-update-upgrade-install previously ran @03.73800s +00.00000s
+|`->config-fan previously ran @03.73800s +00.00100s
+|`->config-landscape previously ran @03.73900s +00.00000s
+|`->config-lxd previously ran @03.74000s +00.00000s
+|`->config-puppet previously ran @03.74000s +00.00000s
+|`->config-chef previously ran @03.74100s +00.00000s
+|`->config-salt-minion previously ran @03.74100s +00.00000s
+|`->config-mcollective previously ran @03.74200s +00.00000s
+|`->config-rightscale_userdata previously ran @03.74200s +00.00000s
+|`->config-scripts-vendor previously ran @03.74300s +00.00000s
+|`->config-scripts-per-once previously ran @03.74300s +00.00100s
+|`->config-scripts-per-boot ran successfully @03.74400s +00.00100s
+|`->config-scripts-per-instance previously ran @03.74500s +00.00000s
+|`->config-scripts-user previously ran @03.74600s +00.00000s
+|`->config-ssh-authkey-fingerprints previously ran @03.74600s +00.00000s
+|`->config-keys-to-console previously ran @03.74700s +00.00000s
+|`->config-phone-home previously ran @03.74700s +00.00000s
+|`->config-final-message ran successfully @03.74800s +00.00400s
+|`->config-power-state-change previously ran @03.75200s +00.00100s
+Finished stage: (modules-final) 00.07400 seconds 
+
+Starting stage: single
+Total Time: 0.66700 seconds
+
+2 boot records analyzed
+
+# Upgrade to artful-proposed cloud-init
+root@publishing:~# ssh $VM_IP -- sh -c '
+>   mirror=http://archive.ubuntu.com/ubuntu
+>   echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+>   apt-get update -q
+>   apt-get install -qy cloud-init';
+sh: 0: -c requires an argument
+deb http://archive.ubuntu.com/ubuntu artful-proposed main
+Hit:1 http://mirrors.service.networklayer.com/ubuntu artful InRelease
+Hit:2 http://mirrors.service.networklayer.com/ubuntu artful-updates InRelease
+Hit:3 http://mirrors.service.networklayer.com/ubuntu artful-backports InRelease
+Hit:4 http://mirrors.service.networklayer.com/ubuntu artful-security InRelease
+Get:5 http://archive.ubuntu.com/ubuntu artful-proposed InRelease [240 kB]
+Get:6 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [23.5 kB]
+Get:7 http://archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [11.2 kB]
+Fetched 274 kB in 1s (260 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 353 kB of archives.
+After this operation, 3,072 B of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.2-4-g05926e48-0ubuntu1~17.10.2 [353 kB]
+...
+root@publishing:~# ssh $VM_IP -- dpkg-query --show cloud-init;
+cloud-init	18.2-4-g05926e48-0ubuntu1~17.10.2   # <-- upgraded to 17.10.2
+
+# No provisioning logic from ds-identify should fire because IBMCloud is not in datasource_list config in Artful images
+root@publishing:~# ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1 | grep provision
+root@publishing:~# ssh $VM_IP -- DEBUG_LEVEL=2 DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force 2>&1
+[up 16067.07s] ds-identify --force   # Look to see ConfigDrive detected
+policy loaded: mode=search report=false found=all maybe=all notfound=disabled
+/etc/cloud/cloud.cfg.d/99_networklayer_common.cfg set datasource_list: [ ConfigDrive, NoCloud ]
+DMI_PRODUCT_NAME=HVM domU
+DMI_SYS_VENDOR=Xen
+DMI_PRODUCT_SERIAL=90ef2826-b3c4-e8ca-a176-b06f229cfdba
+DMI_PRODUCT_UUID=90EF2826-B3C4-E8CA-A176-B06F229CFDBA
+PID_1_PRODUCT_NAME=unavailable
+DMI_CHASSIS_ASSET_TAG=
+FS_LABELS=SWAP-xvdb1,cloudimg-bootfs,cloudimg-rootfs,METADATA
+ISO9660_DEVS=
+KERNEL_CMDLINE=BOOT_IMAGE=/vmlinuz-4.4.0-112-generic root=UUID=0e81df04-5844-485b-9c04-57ff59c98e79 ro earlyprintk
+VIRT=xen
+UNAME_KERNEL_NAME=Linux
+UNAME_KERNEL_RELEASE=4.4.0-112-generic
+UNAME_KERNEL_VERSION=#135-Ubuntu SMP Fri Jan 19 11:48:36 UTC 2018
+UNAME_MACHINE=x86_64
+UNAME_NODENAME=BOGUS
+UNAME_OPERATING_SYSTEM=GNU/Linux
+DSNAME=
+DSLIST=ConfigDrive NoCloud
+MODE=search
+ON_FOUND=all
+ON_MAYBE=all
+ON_NOTFOUND=disabled
+pid=21000 ppid=20935
+is_container=false
+Checking for datasource 'ConfigDrive' via 'dscheck_ConfigDrive'
+config drive seeded directory had only 'latest'
+check for 'ConfigDrive' returned found
+Checking for datasource 'NoCloud' via 'dscheck_NoCloud'
+check for 'NoCloud' returned found
+found=ConfigDrive NoCloud maybe=
+Found 2 datasources found=all: ConfigDrive NoCloud   # Success!!! FOUND ConfigDrive
+[up 16067.08s] returning 0
+root@publishing:~# ssh $VM_IP -- reboot;
+Connection to 75.126.220.124 closed by remote host.
+root@publishing:~# ssh $VM_IP -- cloud-init status --long;  # Should still be configdrive
+
+status: done
+time: Fri, 04 May 2018 01:45:53 +0000
+detail:
+DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]
+root@publishing:~# ssh $VM_IP -- cloud-init clean --logs
+root@publishing:~# ssh $VM_IP -- systemctl restart cloud-init-local.service
+root@publishing:~# ssh $VM_IP -- systemctl restart cloud-init.service
+root@publishing:~# ssh $VM_IP -- cloud-init status --long
+status: running
+time: Fri, 04 May 2018 01:49:18 +0000
+detail:
+DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive]
+root@publishing:~# ssh $VM_IP -- egrep 'provisioning' /var/log/cloud-init.log  # Expect nothing
+The authenticity of host '75.126.220.124 (75.126.220.124)' can't be established.
+ECDSA key fingerprint is SHA256:k0wOj6gQoCfMjoFY3Nkxsoj9lceOT+6YBsVzyw4bmDE.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '75.126.220.124' (ECDSA) to the list of known hosts.
+root@publishing:~# ssh $VM_IP -- grep provision /run/cloud-init/ds-identify.log  # Expect nothing
+root@publishing:~# ssh $VM_IP -- hostname;
+SRU-worked
+root@publishing:~# ssh $VM_IP -- cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00700s +00.00000s
+|`->found local data from DataSourceConfigDrive @00.03000s +00.01400s
+Finished stage: (init-local) 00.14600 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceConfigDrive [net,ver=2][source=/var/lib/cloud/seed/config_drive] @08.92900s +00.00500s
+|`->reading and applying user-data @09.01600s +00.00500s
+|`->reading and applying vendor-data @09.02100s +00.00000s
+|`->config-migrator ran successfully @09.29900s +00.00000s
+|`->config-seed_random ran successfully @09.30000s +00.00100s
+|`->config-bootcmd ran successfully @09.30100s +00.00100s
+|`->config-write-files ran successfully @09.30200s +00.00100s
+|`->config-growpart ran successfully @09.30300s +00.03400s
+|`->config-resizefs ran successfully @09.33700s +00.02300s
+|`->config-disk_setup ran successfully @09.36100s +00.00100s
+|`->config-mounts ran successfully @09.36300s +00.01700s
+|`->config-set_hostname ran successfully @09.38100s +00.00600s
+|`->config-update_hostname ran successfully @09.38700s +00.00200s
+|`->config-update_etc_hosts ran successfully @09.38900s +00.00100s
+|`->config-ca-certs ran successfully @09.39000s +00.00100s
+|`->config-rsyslog ran successfully @09.39100s +00.00100s
+|`->config-users-groups ran successfully @09.39300s +00.01600s
+|`->config-ssh ran successfully @09.41000s +00.21700s
+Finished stage: (init-network) 00.71300 seconds 
+
+Total Time: 0.85900 seconds
+
+1 boot records analyzed
 === END SRU Validation Artful ===
 
