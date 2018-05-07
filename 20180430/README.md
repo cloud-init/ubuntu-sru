@@ -11,6 +11,6 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [# 1767166](http://pad.lv/1767166) | [verification output](../bugs/lp-1767166.txt) |
-| [# 1766401](http://pad.lv/1766401) | [verification output](../bugs/lp-1766401.txt) |
+| [# 1767166](http://pad.lv/1767166) | ✔ [verification output](../bugs/lp-1767166.txt) |
+| [# 1766401](http://pad.lv/1766401) | ✔ [verification output](../bugs/lp-1766401.txt) |
 | integration proposed ec2 test | [verification output](../manual/ec2-sru-18.2-4.txt) |
