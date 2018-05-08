@@ -1,0 +1,97 @@
+http://pad.lv/1677205
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1677205
+
+=== Begin SRU Template ===
+[Impact]
+
+[Test Case]
+# install proposed cloud-init version in lxc and boot various ssh_pwauth user-data
+
+
+$ cat > sshunchanged.yaml <<EOF
+#cloud-config
+ssh_pwauth: unchanged
+EOF
+
+$ cat > sshyes.yaml <<EOF
+#cloud-config
+ssh_pwauth: yes
+EOF
+
+$ cat > sshno.yaml <<EOF
+#cloud-config
+ssh_pwauth: no
+EOF
+
+for release in bionic; do
+   for config in sshunchanged.yaml sshyes.yaml sshno.yaml; do
+       ref=$release-proposed;
+       echo "$release:$config START --------------";
+       lxc-proposed-snapshot -p -P $release $ref > /dev/null 2>&1;
+       lxc init $ref test-$release;
+       lxc config set test-$release user.user-data - < $config;
+       lxc start test-$release;
+       lxc exec test-$release -- cloud-init status --wait;
+       lxc exec test-$release -- dpkg-query --show cloud-init;
+       lxc exec test-$release -- grep PasswordAuthentication /etc/ssh/sshd_config;
+       lxc exec test-$release -- egrep 'PasswordAuth|ssh_pwauth|restart' /var/log/cloud-init.log;
+       lxc delete test-$release --force;
+   done;
+ done;
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=4952a8545b
+
+=== End SRU Template ===
+=== START bionic SRU validation ===
+>    for config in sshunchanged.yaml sshyes.yaml sshno.yaml; do
+>        ref=$release-proposed;
+>        echo "$release:$config START --------------";
+>        lxc-proposed-snapshot -p -P $release $ref > /dev/null 2>&1;
+>        lxc init $ref test-$release;
+>        lxc config set test-$release user.user-data - < $config;
+>        lxc start test-$release;
+>        lxc exec test-$release -- cloud-init status --wait;
+>        lxc exec test-$release -- dpkg-query --show cloud-init;
+>        lxc exec test-$release -- grep PasswordAuthentication /etc/ssh/sshd_config;
+>        lxc exec test-$release -- egrep 'PasswordAuth|ssh_pwauth|restart' /var/log/cloud-init.log;
+>        lxc delete test-$release --force;
+>    done;
+>  done;
+bionic:sshunchanged.yaml START --------------
+Creating test-bionic
+..............................................
+status: done
+cloud-init	18.2-27-g6ef92c98-0ubuntu1~18.04.1
+PasswordAuthentication no
+# PasswordAuthentication.  Depending on your PAM configuration,
+# PAM authentication, then enable this but set PasswordAuthentication
+2018-05-08 03:29:48,659 - cc_set_passwords.py[DEBUG]: Leaving ssh config 'PasswordAuthentication' unchanged. ssh_pwauth=unchanged
+bionic:sshyes.yaml START --------------
+Creating test-bionic
+.............................................
+status: done
+cloud-init	18.2-27-g6ef92c98-0ubuntu1~18.04.1
+PasswordAuthentication yes
+# PasswordAuthentication.  Depending on your PAM configuration,
+# PAM authentication, then enable this but set PasswordAuthentication
+2018-05-08 03:31:38,929 - ssh_util.py[DEBUG]: line 56: option PasswordAuthentication updated no -> yes
+2018-05-08 03:31:38,930 - util.py[DEBUG]: Running command ['service', 'ssh', 'restart'] with allowed return codes [0] (shell=False, capture=True)
+bionic:sshno.yaml START --------------
+Creating test-bionic
+..............................................
+status: done
+cloud-init	18.2-27-g6ef92c98-0ubuntu1~18.04.1
+PasswordAuthentication no
+# PasswordAuthentication.  Depending on your PAM configuration,
+# PAM authentication, then enable this but set PasswordAuthentication
+2018-05-08 03:33:28,201 - ssh_util.py[DEBUG]: line 56: option PasswordAuthentication already set to no
+2018-05-08 03:33:28,201 - cc_set_passwords.py[DEBUG]: No need to restart ssh service, PasswordAuthentication not updated.
+
+
+=== End bionic SRU validation ===
+

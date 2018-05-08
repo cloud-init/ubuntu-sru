@@ -1,16 +1,15 @@
 # Manual EC2 upgrade and clean install validation Xenial and Artful 
 cat > sethostname.yaml <<EOF
 #cloud-config
-ssh_import_id : [raharper]
+ssh_import_id : [chad.smith]
 hostname: SRU-worked
 EOF
 
 EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
-ssh $EC2_INST -- cat /run/cloud-init/result.json;
-ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+ssh $EC2_INST -- cloud-init status --wait --long;
+ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo systemd-analyze;
 ssh $EC2_INST -- sudo cloud-init analyze show;
-ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
 ssh $EC2_INST "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list";
 ssh $EC2_INST -- sudo apt-get update;
 ssh $EC2_INST -- sudo apt-get install cloud-init;
@@ -20,8 +19,7 @@ ssh $EC2_INST -- sudo cloud-init init;
 ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
 ssh $EC2_INST -- hostname;
-date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
-ssh $EC2_INST -- cloud-init status --long;
+date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait --long; date --utc +%s.%N;
 ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
 ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
@@ -29,3 +27,275 @@ ssh $EC2_INST -- sudo systemd-analyze;
 ssh $EC2_INST -- sudo cloud-init analyze show;
 
 # TODO add cloud-specific verification steps for this particular SRU
+
+
+=== START bionic abridged SRU verification ====
+launch-ec2: error: argument -s/--series: expected one argument
+$ release=bionic
+$ EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+$ ssh $EC2_INST -- cloud-init status --wait --long;
+The authenticity of host 'ec2-18-218-16-38.us-east-2.compute.amazonaws.com (18.218.16.38)' can't be established.
+ECDSA key fingerprint is SHA256:8ZtIi5isvO2QK4rWzWaJ/LEd2wvlW0Pr1+Ojx330amM.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-218-16-38.us-east-2.compute.amazonaws.com,18.218.16.38' (ECDSA) to the list of known hosts.
+Enter passphrase for key '/home/csmith/.ssh/id_rsa': 
+
+status: done
+time: Tue, 08 May 2018 03:30:26 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 4.003s (kernel) + 11.588s (userspace) = 15.592s
+graphical.target reached after 7.046s in userspace
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01500s +00.00000s
+|`->found local data from DataSourceEc2Local @00.03300s +00.47800s
+Finished stage: (init-local) 00.98200 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.77300s +00.00400s
+|`->reading and applying user-data @02.84200s +00.00300s
+|`->reading and applying vendor-data @02.84500s +00.00100s
+|`->config-migrator ran successfully @02.96600s +00.00000s
+|`->config-seed_random ran successfully @02.96600s +00.00100s
+|`->config-bootcmd ran successfully @02.96800s +00.00000s
+|`->config-write-files ran successfully @02.96800s +00.00100s
+|`->config-growpart ran successfully @02.96900s +00.04800s
+|`->config-resizefs ran successfully @03.01800s +00.02900s
+|`->config-disk_setup ran successfully @03.04700s +00.00100s
+|`->config-mounts ran successfully @03.04800s +00.00200s
+|`->config-set_hostname ran successfully @03.05000s +00.00500s
+|`->config-update_hostname ran successfully @03.05500s +00.00200s
+|`->config-update_etc_hosts ran successfully @03.05700s +00.00000s
+|`->config-ca-certs ran successfully @03.05700s +00.00100s
+|`->config-rsyslog ran successfully @03.05800s +00.00100s
+|`->config-users-groups ran successfully @03.05900s +00.06300s
+|`->config-ssh ran successfully @03.12200s +00.20400s
+Finished stage: (init-network) 00.56700 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @05.33300s +00.00100s
+|`->config-snap ran successfully @05.33400s +00.00100s
+|`->config-snap_config ran successfully @05.33500s +00.00100s
+|`->config-ssh-import-id ran successfully @05.33600s +01.89200s
+|`->config-locale ran successfully @07.22900s +00.00200s
+|`->config-set-passwords ran successfully @07.23100s +00.00000s
+|`->config-grub-dpkg ran successfully @07.23200s +00.25200s
+|`->config-apt-pipelining ran successfully @07.48500s +00.00400s
+|`->config-apt-configure ran successfully @07.48900s +00.21100s
+|`->config-ubuntu-advantage ran successfully @07.70000s +00.00200s
+|`->config-ntp ran successfully @07.70200s +00.00100s
+|`->config-timezone ran successfully @07.70300s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.70400s +00.00000s
+|`->config-runcmd ran successfully @07.70400s +00.00500s
+|`->config-byobu ran successfully @07.70900s +00.00100s
+Finished stage: (modules-config) 02.44200 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @08.87900s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @08.88500s +00.00100s
+|`->config-fan ran successfully @08.88600s +00.00100s
+|`->config-landscape ran successfully @08.88700s +00.00000s
+|`->config-lxd ran successfully @08.88800s +00.00000s
+|`->config-puppet ran successfully @08.88900s +00.00400s
+|`->config-chef ran successfully @08.89400s +00.00000s
+|`->config-mcollective ran successfully @08.89500s +00.00000s
+|`->config-salt-minion ran successfully @08.89500s +00.00100s
+|`->config-rightscale_userdata ran successfully @08.89600s +00.00500s
+|`->config-scripts-vendor ran successfully @08.90200s +00.00000s
+|`->config-scripts-per-once ran successfully @08.90300s +00.00000s
+|`->config-scripts-per-boot ran successfully @08.90300s +00.00100s
+|`->config-scripts-per-instance ran successfully @08.90400s +00.00100s
+|`->config-scripts-user ran successfully @08.90900s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @08.91000s +00.14700s
+|`->config-keys-to-console ran successfully @09.05900s +00.14600s
+|`->config-phone-home ran successfully @09.20800s +00.00100s
+|`->config-final-message ran successfully @09.21000s +00.01000s
+|`->config-power-state-change ran successfully @09.22000s +00.00400s
+Finished stage: (modules-final) 00.46700 seconds 
+
+Total Time: 4.45800 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST "sudo sed -i 's/ $release / $release-proposed /' /etc/apt/sources.list";
+$ ssh $EC2_INST -- sudo apt-get update;
+Get:1 http://us-east-2.ec2.archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+...
+Reading package lists...
+$ ssh $EC2_INST -- sudo apt-get install cloud-init;
+The following packages will be upgraded:
+  cloud-init
+...
+Preparing to unpack .../cloud-init_18.2-27-g6ef92c98-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) over (18.2-14-g6d48d265-0ubuntu1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Setting up cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+$ ssh $EC2_INST sudo hostname;
+SRU-worked
+$ ssh $EC2_INST sudo hostname something-else;
+$ ssh $EC2_INST -- sudo cloud-init init;
+Cloud-init v. 18.2 running 'init' at Tue, 08 May 2018 03:32:20 +0000. Up 129.76 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.59         | 255.255.255.0 | global | 06:04:3d:9c:c3:f6 |
+ci-info: |  eth0  | True | fe80::404:3dff:fe9c:c3f6/64 |       .       |  link  | 06:04:3d:9c:c3:f6 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+Connection to ec2-18-218-16-38.us-east-2.compute.amazonaws.com closed by remote host.
+$ ssh $EC2_INST -- hostname;
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:uubuvvzU4SRwM6aTotCTqveE/9j/Tz3TSlEnJaFDOuA.
+Please contact your system administrator.
+Add correct host key in /home/csmith/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/csmith/.ssh/known_hosts:1204
+  remove with:
+  ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-218-16-38.us-east-2.compute.amazonaws.com"
+ECDSA host key for ec2-18-218-16-38.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
+Host key verification failed.
+$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-218-16-38.us-east-2.compute.amazonaws.com"
+# Host ec2-18-218-16-38.us-east-2.compute.amazonaws.com found: line 1204
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+$ ssh $EC2_INST -- hostname;
+The authenticity of host 'ec2-18-218-16-38.us-east-2.compute.amazonaws.com (18.218.16.38)' can't be established.
+ECDSA key fingerprint is SHA256:uubuvvzU4SRwM6aTotCTqveE/9j/Tz3TSlEnJaFDOuA.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-218-16-38.us-east-2.compute.amazonaws.com,18.218.16.38' (ECDSA) to the list of known hosts.
+SRU-worked
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait --long; date --utc +%s.%N;
+1525750403.823122150
+
+status: done
+time: Tue, 08 May 2018 03:33:02 +0000
+detail:
+DataSourceEc2Local
+1525750405.340775002
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+  "ds/user-data"
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkIDogW2NoYWQuc21pdGhdCmhvc3RuYW1lOiBTUlUtd29ya2VkCg==",
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+2018-05-08 03:32:55,511 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-05-08 03:32:55,517 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-05-08 03:32:55,517 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-05-08 03:32:55,519 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-05-08 03:32:55,519 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-05-08 03:32:55,521 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 466b) after 1 attempts
+2018-05-08 03:32:55,522 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-05-08 03:32:55,524 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-05-08 03:32:55,524 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.2'}} configuration
+2018-05-08 03:32:55,526 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 3.889s (kernel) + 9.360s (userspace) = 13.249s
+graphical.target reached after 6.374s in userspace
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.02000s +00.00000s
+|`->found local data from DataSourceEc2Local @00.03100s +00.42400s
+Finished stage: (init-local) 00.64400 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.86700s +00.00300s
+|`->reading and applying user-data @02.93300s +00.00400s
+|`->reading and applying vendor-data @02.93700s +00.00000s
+|`->config-migrator ran successfully @03.05800s +00.00000s
+|`->config-seed_random ran successfully @03.05900s +00.00100s
+|`->config-bootcmd ran successfully @03.06000s +00.00000s
+|`->config-write-files ran successfully @03.06100s +00.00000s
+|`->config-growpart ran successfully @03.06200s +00.04600s
+|`->config-resizefs ran successfully @03.10900s +00.02500s
+|`->config-disk_setup ran successfully @03.13400s +00.00100s
+|`->config-mounts ran successfully @03.13500s +00.00200s
+|`->config-set_hostname ran successfully @03.13700s +00.00500s
+|`->config-update_hostname ran successfully @03.14200s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.14400s +00.00000s
+|`->config-ca-certs ran successfully @03.14400s +00.00100s
+|`->config-rsyslog ran successfully @03.14500s +00.00100s
+|`->config-users-groups ran successfully @03.14600s +00.01500s
+|`->config-ssh ran successfully @03.16200s +00.21800s
+Finished stage: (init-network) 00.52600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @05.61300s +00.00000s
+|`->config-snap ran successfully @05.61300s +00.00100s
+|`->config-snap_config ran successfully @05.61400s +00.00100s
+|`->config-ssh-import-id ran successfully @05.61500s +00.75300s
+|`->config-locale ran successfully @06.36900s +00.00200s
+|`->config-set-passwords ran successfully @06.37100s +00.00100s
+|`->config-grub-dpkg ran successfully @06.38000s +00.17600s
+|`->config-apt-pipelining ran successfully @06.55700s +00.00200s
+|`->config-apt-configure ran successfully @06.56000s +00.14200s
+|`->config-ubuntu-advantage ran successfully @06.70200s +00.00100s
+|`->config-ntp ran successfully @06.70300s +00.00100s
+|`->config-timezone ran successfully @06.70400s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @06.70500s +00.00100s
+|`->config-runcmd ran successfully @06.70600s +00.00100s
+|`->config-byobu ran successfully @06.70700s +00.00100s
+Finished stage: (modules-config) 01.16100 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @07.27800s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @07.28000s +00.00100s
+|`->config-fan ran successfully @07.28100s +00.00100s
+|`->config-landscape ran successfully @07.28200s +00.00100s
+|`->config-lxd ran successfully @07.28300s +00.00100s
+|`->config-puppet ran successfully @07.28400s +00.00100s
+|`->config-chef ran successfully @07.28500s +00.00100s
+|`->config-mcollective ran successfully @07.28600s +00.00100s
+|`->config-salt-minion ran successfully @07.28700s +00.00100s
+|`->config-rightscale_userdata ran successfully @07.28800s +00.00100s
+|`->config-scripts-vendor ran successfully @07.28900s +00.00100s
+|`->config-scripts-per-once ran successfully @07.29000s +00.00100s
+|`->config-scripts-per-boot ran successfully @07.29100s +00.00000s
+|`->config-scripts-per-instance ran successfully @07.29100s +00.00100s
+|`->config-scripts-user ran successfully @07.29200s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @07.29300s +00.03100s
+|`->config-keys-to-console ran successfully @07.32400s +00.06500s
+|`->config-phone-home ran successfully @07.38900s +00.00100s
+|`->config-final-message ran successfully @07.39000s +00.00600s
+|`->config-power-state-change ran successfully @07.39600s +00.00100s
+Finished stage: (modules-final) 00.18200 seconds 
+
+Total Time: 2.51300 seconds
+
+1 boot records analyzed
+
+
+=== END bionic abridge SRU verification ===
