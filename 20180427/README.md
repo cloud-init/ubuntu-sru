@@ -16,13 +16,13 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1766711](http://pad.lv/1766711) | ✔ [verification output](../bugs/lp-1766711.txt) |
 | [# 1766714](http://pad.lv/1766714) | ✔ [verification output](../bugs/lp-1766711.txt) |
 | [# 1767166](http://pad.lv/1767166) | ✗ [verification output](../bugs/lp-1767166.txt) |
-| [# 1766287](http://pad.lv/1766287) | ✗ [verification output](../manual/gce-sru-18.2-27.txt) |
+| [# 1766287](http://pad.lv/1766287) | ✔ [verification output](../manual/gce-sru-18.2-27.txt) |
 | [# 1746605](http://pad.lv/1746605) | ✗ [verification output](../bugs/lp-1746605.txt) |
 | [# 1765085](http://pad.lv/1765085) | ✗ [verification output](../bugs/lp-1765085.txt) |
 | [# 1677205](http://pad.lv/1677205) | ✗ [verification output](../bugs/lp-1677205.txt) |
-| [# 1764264](http://pad.lv/1764264) | ✗ [verification output](../bugs/lp-1764264.txt) |
+| [# 1764264](http://pad.lv/1764264) | ✔ [verification output](../bugs/lp-1764264.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.2-27.txt) |
-| Manual azure test | ✗ [verification output](../manual/azure-sru-18.2-27.txt) |
-| Manual gce test | ✗ [verification output](../manual/gce-sru-18.2-27.txt) |
+| Manual azure test | ✔ [verification output](../manual/azure-sru-18.2-27.txt) |
+| Manual gce test | ✔ [verification output](../manual/gce-sru-18.2-27.txt) |
 | Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-kvm-18.2-27.txt) |
 | Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-18.2-27.txt) |

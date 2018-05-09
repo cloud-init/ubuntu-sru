@@ -1,0 +1,144 @@
+http://pad.lv/1764264
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1764264
+
+=== Begin SRU Template ===
+[Impact]
+Unnecessarily strict schema warnings on duplicate cloud-config runcmd values.
+runcmd should be free form and cloud-config users may want to repeat specific
+commands. So let's not warn them unnecessarily.
+
+[Test Case]
+cat > runcmd.yaml <<EOF
+#cloud-config 
+bootcmd:
+  - echo 'bootcmd'
+  - echo 'bootcmd'
+runcmd:
+  - echo 'runcmd'
+  - echo 'runcmd'
+snap:
+  commands:
+    - echo 'snap'
+    - echo 'snap'
+ubuntu-advantage:
+  commands:
+    - echo 'ubuntu-advantage'
+    - echo 'ubuntu-advantage'
+EOF
+
+lxc init ubuntu-daily:bionic myb1;
+lxc config set myb1 user.user-data - < runcmd.yaml
+lxc start myb1;
+lxc exec myb1 -- cloud-init status --wait --long;
+# see warnings on existing bionic release
+lxc exec myb1 -- grep -A 1 WARNING /var/log/cloud-init.log; 
+lxc exec myb1 -- sed -i 's/ bionic / bionic-proposed /' /etc/apt/sources.list;
+lxc exec myb1 -- apt-get update >/dev/null 2>&1;
+lxc exec myb1 -- apt-get install cloud-init;
+lxc exec myb1 -- cloud-init clean --logs --reboot;
+# Expect no warnings after update
+lxc exec myb1 -- grep -A 1 WARNING /var/log/cloud-init.log; 
+
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=6811926f
+
+=== End SRU Template ===
+=== START bionic SRU validation ===
+$ lxc config set myb1 user.user-data - < runcmd.yaml;
+$ lxc start myb1;
+$ lxc exec myb1 -- cloud-init status --wait --long;
+..............................................
+status: done
+time: Tue, 08 May 2018 22:26:55 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec myb1 -- grep -A 1 WARNING /var/log/cloud-init.log;
+2018-05-08 22:26:48,835 - schema.py[WARNING]: Invalid config:
+bootcmd: ["echo 'bootcmd'", "echo 'bootcmd'"] has non-unique elements
+--
+2018-05-08 22:26:50,682 - schema.py[WARNING]: Invalid config:
+snap.commands: ["echo 'snap'", "echo 'snap'"] has non-unique elements
+--
+2018-05-08 22:26:50,682 - subp.py[WARNING]: Non-snap commands in snap config:
+echo 'snap'
+--
+2018-05-08 22:26:51,046 - schema.py[WARNING]: Invalid config:
+ubuntu-advantage.commands: ["echo 'ubuntu-advantage'", "echo 'ubuntu-advantage'"] has non-unique elements
+--
+2018-05-08 22:26:51,047 - subp.py[WARNING]: Non-ubuntu-advantage commands in ubuntu-advantage config:
+echo 'ubuntu-advantage'
+--
+2018-05-08 22:26:51,065 - schema.py[WARNING]: Invalid config:
+runcmd: ["echo 'runcmd'", "echo 'runcmd'"] has non-unique elements
+$ lxc delete myb1  --forcecsmith@fringe:~$ 
+$ lxc init ubuntu-daily:bionic myb1;
+Creating myb1
+$ lxc config set myb1 user.user-data - < runcmd.yaml;
+$ lxc start myb1;
+$ lxc exec myb1 -- cloud-init status --wait --long;
+................................
+status: done
+time: Tue, 08 May 2018 22:27:46 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec myb1 -- grep -A 1 WARNING /var/log/cloud-init.log;
+2018-05-08 22:27:39,530 - schema.py[WARNING]: Invalid config:
+bootcmd: ["echo 'bootcmd'", "echo 'bootcmd'"] has non-unique elements
+--
+2018-05-08 22:27:41,272 - schema.py[WARNING]: Invalid config:
+snap.commands: ["echo 'snap'", "echo 'snap'"] has non-unique elements
+--
+2018-05-08 22:27:41,272 - subp.py[WARNING]: Non-snap commands in snap config:
+echo 'snap'
+--
+2018-05-08 22:27:41,637 - schema.py[WARNING]: Invalid config:
+ubuntu-advantage.commands: ["echo 'ubuntu-advantage'", "echo 'ubuntu-advantage'"] has non-unique elements
+--
+2018-05-08 22:27:41,638 - subp.py[WARNING]: Non-ubuntu-advantage commands in ubuntu-advantage config:
+echo 'ubuntu-advantage'
+--
+2018-05-08 22:27:41,654 - schema.py[WARNING]: Invalid config:
+runcmd: ["echo 'runcmd'", "echo 'runcmd'"] has non-unique elements
+$ lxc exec myb1 -- sed -i 's/ bionic / bionic-proposed /' /etc/apt/sources.list;
+$ lxc exec myb1 -- apt-get update >/dev/null 2>&1;
+$ lxc exec myb1 -- apt-get install cloud-init;
+Reading package lists... Done
+Building dependency tree       
+Reading state information... Done
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 3 not upgraded.
+Need to get 356 kB of archives.
+After this operation, 4096 B of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.2-27-g6ef92c98-0ubuntu1~18.04.1 [356 kB]
+Fetched 356 kB in 1s (401 kB/s)     
+Preconfiguring packages ...
+(Reading database ... 28477 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.2-27-g6ef92c98-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) over (18.2-14-g6d48d265-0ubuntu1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Setting up cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+$ lxc exec myb1 -- cloud-init clean --logs --reboot;
+$ lxc exec myb1 -- cloud-init status --wait --long;
+...........................
+status: done
+time: Tue, 08 May 2018 22:28:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+$ lxc exec myb1 -- grep -A 1 WARNING /var/log/cloud-init.log;
+2018-05-08 22:28:20,087 - subp.py[WARNING]: Non-snap commands in snap config:
+echo 'snap'
+--
+2018-05-08 22:28:20,459 - subp.py[WARNING]: Non-ubuntu-advantage commands in ubuntu-advantage config:
+echo 'ubuntu-advantage'
+
+
+=== END bionic SRU validation ===

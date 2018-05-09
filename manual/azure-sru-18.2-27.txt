@@ -7,35 +7,224 @@ ssh_import_id : [chad.smith]
 hostname: SRU-worked
 EOF
 
-
-# Xenial
-az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+$ cat azure-sru-test.sh
+#!/bin/bash
+echo 'Test Azure Bionic SRU'
+# Bionic
+#az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
 # Artful
-az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+#az vm create --name=my-a1 --image=Canonical:UbuntuServer:17.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
 
-vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+vm_ip=`az vm list-ip-addresses --name my-b1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+eval `ssh-agent`
+ssh-add
+echo 'Azure instance: '$vm_ip;
+ssh_cmd="ssh -o UserKnownHostsFile=/dev/null -o StrictHostKeyChecking=no -q ubuntu@${vm_ip}"
+$ssh_cmd -- dpkg-query --show cloud-init;
+$ssh_cmd grep CODE /etc/os-release;
+$ssh_cmd -- cloud-init status --wait --long;
+$ssh_cmd -- grep Traceback /var/log/cloud-init*log;
+$ssh_cmd "sudo sed -i 's/ bionic / bionic-proposed /' /etc/apt/sources.list";
+echo 'Upgrading cloud-init proposed'
+$ssh_cmd -- sudo apt-get update > /dev/null 2>&1;
+$ssh_cmd -- sudo apt-get install cloud-init;
+$ssh_cmd -- sudo cloud-init init;
+$ssh_cmd -- sudo cloud-init status --long;
+$ssh_cmd -- grep Trace /var/log/cloud-init*;
+$ssh_cmd 'cat /run/cloud-init/result.json';
+echo 'Clean reboot test'
+$ssh_cmd 'sudo cloud-init clean --logs --reboot';
+$ssh_cmd -- cloud-init status --wait --long;
+$ssh_cmd -- grep Trace /var/log/cloud-init*;
+$ssh_cmd -- dpkg-query --show cloud-init;
+$ssh_cmd -- sudo cat /run/cloud-init/instance-data.json;
+$ssh_cmd -- sudo systemd-analyze;
+$ssh_cmd -- sudo cloud-init analyze show;
 
-echo $vm_ip;
-ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
-ssh ubuntu@$vm_ip grep CODE /etc/os-release;
-ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
-ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
-ssh ubuntu@$vm_ip "sudo sed -i 's/ xenial / xenial-proposed /' /etc/apt/sources.list";
-ssh ubuntu@$vm_ip -- sudo apt-get update > /dev/null 2>&1;
-ssh ubuntu@$vm_ip -- sudo apt-get install cloud-init;
-ssh ubuntu@$vm_ip -- sudo cloud-init init;
-ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
-ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
-ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
-ssh ubuntu@$vm_ip -- cloud-init status --wait;
-ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
-ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
-ssh ubuntu@$vm_ip -- cloud-init status --long;
-ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
-ssh ubuntu@$vm_ip -- sudo systemd-analyze;
-ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
 
-# TODO add cloud-specific verification steps for this particular SRU
 
+=== START SRU Azure bionic ====
+root@publishing:~# ./azure-sru-test.sh 
+Test Azure Bionic SRU
+Agent pid 19532
+Enter passphrase for /root/.ssh/id_rsa: 
+Identity added: /root/.ssh/id_rsa (/root/.ssh/id_rsa)
+Azure instance: 104.209.171.156
+cloud-init	18.2-14-g6d48d265-0ubuntu1
+VERSION_CODENAME=bionic
+UBUNTU_CODENAME=bionic
+
+status: done
+time: Wed, 09 May 2018 04:18:23 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+Upgrading cloud-init proposed
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 7 not upgraded.
+Need to get 356 kB of archives.
+After this operation, 4096 B of additional disk space will be used.
+Get:1 http://azure.archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.2-27-g6ef92c98-0ubuntu1~18.04.1 [356 kB]
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 356 kB in 0s (2799 kB/s)
+(Reading database ... 56504 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.2-27-g6ef92c98-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) over (18.2-14-g6d48d265-0ubuntu1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Setting up cloud-init (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Cloud-init v. 18.2 running 'init' at Wed, 09 May 2018 04:31:27 +0000. Up 835.46 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.4          | 255.255.255.0 | global | 00:0d:3a:03:fe:b4 |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe03:feb4/64 |       .       |  link  | 00:0d:3a:03:fe:b4 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+status: done
+time: Wed, 09 May 2018 04:31:28 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Clean reboot test
+Connection to 104.209.171.156 closed by remote host.
+.Connection to 104.209.171.156 closed by remote host.
+cloud-init	18.2-27-g6ef92c98-0ubuntu1~18.04.1
+{
+ "base64-encoded-keys": [
+  "ds/meta-data/random_seed",
+  "ds/user-data"
+ ],
+ "ds": {
+  "meta-data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "instance-id": "4BC75914-061F-4042-BE15-A8C69F869738",
+   "local-hostname": "my-b1",
+   "random_seed": "T0VNMGQAAAABFVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQQ=="
+  },
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkOiBbY2hhZC5zbWl0aF0KaG9zdG5hbWU6IFNSVS13b3JrZWQK",
+  "vendor-data": null
+ },
+ "v1": {
+  "availability-zone": null,
+  "cloud-name": "azure",
+  "instance-id": "4BC75914-061F-4042-BE15-A8C69F869738",
+  "local-hostname": "my-b1",
+  "region": null
+ }
+}
+Startup finished in 7.479s (kernel) + 20.065s (userspace) = 27.544s
+graphical.target reached after 18.485s in userspace
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01700s +00.00000s
+|`->found local data from DataSourceAzure @00.08000s +00.37200s
+Finished stage: (init-local) 01.35300 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @04.33900s +00.02600s
+|`->reading and applying user-data @04.85800s +00.00400s
+|`->reading and applying vendor-data @04.86200s +00.00100s
+|`->config-migrator ran successfully @05.10600s +00.00000s
+|`->config-seed_random ran successfully @05.10700s +00.00100s
+|`->config-bootcmd ran successfully @05.10900s +00.00000s
+|`->config-write-files ran successfully @05.10900s +00.00200s
+|`->config-growpart ran successfully @05.11100s +00.08700s
+|`->config-resizefs ran successfully @05.19800s +00.03000s
+|`->config-disk_setup ran successfully @05.22900s +00.25700s
+|`->config-mounts ran successfully @05.48700s +00.00600s
+|`->config-set_hostname ran successfully @05.49300s +00.01200s
+|`->config-update_hostname ran successfully @05.50600s +00.00200s
+|`->config-update_etc_hosts ran successfully @05.51800s +00.00000s
+|`->config-ca-certs ran successfully @05.51800s +00.00200s
+|`->config-rsyslog ran successfully @05.52000s +00.00100s
+|`->config-users-groups ran successfully @05.52200s +00.64700s
+|`->config-ssh ran successfully @06.17000s +00.29200s
+Finished stage: (init-network) 02.20900 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @11.42400s +00.00100s
+|`->config-snap ran successfully @11.42500s +00.00500s
+|`->config-snap_config ran successfully @11.43000s +00.00100s
+|`->config-ssh-import-id ran successfully @11.43100s +01.59500s
+|`->config-locale ran successfully @13.02700s +00.00200s
+|`->config-set-passwords ran successfully @13.02900s +00.00200s
+|`->config-grub-dpkg ran successfully @13.03100s +01.07900s
+|`->config-apt-pipelining ran successfully @14.11100s +00.01900s
+|`->config-apt-configure ran successfully @14.13000s +00.21100s
+|`->config-ubuntu-advantage ran successfully @14.34200s +00.00100s
+|`->config-ntp ran successfully @14.34400s +00.00000s
+|`->config-timezone ran successfully @14.34500s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @14.34600s +00.00000s
+|`->config-runcmd ran successfully @14.34700s +00.00100s
+|`->config-byobu ran successfully @14.34800s +00.00100s
+Finished stage: (modules-config) 03.30200 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @15.35900s +00.00300s
+|`->config-package-update-upgrade-install ran successfully @15.36200s +00.00100s
+|`->config-fan ran successfully @15.36300s +00.00100s
+|`->config-landscape ran successfully @15.36400s +00.00100s
+|`->config-lxd ran successfully @15.36500s +00.00100s
+|`->config-puppet ran successfully @15.36700s +00.00000s
+|`->config-chef ran successfully @15.36800s +00.00100s
+|`->config-mcollective ran successfully @15.36900s +00.00100s
+|`->config-salt-minion ran successfully @15.37000s +00.00100s
+|`->config-rightscale_userdata ran successfully @15.37100s +00.00100s
+|`->config-scripts-vendor ran successfully @15.37200s +00.00100s
+|`->config-scripts-per-once ran successfully @15.37400s +00.00100s
+|`->config-scripts-per-boot ran successfully @15.37500s +00.00000s
+|`->config-scripts-per-instance ran successfully @15.37600s +00.00000s
+|`->config-scripts-user ran successfully @15.37700s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @15.37800s +00.26100s
+|`->config-keys-to-console ran successfully @15.64000s +00.35600s
+|`->config-phone-home ran successfully @15.99700s +00.00500s
+|`->config-final-message ran successfully @16.00300s +00.01000s
+|`->config-power-state-change ran successfully @16.01300s +00.00100s
+Finished stage: (modules-final) 00.72800 seconds 
+
+Total Time: 7.59200 seconds
+
+1 boot records analyzed
+
+=== END SRU Azure bionic ====
