@@ -1,0 +1,45 @@
+# Manual EC2 upgrade and clean install validation Xenial and Artful 
+ssh_import_id : [raharper]
+hostname: SRU-worked
+runcmd:
+  - echo 'hi'
+  - echo 'hi'   # Check LP: #1764264 Schema: do not warn on duplicate items in commands
+EOF
+
+EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+ssh $EC2_INST -- cat /run/cloud-init/result.json;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sh -c '
+ mirror=http://archive.ubuntu.com/ubuntu
+ echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+ apt-get update -q
+ apt-get install -qy cloud-init';
+ssh $EC2_INST sudo hostname;
+ssh $EC2_INST sudo hostname something-else;
+ssh $EC2_INST -- sudo cloud-init init;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+ssh $EC2_INST -- hostname;
+date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+ssh $EC2_INST -- cloud-init status --long;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+# Check LP: #1767131 cloud-config.service: run After snap.seeded.service
+ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
+# Check new reporting logs
+ssh $EC2_INST -- grep 'setting up datasource' /var/log/cloud-init.log;
+# Check LP: #1766287 net: detect unstable network names
+ssh $EC2_INST -- egrep -i 'stable|udev' /var/log/cloud-init.log
+# Check LP: #1766711 packages/debian/control.in: add missing dependency on iproute2. 
+ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;
+# Check LP: #1764264 Schema: do not warn on duplicate items in commands
+ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
+
+
+# TODO add cloud-specific verification steps for this particular SRU
