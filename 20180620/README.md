@@ -14,7 +14,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Bug | Verification Script and Output |
 | -------- |  -------- |
 | [# 1770712](http://pad.lv/1770712) | [verification output](../bugs/lp-1770712.txt) |
-| Manual ec2 test | [verification output](../manual/ec2-sru-18.3.0.txt) |
+| Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.3.0.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-18.3.0.txt) |
 | Manual gce test | [verification output](../manual/gce-sru-18.3.0.txt) |
 | Manual openstack test | [verification output](../manual/openstack-sru-18.3.0.txt) |

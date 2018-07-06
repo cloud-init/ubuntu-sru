@@ -1,5 +1,5 @@
 # Manual EC2 upgrade and clean install validation Xenial and Artful 
-ssh_import_id : [raharper]
+ssh_import_id : [chad.smith]
 hostname: SRU-worked
 runcmd:
   - echo 'hi'
@@ -7,11 +7,12 @@ runcmd:
 EOF
 
 EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+ssh $EC2_INST -- cloud-init status --wait --long;
 ssh $EC2_INST -- cat /run/cloud-init/result.json;
-ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo systemd-analyze blame;
 ssh $EC2_INST -- sudo cloud-init analyze show;
-ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sh -c '
  mirror=http://archive.ubuntu.com/ubuntu
  echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
@@ -22,24 +23,1501 @@ ssh $EC2_INST sudo hostname something-else;
 ssh $EC2_INST -- sudo cloud-init init;
 ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+date --utc +%s.%N; ssh -o StrictHostKeyChecking=no $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
 ssh $EC2_INST -- hostname;
-date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
 ssh $EC2_INST -- cloud-init status --long;
 ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
 ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
 ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
 ssh $EC2_INST -- sudo systemd-analyze;
 ssh $EC2_INST -- sudo cloud-init analyze show;
-# Check LP: #1767131 cloud-config.service: run After snap.seeded.service
-ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
-# Check new reporting logs
-ssh $EC2_INST -- grep 'setting up datasource' /var/log/cloud-init.log;
-# Check LP: #1766287 net: detect unstable network names
-ssh $EC2_INST -- egrep -i 'stable|udev' /var/log/cloud-init.log
-# Check LP: #1766711 packages/debian/control.in: add missing dependency on iproute2. 
-ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;
-# Check LP: #1764264 Schema: do not warn on duplicate items in commands
-ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
 
 
 # TODO add cloud-specific verification steps for this particular SRU
+
+# Check LP: #1767131 cloud-config.service: run After snap.seeded.service
+ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
+# Check new reporting logs
+ssh $EC2_INST -- 'grep "setting up datasource" /var/log/cloud-init.log';
+# Check LP: #1766287 net: detect unstable network names
+ssh $EC2_INST -- 'egrep -i "stable|udev" /var/log/cloud-init.log';
+# Check LP: #1766711 packages/debian/control.in: add missing dependency on iproute2. 
+ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;  # not xenial, artful
+# Check LP: #1764264 Schema: do not warn on duplicate items in commands
+ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
+ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
+
+
+
+=== BEGIN SRU Validation Xenial ===
+$ release=xenial
+$ EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+$ ssh $EC2_INST -- cloud-init status --wait --long;
+
+status: done
+time: Thu, 05 Jul 2018 22:10:04 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+$ ssh $EC2_INST -- sudo systemd-analyze;
+sudo: unable to resolve host SRU-worked
+Startup finished in 3.842s (kernel) + 17.111s (userspace) = 20.954s
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+sudo: unable to resolve host SRU-worked
+          9.061s snapd.seeded.service
+          3.913s cloud-config.service
+          3.248s console-setup.service
+          3.177s cloud-init-local.service
+          2.800s apparmor.service
+          1.865s dev-xvda1.device
+          1.348s cloud-final.service
+          1.333s snapd.service
+          1.035s pollinate.service
+           839ms cloud-init.service
+           720ms lvm2-monitor.service
+           536ms iscsid.service
+           473ms networking.service
+           456ms rsyslog.service
+           439ms accounts-daemon.service
+           342ms lxd-containers.service
+           326ms grub-common.service
+           313ms resolvconf.service
+           312ms mdadm.service
+           247ms dev-mqueue.mount
+           241ms systemd-remount-fs.service
+           234ms dev-hugepages.mount
+           233ms ufw.service
+           208ms keyboard-setup.service
+           196ms systemd-journald.service
+           188ms sys-kernel-debug.mount
+           160ms systemd-logind.service
+           144ms systemd-modules-load.service
+           128ms apport.service
+           127ms irqbalance.service
+           102ms systemd-udev-trigger.service
+            95ms systemd-journal-flush.service
+            89ms open-iscsi.service
+            87ms ondemand.service
+            84ms kmod-static-nodes.service
+            83ms lxd.socket
+            78ms snapd.socket
+            63ms systemd-tmpfiles-setup.service
+            61ms systemd-update-utmp-runlevel.service
+            59ms systemd-tmpfiles-setup-dev.service
+            58ms polkitd.service
+            57ms systemd-sysctl.service
+            56ms plymouth-quit-wait.service
+            54ms plymouth-quit.service
+            52ms plymouth-read-write.service
+            50ms systemd-machine-id-commit.service
+            43ms systemd-timesyncd.service
+            39ms systemd-update-utmp.service
+            37ms systemd-random-seed.service
+            36ms sys-fs-fuse-connections.mount
+            29ms ssh.service
+            28ms rc-local.service
+            25ms user@1000.service
+            25ms setvtrgb.service
+            24ms snap-amazon\x2dssm\x2dagent-295.mount
+            24ms systemd-udevd.service
+            22ms snap-core-4917.mount
+            17ms systemd-user-sessions.service
+            11ms dev-loop1.device
+             5ms dev-loop0.device
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.04200s +00.00100s
+|`->no local data found from DataSourceNoCloud @00.22100s +00.16300s
+|`->no local data found from DataSourceConfigDrive @00.38400s +00.19900s
+|`->no local data found from DataSourceOpenNebula @00.58300s +00.13200s
+|`->no local data found from DataSourceDigitalOcean @00.71500s +00.01500s
+|`->no local data found from DataSourceAzure @00.73000s +00.02600s
+|`->no local data found from DataSourceOVF @00.75600s +00.06300s
+|`->no local data found from DataSourceCloudSigma @00.81900s +00.01400s
+|`->no local data found from DataSourceSmartOS @00.83300s +00.01900s
+|`->found local data from DataSourceEc2Local @00.85200s +00.45600s
+Finished stage: (init-local) 01.48400 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.58300s +00.00400s
+|`->reading and applying user-data @02.64800s +00.00400s
+|`->reading and applying vendor-data @02.65200s +00.00000s
+|`->config-migrator ran successfully @02.74000s +00.00000s
+|`->config-seed_random ran successfully @02.74100s +00.00100s
+|`->config-bootcmd ran successfully @02.74200s +00.00000s
+|`->config-write-files ran successfully @02.74300s +00.00000s
+|`->config-growpart ran successfully @02.74400s +00.04000s
+|`->config-resizefs ran successfully @02.78500s +00.02100s
+|`->config-disk_setup ran successfully @02.80600s +00.00100s
+|`->config-mounts ran successfully @02.80700s +00.00200s
+|`->config-set_hostname ran successfully @02.80900s +00.00500s
+|`->config-update_hostname ran successfully @02.81400s +00.00100s
+|`->config-update_etc_hosts ran successfully @02.81600s +00.00000s
+|`->config-ca-certs ran successfully @02.81600s +00.00100s
+|`->config-rsyslog ran successfully @02.81700s +00.00100s
+|`->config-users-groups ran successfully @02.81800s +00.06000s
+|`->config-ssh ran successfully @02.87800s +00.15900s
+Finished stage: (init-network) 00.46700 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @04.57600s +00.00100s
+|`->config-snap ran successfully @04.57700s +00.00100s
+|`->config-snap_config ran successfully @04.57800s +00.00100s
+|`->config-ssh-import-id ran successfully @04.57900s +00.93500s
+|`->config-locale ran successfully @05.51600s +01.43500s
+|`->config-set-passwords ran successfully @06.95300s +00.00100s
+|`->config-grub-dpkg ran successfully @06.95400s +00.22700s
+|`->config-apt-pipelining ran successfully @07.18300s +00.00400s
+|`->config-apt-configure ran successfully @07.18700s +00.16800s
+|`->config-ubuntu-advantage ran successfully @07.35600s +00.00100s
+|`->config-ntp ran successfully @07.36200s +00.00100s
+|`->config-timezone ran successfully @07.36300s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.36400s +00.00000s
+|`->config-runcmd ran successfully @07.36400s +00.00600s
+|`->config-byobu ran successfully @07.37100s +00.00000s
+Finished stage: (modules-config) 02.83900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @14.43600s +00.00700s
+|`->config-package-update-upgrade-install ran successfully @14.44300s +00.00100s
+|`->config-fan ran successfully @14.44400s +00.00100s
+|`->config-landscape ran successfully @14.44500s +00.00100s
+|`->config-lxd ran successfully @14.44600s +00.00700s
+|`->config-puppet ran successfully @14.45300s +00.00100s
+|`->config-chef ran successfully @14.45400s +00.00100s
+|`->config-mcollective ran successfully @14.45500s +00.00100s
+|`->config-salt-minion ran successfully @14.45600s +00.00100s
+|`->config-rightscale_userdata ran successfully @14.45700s +00.00100s
+|`->config-scripts-vendor ran successfully @14.46200s +00.00600s
+|`->config-scripts-per-once ran successfully @14.46800s +00.00100s
+|`->config-scripts-per-boot ran successfully @14.46900s +00.00000s
+|`->config-scripts-per-instance ran successfully @14.46900s +00.00100s
+|`->config-scripts-user ran successfully @14.47000s +00.00900s
+|`->config-ssh-authkey-fingerprints ran successfully @14.48500s +00.05400s
+|`->config-keys-to-console ran successfully @14.53900s +00.06300s
+|`->config-phone-home ran successfully @14.60300s +00.00100s
+|`->config-final-message ran successfully @14.60400s +00.00400s
+|`->config-power-state-change ran successfully @14.60800s +00.00100s
+Finished stage: (modules-final) 00.30600 seconds 
+
+Total Time: 5.09600 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST
+Welcome to Ubuntu 16.04.4 LTS (GNU/Linux 4.4.0-1062-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+ubuntu@SRU-worked:~$ sudo sh -c '
+>  mirror=http://archive.ubuntu.com/ubuntu
+>  echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+>  apt-get update -q
+>  apt-get install -qy cloud-init';
+sudo: unable to resolve host SRU-worked
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+...
+The following packages will be upgraded:
+  cloud-init
+...
+Setting up cloud-init (18.3-0ubuntu1~16.04.1) ...
+ubuntu@SRU-worked:~$ exit
+Connection to ec2-18-219-144-201.us-east-2.compute.amazonaws.com closed.
+$ ssh $EC2_INST sudo hostname;
+sudo: unable to resolve host SRU-worked
+SRU-worked
+$ ssh $EC2_INST sudo hostname something-else;
+sudo: unable to resolve host SRU-worked
+$ ssh $EC2_INST -- sudo cloud-init init;
+sudo: unable to resolve host something-else
+Cloud-init v. 18.3-0ubuntu1~16.04.1 running 'init' at Thu, 05 Jul 2018 22:14:33 +0000. Up 289.57 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.125        | 255.255.255.0 | global | 06:94:a0:68:74:22 |
+ci-info: |  eth0  | True | fe80::494:a0ff:fe68:7422/64 |       .       |  link  | 06:94:a0:68:74:22 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   0   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+sudo: unable to resolve host something-else
+Connection to ec2-18-219-144-201.us-east-2.compute.amazonaws.com closed by remote host.
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530828921.118128193
+$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-219-144-201.us-east-2.compute.amazonaws.com"
+# Host ec2-18-219-144-201.us-east-2.compute.amazonaws.com found: line 1217
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530828930.474066494
+The authenticity of host 'ec2-18-219-144-201.us-east-2.compute.amazonaws.com (18.219.144.201)' can't be established.
+ECDSA key fingerprint is SHA256:EGWQNC9v9eTJaUOQDbSREIs3OCCVD3Hr+WUB9dHS+1M.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-219-144-201.us-east-2.compute.amazonaws.com,18.219.144.201' (ECDSA) to the list of known hosts.
+
+status: done
+1530828933.108421198
+$ ssh $EC2_INST -- cloud-init status --long;
+status: done
+time: Thu, 05 Jul 2018 22:15:23 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- hostname;
+SRU-worked
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+sudo: unable to resolve host SRU-worked
+  "ds/user-data"
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkIDogW2NoYWQuc21pdGhdCmhvc3RuYW1lOiBTUlUtd29ya2VkCnJ1bmNtZDoKICAtIGVjaG8gJ2hpJwogIC0gZWNobyAnaGknICAjIENoZWNrIExQOiAjMTc2NDI2NCBTY2hlbWE6IGRvIG5vdCB3YXJuIG9uIGR1cGxpY2F0ZSBpdGVtcwo=",
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+2018-07-05 22:15:17,876 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'allow_redirects': True, 'method': 'GET', 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~16.04.1'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'timeout': 5.0} configuration
+2018-07-05 22:15:17,880 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-07-05 22:15:17,880 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'allow_redirects': True, 'method': 'GET', 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~16.04.1'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'timeout': 5.0} configuration
+2018-07-05 22:15:17,882 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-07-05 22:15:17,882 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'allow_redirects': True, 'method': 'GET', 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~16.04.1'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'timeout': 5.0} configuration
+2018-07-05 22:15:17,884 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-07-05 22:15:17,884 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'allow_redirects': True, 'method': 'GET', 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~16.04.1'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'timeout': 5.0} configuration
+2018-07-05 22:15:17,886 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-07-05 22:15:17,887 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'allow_redirects': True, 'method': 'GET', 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~16.04.1'}, 'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'timeout': 5.0} configuration
+2018-07-05 22:15:17,889 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 467b) after 1 attempts
+$ ssh $EC2_INST -- sudo systemd-analyze;
+sudo: unable to resolve host SRU-worked
+Startup finished in 4.123s (kernel) + 10.122s (userspace) = 14.246s
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01300s +00.00000s
+|`->no local data found from DataSourceNoCloud @00.19200s +00.17100s
+|`->no local data found from DataSourceConfigDrive @00.36300s +00.21000s
+|`->no local data found from DataSourceOpenNebula @00.57300s +00.09300s
+|`->no local data found from DataSourceDigitalOcean @00.66600s +00.01000s
+|`->no local data found from DataSourceAzure @00.67600s +00.01200s
+|`->no local data found from DataSourceOVF @00.68900s +00.03900s
+|`->no local data found from DataSourceOpenStackLocal @00.72900s +00.02300s
+|`->no local data found from DataSourceCloudSigma @00.75200s +00.01300s
+|`->no local data found from DataSourceSmartOS @00.76500s +00.01300s
+|`->found local data from DataSourceEc2Local @00.77800s +01.69300s
+Finished stage: (init-local) 02.53600 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @03.06700s +00.00400s
+|`->setting up datasource @03.12400s +00.00100s
+|`->reading and applying user-data @03.13600s +00.00400s
+|`->reading and applying vendor-data @03.14000s +00.00000s
+|`->activating datasource @03.16500s +00.00100s
+|`->config-migrator ran successfully @03.23700s +00.00000s
+|`->config-seed_random ran successfully @03.23800s +00.00000s
+|`->config-bootcmd ran successfully @03.23900s +00.00000s
+|`->config-write-files ran successfully @03.23900s +00.00100s
+|`->config-growpart ran successfully @03.24000s +00.06900s
+|`->config-resizefs ran successfully @03.30900s +00.02900s
+|`->config-disk_setup ran successfully @03.33800s +00.00100s
+|`->config-mounts ran successfully @03.34000s +00.00100s
+|`->config-set_hostname ran successfully @03.34200s +00.00400s
+|`->config-update_hostname ran successfully @03.34700s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.34800s +00.00000s
+|`->config-ca-certs ran successfully @03.34900s +00.00000s
+|`->config-rsyslog ran successfully @03.35000s +00.00000s
+|`->config-users-groups ran successfully @03.35100s +00.01400s
+|`->config-ssh ran successfully @03.36600s +00.30500s
+Finished stage: (init-network) 00.62100 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.21100s +00.00100s
+|`->config-snap ran successfully @06.21200s +00.00100s
+|`->config-snap_config ran successfully @06.21300s +00.00100s
+|`->config-ssh-import-id ran successfully @06.21400s +00.60200s
+|`->config-locale ran successfully @06.81700s +00.00100s
+|`->config-set-passwords ran successfully @06.82000s +00.00300s
+|`->config-grub-dpkg ran successfully @06.82400s +00.25800s
+|`->config-apt-pipelining ran successfully @07.08500s +00.00300s
+|`->config-apt-configure ran successfully @07.08800s +00.12300s
+|`->config-ubuntu-advantage ran successfully @07.21200s +00.00100s
+|`->config-ntp ran successfully @07.21300s +00.00100s
+|`->config-timezone ran successfully @07.21400s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.21500s +00.00000s
+|`->config-runcmd ran successfully @07.21500s +00.00200s
+|`->config-byobu ran successfully @07.21700s +00.00100s
+Finished stage: (modules-config) 01.04900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @07.61200s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @07.61400s +00.00100s
+|`->config-fan ran successfully @07.61500s +00.00100s
+|`->config-landscape ran successfully @07.61600s +00.00100s
+|`->config-lxd ran successfully @07.61700s +00.00100s
+|`->config-puppet ran successfully @07.61800s +00.00100s
+|`->config-chef ran successfully @07.61900s +00.00100s
+|`->config-mcollective ran successfully @07.62000s +00.00100s
+|`->config-salt-minion ran successfully @07.62100s +00.00100s
+|`->config-rightscale_userdata ran successfully @07.62200s +00.00100s
+|`->config-scripts-vendor ran successfully @07.62300s +00.00100s
+|`->config-scripts-per-once ran successfully @07.62400s +00.00100s
+|`->config-scripts-per-boot ran successfully @07.62500s +00.00000s
+|`->config-scripts-per-instance ran successfully @07.62600s +00.00000s
+|`->config-scripts-user ran successfully @07.62700s +00.00600s
+|`->config-ssh-authkey-fingerprints ran successfully @07.63300s +00.04100s
+|`->config-keys-to-console ran successfully @07.67400s +00.06200s
+|`->config-phone-home ran successfully @07.73700s +00.00100s
+|`->config-final-message ran successfully @07.73800s +00.00400s
+|`->config-power-state-change ran successfully @07.74300s +00.00000s
+Finished stage: (modules-final) 00.17400 seconds 
+
+Total Time: 4.38000 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+sudo: unable to resolve host SRU-worked
+          3.794s cloud-init-local.service
+          3.231s dev-xvda1.device
+          2.094s dev-loop0.device
+          2.074s dev-loop1.device
+          1.724s console-setup.service
+          1.669s snapd.service
+          1.476s cloud-config.service
+           990ms cloud-init.service
+           782ms systemd-update-utmp.service
+           525ms cloud-final.service
+           450ms lxd-containers.service
+           448ms apparmor.service
+           419ms accounts-daemon.service
+           369ms lvm2-monitor.service
+           332ms ufw.service
+           308ms systemd-logind.service
+           304ms systemd-modules-load.service
+           296ms sys-kernel-debug.mount
+           286ms dev-mqueue.mount
+           272ms iscsid.service
+           270ms mdadm.service
+           253ms systemd-remount-fs.service
+           246ms systemd-timesyncd.service
+           202ms systemd-journald.service
+           200ms dev-hugepages.mount
+           183ms rc-local.service
+           182ms grub-common.service
+           175ms kmod-static-nodes.service
+           167ms resolvconf.service
+           149ms networking.service
+           140ms rsyslog.service
+           136ms apport.service
+           134ms irqbalance.service
+           125ms systemd-udev-trigger.service
+           108ms keyboard-setup.service
+           106ms systemd-tmpfiles-setup.service
+           106ms systemd-journal-flush.service
+           102ms snap-amazon\x2dssm\x2dagent-295.mount
+           101ms ssh.service
+           100ms open-iscsi.service
+            88ms ondemand.service
+            84ms plymouth-read-write.service
+            74ms polkitd.service
+            68ms systemd-tmpfiles-setup-dev.service
+            60ms systemd-random-seed.service
+            52ms lxd.socket
+            39ms systemd-sysctl.service
+            38ms systemd-user-sessions.service
+            35ms snap-core-4917.mount
+            35ms setvtrgb.service
+            32ms snapd.socket
+            32ms plymouth-quit.service
+            32ms snapd.seeded.service
+            29ms systemd-udevd.service
+            27ms systemd-update-utmp-runlevel.service
+            26ms sys-fs-fuse-connections.mount
+            24ms user@1000.service
+            14ms plymouth-quit-wait.service
+$ ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
+sudo: unable to resolve host SRU-worked
+[    4.838411] SRU-worked systemd[1]: Started Uncomplicated firewall.
+[    4.843479] SRU-worked systemd[1]: Started Load Kernel Modules.
+[    4.848410] SRU-worked systemd[1]: Started Remount Root and Kernel File Systems.
+[    4.854160] SRU-worked systemd[1]: Started Create list of required static device nodes for the current kernel.
+[    4.860882] SRU-worked systemd[1]: Started Set console keymap.
+[    4.869538] SRU-worked systemd[1]: Started Nameserver information manager.
+[    4.936645] SRU-worked systemd[1]: Started LVM2 metadata daemon.
+[    5.012282] SRU-worked systemd[1]: Started Create Static Device Nodes in /dev.
+[    5.017826] SRU-worked systemd[1]: Started Load/Save Random Seed.
+[    5.033491] SRU-worked systemd[1]: Started Apply Kernel Variables.
+[    5.080931] SRU-worked systemd[1]: Started udev Coldplug all Devices.
+[    5.092322] SRU-worked systemd[1]: Started Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling.
+[    5.103346] SRU-worked systemd[1]: Started Flush Journal to Persistent Storage.
+[    5.148311] SRU-worked systemd[1]: Started udev Kernel Device Manager.
+[    5.296309] SRU-worked systemd[1]: Started Create Volatile Files and Directories.
+[    5.308678] SRU-worked systemd[1]: Started Tell Plymouth To Write Out Runtime Data.
+[    5.660896] SRU-worked systemd[1]: Started LSB: AppArmor initialization.
+[    5.900465] SRU-worked systemd[1]: Started Network Time Synchronization.
+[    6.155375] SRU-worked systemd[1]: Started Update UTMP about System Boot/Shutdown.
+[    6.962746] SRU-worked systemd[1]: Started Set console font and keymap.
+[    8.997210] ip-10-41-41-125 systemd[1]: Started Initial cloud-init job (pre-networking).
+[    9.030532] ip-10-41-41-125 systemd[1]: Started ifup for eth0.
+[    9.172600] ip-10-41-41-125 systemd[1]: Started Raise network interfaces.
+[   10.393719] SRU-worked systemd[1]: Started Initial cloud-init job (metadata service crawler).
+[   11.948881] SRU-worked systemd[1]: Started ACPI event daemon.
+[   11.949174] SRU-worked systemd[1]: Started Regular background program processing daemon.
+[   11.950085] SRU-worked systemd[1]: Started Service for snap application amazon-ssm-agent.amazon-ssm-agent.
+[   11.951440] SRU-worked systemd[1]: Started FUSE filesystem for LXC.
+[   11.951610] SRU-worked systemd[1]: Started D-Bus System Message Bus.
+[   11.955363] SRU-worked systemd[1]: Started Deferred execution scheduler.
+[   11.955804] SRU-worked systemd[1]: Started Unattended Upgrades Shutdown.
+[   11.958593] SRU-worked systemd[1]: Started iSCSI initiator daemon (iscsid).
+[   11.958749] SRU-worked systemd[1]: Started /etc/rc.local Compatibility.
+[   11.958897] SRU-worked systemd[1]: Started OpenBSD Secure Shell server.
+[   11.959044] SRU-worked systemd[1]: Started System Logging Service.
+[   11.962952] SRU-worked systemd[1]: Started LSB: MD monitoring daemon.
+[   11.967623] SRU-worked systemd[1]: Started Login Service.
+[   11.967766] SRU-worked systemd[1]: Started LSB: Record successful boot for GRUB.
+[   11.967910] SRU-worked systemd[1]: Started Authenticate and Authorize Users to Run Privileged Tasks.
+[   11.968081] SRU-worked systemd[1]: Started Accounts Service.
+[   11.968238] SRU-worked systemd[1]: Started Login to default iSCSI targets.
+[   11.969247] SRU-worked systemd[1]: Started Permit User Sessions.
+[   11.969693] SRU-worked systemd[1]: Started Hold until boot process finishes up.
+[   11.969968] SRU-worked systemd[1]: Started LSB: Set the CPU Frequency Scaling governor to "ondemand".
+[   11.970131] SRU-worked systemd[1]: Started Terminate Plymouth Boot Screen.
+[   11.970315] SRU-worked systemd[1]: Started LSB: daemon to balance interrupts for SMP systems.
+[   11.970461] SRU-worked systemd[1]: Started LSB: automatic crash report generation.
+[   11.970609] SRU-worked systemd[1]: Started LXD - container startup/shutdown.
+[   11.970955] SRU-worked systemd[1]: Started Getty on tty1.
+[   11.971105] SRU-worked systemd[1]: Started Serial Getty on ttyS0.
+[   11.971384] SRU-worked systemd[1]: Started Set console scheme.
+[   12.156218] SRU-worked systemd[1]: Started Snappy daemon.
+[   12.193469] SRU-worked systemd[1]: Started Wait until snapd is fully seeded.
+[   12.265201] SRU-worked systemd[1]: Started Update UTMP about System Runlevel Changes.
+[   13.676495] SRU-worked systemd[1]: Started Apply the settings specified in cloud-config.
+[   14.209073] SRU-worked systemd[1]: Started Execute cloud user/final scripts.
+[   22.635457] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   33.369898] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   34.576413] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   36.485966] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   41.103729] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   45.814522] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   52.248717] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   57.362913] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   68.352518] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   73.441951] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   93.152622] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[  101.027875] SRU-worked systemd[1]: Started User Manager for UID 1000.
+$ ssh $EC2_INST -- 'grep "setting up datasource" /var/log/cloud-init.log';
+2018-07-05 22:15:18,549 - handlers.py[DEBUG]: start: init-network/setup-datasource: setting up datasource
+2018-07-05 22:15:18,550 - handlers.py[DEBUG]: finish: init-network/setup-datasource: SUCCESS: setting up datasource
+$ ssh $EC2_INST -- 'egrep -i "stable|udev" /var/log/cloud-init.log';
+2018-07-05 22:15:16,125 - util.py[DEBUG]: Fetched {'fusectl': {'fstype': 'fusectl', 'opts': 'rw,relatime', 'mountpoint': '/sys/fs/fuse/connections'}, 'debugfs': {'fstype': 'debugfs', 'opts': 'rw,relatime', 'mountpoint': '/sys/kernel/debug'}, '/dev/loop1': {'fstype': 'squashfs', 'opts': 'ro,nodev,relatime', 'mountpoint': '/snap/core/4917'}, '/dev/loop0': {'fstype': 'squashfs', 'opts': 'ro,nodev,relatime', 'mountpoint': '/snap/amazon-ssm-agent/295'}, '/dev/xvda1': {'fstype': 'ext4', 'opts': 'rw,relatime,discard,data=ordered', 'mountpoint': '/'}, 'sysfs': {'fstype': 'sysfs', 'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys'}, 'proc': {'fstype': 'proc', 'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/proc'}, 'devpts': {'fstype': 'devpts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000', 'mountpoint': '/dev/pts'}, 'pstore': {'fstype': 'pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys/fs/pstore'}, 'tmpfs': {'fstype': 'tmpfs', 'opts': 'ro,nosuid,nodev,noexec,mode=755', 'mountpoint': '/sys/fs/cgroup'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'opts': 'rw,relatime', 'mountpoint': '/dev/hugepages'}, 'mqueue': {'fstype': 'mqueue', 'opts': 'rw,relatime', 'mountpoint': '/dev/mqueue'}, 'udev': {'fstype': 'devtmpfs', 'opts': 'rw,nosuid,relatime,size=499260k,nr_inodes=124815,mode=755', 'mountpoint': '/dev'}, 'securityfs': {'fstype': 'securityfs', 'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys/kernel/security'}, 'cgroup': {'fstype': 'cgroup', 'opts': 'rw,nosuid,nodev,noexec,relatime,memory', 'mountpoint': '/sys/fs/cgroup/memory'}, 'systemd-1': {'fstype': 'autofs', 'opts': 'rw,relatime,fd=25,pgrp=1,timeout=0,minproto=5,maxproto=5,direct', 'mountpoint': '/proc/sys/fs/binfmt_misc'}} mounts from proc
+2018-07-05 22:15:16,216 - __init__.py[DEBUG]: Found unstable nic names: ['eth0']; calling udevadm settle
+2018-07-05 22:15:16,216 - util.py[DEBUG]: Running command ['udevadm', 'settle'] with allowed return codes [0] (shell=False, capture=True)
+2018-07-05 22:15:17,687 - util.py[DEBUG]: Waiting for udev events to settle took 1.471 seconds
+2018-07-05 22:15:17,959 - util.py[DEBUG]: Writing to /etc/udev/rules.d/70-persistent-net.rules - wb: [644] 96 bytes
+$ ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;
+$ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
+$ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
+hi
+hi
+$ # END manual sru verification Xenial
+
+=== END SRU Validation Xenial ===
+=== BEGIN SRU Validation Artful ===
+$ release=artful
+$ EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+$ ssh $EC2_INST -- cloud-init status --wait --long;
+The authenticity of host 'ec2-18-222-175-58.us-east-2.compute.amazonaws.com (18.222.175.58)' can't be established.
+ECDSA key fingerprint is SHA256:fVQEsYdPGCasVpVml7aV1XOUZk4B77L/okutlFyy2BM.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-222-175-58.us-east-2.compute.amazonaws.com,18.222.175.58' (ECDSA) to the list of known hosts.
+
+status: done
+time: Thu, 05 Jul 2018 22:22:39 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 6.881s (kernel) + 33.243s (userspace) = 40.124s
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+         13.454s systemd-networkd-wait-online.service
+         12.721s cloud-config.service
+          2.736s cloud-init-local.service
+          2.681s dev-xvda1.device
+          2.415s apparmor.service
+          1.585s snapd.seeded.service
+          1.399s cloud-init.service
+          1.015s pollinate.service
+           862ms cloud-final.service
+           695ms lxd-containers.service
+           358ms keyboard-setup.service
+           291ms accounts-daemon.service
+           285ms snapd.service
+           248ms iscsid.service
+           242ms systemd-udev-trigger.service
+           238ms grub-common.service
+           224ms systemd-journald.service
+           215ms systemd-tmpfiles-setup-dev.service
+           198ms systemd-logind.service
+           189ms apport.service
+           174ms systemd-modules-load.service
+           148ms lvm2-monitor.service
+           141ms kmod-static-nodes.service
+           122ms ebtables.service
+           118ms dev-mqueue.mount
+           114ms systemd-udevd.service
+           109ms sys-kernel-debug.mount
+           106ms systemd-journal-flush.service
+            87ms systemd-timesyncd.service
+            86ms lxd.socket
+            81ms dev-hugepages.mount
+            78ms polkit.service
+            75ms console-setup.service
+            63ms rsyslog.service
+            62ms systemd-tmpfiles-setup.service
+            60ms plymouth-read-write.service
+            59ms systemd-machine-id-commit.service
+            47ms ufw.service
+            46ms systemd-resolved.service
+            41ms systemd-remount-fs.service
+            34ms ssh.service
+            34ms plymouth-quit-wait.service
+            34ms systemd-user-sessions.service
+            33ms plymouth-quit.service
+            31ms snapd.socket
+            27ms systemd-networkd.service
+            26ms sys-fs-fuse-connections.mount
+            24ms sys-kernel-config.mount
+            24ms user@1000.service
+            24ms systemd-update-utmp.service
+            23ms systemd-sysctl.service
+            22ms setvtrgb.service
+            15ms systemd-random-seed.service
+            12ms systemd-update-utmp-runlevel.service
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.02300s +00.00000s
+|`->found local data from DataSourceEc2Local @00.03700s +00.32000s
+Finished stage: (init-local) 00.50700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @15.33700s +00.00300s
+|`->reading and applying user-data @15.40200s +00.00400s
+|`->reading and applying vendor-data @15.40700s +00.00000s
+|`->config-migrator ran successfully @15.67300s +00.00100s
+|`->config-seed_random ran successfully @15.67400s +00.00100s
+|`->config-bootcmd ran successfully @15.67500s +00.00100s
+|`->config-write-files ran successfully @15.67600s +00.00100s
+|`->config-growpart ran successfully @15.67700s +00.04500s
+|`->config-resizefs ran successfully @15.72200s +00.03300s
+|`->config-disk_setup ran successfully @15.75600s +00.00100s
+|`->config-mounts ran successfully @15.75700s +00.00200s
+|`->config-set_hostname ran successfully @15.75900s +00.00500s
+|`->config-update_hostname ran successfully @15.76400s +00.00200s
+|`->config-update_etc_hosts ran successfully @15.76600s +00.00000s
+|`->config-ca-certs ran successfully @15.76600s +00.00100s
+|`->config-rsyslog ran successfully @15.76800s +00.00000s
+|`->config-users-groups ran successfully @15.76900s +00.06200s
+|`->config-ssh ran successfully @15.83100s +00.37200s
+Finished stage: (init-network) 00.88200 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @18.27000s +00.00000s
+|`->config-snap ran successfully @18.27000s +00.00100s
+|`->config-snap_config ran successfully @18.27200s +00.00000s
+|`->config-ssh-import-id ran successfully @18.27300s +00.68700s
+|`->config-locale ran successfully @18.96100s +00.00100s
+|`->config-set-passwords ran successfully @18.96300s +00.00000s
+|`->config-grub-dpkg ran successfully @18.96400s +00.17500s
+|`->config-apt-pipelining ran successfully @19.14000s +00.00200s
+|`->config-apt-configure ran successfully @19.14200s +10.11300s
+|`->config-ubuntu-advantage ran successfully @29.25500s +00.00100s
+|`->config-ntp ran successfully @29.25600s +00.00100s
+|`->config-timezone ran successfully @29.25700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @29.25900s +00.00000s
+|`->config-runcmd ran successfully @29.25900s +00.01300s
+|`->config-byobu ran successfully @29.27200s +00.00200s
+Finished stage: (modules-config) 11.23500 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @29.97700s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @29.97900s +00.00100s
+|`->config-fan ran successfully @29.98000s +00.00100s
+|`->config-landscape ran successfully @29.98100s +00.00100s
+|`->config-lxd ran successfully @29.98200s +00.00100s
+|`->config-puppet ran successfully @29.98300s +00.00100s
+|`->config-chef ran successfully @29.98400s +00.00100s
+|`->config-mcollective ran successfully @29.98500s +00.00100s
+|`->config-salt-minion ran successfully @29.98600s +00.00100s
+|`->config-rightscale_userdata ran successfully @29.98700s +00.00100s
+|`->config-scripts-vendor ran successfully @29.98800s +00.00100s
+|`->config-scripts-per-once ran successfully @29.98900s +00.00100s
+|`->config-scripts-per-boot ran successfully @29.99000s +00.00000s
+|`->config-scripts-per-instance ran successfully @29.99100s +00.00000s
+|`->config-scripts-user ran successfully @29.99100s +00.01000s
+|`->config-ssh-authkey-fingerprints ran successfully @30.00100s +00.03600s
+|`->config-keys-to-console ran successfully @30.03700s +00.07100s
+|`->config-phone-home ran successfully @30.10900s +00.00100s
+|`->config-final-message ran successfully @30.11000s +00.00500s
+|`->config-power-state-change ran successfully @30.11600s +00.00100s
+Finished stage: (modules-final) 00.34700 seconds 
+
+Total Time: 12.97100 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST
+Welcome to Ubuntu 17.10 (GNU/Linux 4.13.0-46-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+New release '18.04 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+ubuntu@SRU-worked:~$ sudo  sh -c '
+>  mirror=http://archive.ubuntu.com/ubuntu
+>  echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+>  apt-get update -q
+>  apt-get install -qy cloud-init';
+deb http://archive.ubuntu.com/ubuntu artful-proposed main
+...
+Unpacking cloud-init (18.3-0ubuntu1~17.10.1) over (18.2-4-g05926e48-0ubuntu1~17.10.2) ...
+ubuntu@SRU-worked:~$ exit
+logout
+Connection to ec2-18-222-175-58.us-east-2.compute.amazonaws.com closed.
+$ ssh $EC2_INST sudo hostname;
+SRU-worked
+$ ssh $EC2_INST sudo hostname something-else;
+$ ssh $EC2_INST -- sudo cloud-init init;
+Cloud-init v. 18.3-0ubuntu1~17.10.1 running 'init' at Thu, 05 Jul 2018 22:23:50 +0000. Up 111.11 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.63         | 255.255.255.0 | global | 06:50:86:be:3e:e0 |
+ci-info: |  eth0  | True | fe80::450:86ff:febe:3ee0/64 |       .       |  link  | 06:50:86:be:3e:e0 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+Connection to ec2-18-222-175-58.us-east-2.compute.amazonaws.com closed by remote host.
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530829440.110418171
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:B/2cWzBvcX/OsepGH3/4wMHV6WfUI7IqtKNY7jJ9CJw.
+Please contact your system administrator.
+Add correct host key in /home/csmith/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/csmith/.ssh/known_hosts:1218
+  remove with:
+  ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-222-175-58.us-east-2.compute.amazonaws.com"
+ECDSA host key for ec2-18-222-175-58.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
+Host key verification failed.
+1530829504.498598893
+$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-222-175-58.us-east-2.compute.amazonaws.com"
+# Host ec2-18-222-175-58.us-east-2.compute.amazonaws.com found: line 1218
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530829511.254184836
+The authenticity of host 'ec2-18-222-175-58.us-east-2.compute.amazonaws.com (18.222.175.58)' can't be established.
+ECDSA key fingerprint is SHA256:B/2cWzBvcX/OsepGH3/4wMHV6WfUI7IqtKNY7jJ9CJw.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-222-175-58.us-east-2.compute.amazonaws.com,18.222.175.58' (ECDSA) to the list of known hosts.
+
+status: done
+1530829515.840035449
+$ ssh $EC2_INST -- hostname;
+SRU-worked
+$ ssh $EC2_INST -- cloud-init status --long;
+status: done
+time: Thu, 05 Jul 2018 22:24:56 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+  "ds/user-data"
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkIDogW2NoYWQuc21pdGhdCmhvc3RuYW1lOiBTUlUtd29ya2VkCnJ1bmNtZDoKICAtIGVjaG8gJ2hpJwogIC0gZWNobyAnaGknICAjIENoZWNrIExQOiAjMTc2NDI2NCBTY2hlbWE6IGRvIG5vdCB3YXJuIG9uIGR1cGxpY2F0ZSBpdGVtcwo=",
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+2018-07-05 22:24:26,540 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,544 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-07-05 22:24:26,544 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,546 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 466b) after 1 attempts
+2018-07-05 22:24:26,547 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,548 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-07-05 22:24:26,549 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,551 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+2018-07-05 22:24:26,551 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,553 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 5.750s (kernel) + 31.577s (userspace) = 37.328s
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+         13.916s systemd-networkd-wait-online.service
+         12.347s cloud-config.service
+          1.968s cloud-init-local.service
+          1.959s dev-xvda1.device
+          1.121s cloud-init.service
+           864ms cloud-final.service
+           752ms lxd-containers.service
+           429ms systemd-udev-trigger.service
+           376ms keyboard-setup.service
+           346ms apparmor.service
+           301ms systemd-journald.service
+           252ms accounts-daemon.service
+           243ms systemd-logind.service
+           229ms iscsid.service
+           219ms ssh.service
+           207ms snapd.service
+           198ms systemd-modules-load.service
+           188ms apport.service
+           181ms rsyslog.service
+           144ms grub-common.service
+           141ms lvm2-monitor.service
+           139ms dev-mqueue.mount
+           132ms dev-hugepages.mount
+           128ms ufw.service
+           127ms sys-kernel-debug.mount
+           115ms ebtables.service
+           110ms systemd-remount-fs.service
+            87ms systemd-udevd.service
+            81ms snapd.seeded.service
+            80ms snapd.socket
+            78ms systemd-timesyncd.service
+            74ms polkit.service
+            63ms kmod-static-nodes.service
+            49ms lxd.socket
+            46ms plymouth-quit-wait.service
+            44ms systemd-tmpfiles-setup-dev.service
+            44ms plymouth-quit.service
+            43ms systemd-resolved.service
+            40ms systemd-journal-flush.service
+            37ms plymouth-read-write.service
+            37ms systemd-sysctl.service
+            37ms console-setup.service
+            33ms systemd-tmpfiles-setup.service
+            27ms systemd-networkd.service
+            25ms user@1000.service
+            21ms sys-fs-fuse-connections.mount
+            20ms setvtrgb.service
+            17ms systemd-user-sessions.service
+            13ms systemd-update-utmp-runlevel.service
+            12ms systemd-random-seed.service
+            12ms sys-kernel-config.mount
+            11ms systemd-update-utmp.service
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01000s +00.00000s
+|`->found local data from DataSourceEc2Local @00.02300s +00.64400s
+Finished stage: (init-local) 00.81700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @16.06100s +00.00300s
+|`->setting up datasource @16.12100s +00.00000s
+|`->reading and applying user-data @16.12900s +00.00400s
+|`->reading and applying vendor-data @16.13300s +00.00100s
+|`->activating datasource @16.15800s +00.00100s
+|`->config-migrator ran successfully @16.39300s +00.00000s
+|`->config-seed_random ran successfully @16.39400s +00.00100s
+|`->config-bootcmd ran successfully @16.39500s +00.00000s
+|`->config-write-files ran successfully @16.39500s +00.00100s
+|`->config-growpart ran successfully @16.39600s +00.04700s
+|`->config-resizefs ran successfully @16.44300s +00.03400s
+|`->config-disk_setup ran successfully @16.47700s +00.00200s
+|`->config-mounts ran successfully @16.47900s +00.00200s
+|`->config-set_hostname ran successfully @16.48100s +00.00500s
+|`->config-update_hostname ran successfully @16.48600s +00.00100s
+|`->config-update_etc_hosts ran successfully @16.48800s +00.00000s
+|`->config-ca-certs ran successfully @16.48800s +00.00100s
+|`->config-rsyslog ran successfully @16.48900s +00.00100s
+|`->config-users-groups ran successfully @16.49000s +00.01600s
+|`->config-ssh ran successfully @16.50600s +00.15100s
+Finished stage: (init-network) 00.60900 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @18.74300s +00.00000s
+|`->config-snap ran successfully @18.74300s +00.00100s
+|`->config-snap_config ran successfully @18.74400s +00.00100s
+|`->config-ssh-import-id ran successfully @18.74500s +00.62600s
+|`->config-locale ran successfully @19.37400s +00.00200s
+|`->config-set-passwords ran successfully @19.37600s +00.00000s
+|`->config-grub-dpkg ran successfully @19.37700s +00.17500s
+|`->config-apt-pipelining ran successfully @19.55200s +00.00200s
+|`->config-apt-configure ran successfully @19.55400s +10.10800s
+|`->config-ubuntu-advantage ran successfully @29.66300s +00.00100s
+|`->config-ntp ran successfully @29.66400s +00.00000s
+|`->config-timezone ran successfully @29.66500s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @29.66600s +00.00000s
+|`->config-runcmd ran successfully @29.66600s +00.00800s
+|`->config-byobu ran successfully @29.67400s +00.00100s
+Finished stage: (modules-config) 11.14400 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @30.37400s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @30.37600s +00.00100s
+|`->config-fan ran successfully @30.37700s +00.00100s
+|`->config-landscape ran successfully @30.37800s +00.00100s
+|`->config-lxd ran successfully @30.37900s +00.00100s
+|`->config-puppet ran successfully @30.38000s +00.00100s
+|`->config-chef ran successfully @30.38100s +00.00100s
+|`->config-mcollective ran successfully @30.38200s +00.00100s
+|`->config-salt-minion ran successfully @30.38300s +00.00100s
+|`->config-rightscale_userdata ran successfully @30.38400s +00.00100s
+|`->config-scripts-vendor ran successfully @30.38500s +00.00100s
+|`->config-scripts-per-once ran successfully @30.38600s +00.00100s
+|`->config-scripts-per-boot ran successfully @30.38700s +00.00100s
+|`->config-scripts-per-instance ran successfully @30.38800s +00.00100s
+|`->config-scripts-user ran successfully @30.38900s +00.00900s
+|`->config-ssh-authkey-fingerprints ran successfully @30.39800s +00.04500s
+|`->config-keys-to-console ran successfully @30.44400s +00.07800s
+|`->config-phone-home ran successfully @30.52300s +00.00100s
+|`->config-final-message ran successfully @30.52400s +00.00600s
+|`->config-power-state-change ran successfully @30.53000s +00.00100s
+Finished stage: (modules-final) 00.36300 seconds 
+
+Total Time: 12.93300 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
+[    6.445421] SRU-worked systemd[1]: Started Tell Plymouth To Write Out Runtime Data.
+[    6.451314] SRU-worked systemd[1]: Started Set console font and keymap.
+[    6.503053] SRU-worked systemd[1]: Started Flush Journal to Persistent Storage.
+[    6.539210] SRU-worked systemd[1]: Started ebtables ruleset management.
+[    6.549031] SRU-worked systemd[1]: Started Create Volatile Files and Directories.
+[    6.580905] SRU-worked systemd[1]: Started Update UTMP about System Boot/Shutdown.
+[    6.628489] SRU-worked systemd[1]: Started udev Coldplug all Devices.
+[    6.635172] SRU-worked systemd[1]: Started Network Time Synchronization.
+[    6.745320] SRU-worked systemd[1]: Started AppArmor initialization.
+[    8.394633] ip-10-41-41-63 systemd[1]: Started Initial cloud-init job (pre-networking).
+[    8.431251] ip-10-41-41-63 systemd[1]: Started Network Service.
+[    8.491745] ip-10-41-41-63 systemd[1]: Started Network Name Resolution.
+[   22.352501] ip-10-41-41-63 systemd[1]: Started Wait for Network to be Configured.
+[   23.997528] SRU-worked systemd[1]: Started Initial cloud-init job (metadata service crawler).
+[   25.116136] SRU-worked systemd[1]: Started Unattended Upgrades Shutdown.
+[   25.116599] SRU-worked systemd[1]: Started Regular background program processing daemon.
+[   25.117301] SRU-worked systemd[1]: Started irqbalance daemon.
+[   25.117962] SRU-worked systemd[1]: Started FUSE filesystem for LXC.
+[   25.118315] SRU-worked systemd[1]: Started D-Bus System Message Bus.
+[   25.119256] SRU-worked systemd[1]: Started Deferred execution scheduler.
+[   25.119589] SRU-worked systemd[1]: Started System Logging Service.
+[   25.120371] SRU-worked systemd[1]: Started iSCSI initiator daemon (iscsid).
+[   25.127163] SRU-worked systemd[1]: Started Permit User Sessions.
+[   25.127502] SRU-worked systemd[1]: Started Login Service.
+[   25.132565] SRU-worked systemd[1]: Started OpenBSD Secure Shell server.
+[   25.132884] SRU-worked systemd[1]: Started Snappy daemon.
+[   25.133221] SRU-worked systemd[1]: Started LSB: Record successful boot for GRUB.
+[   25.133551] SRU-worked systemd[1]: Started Hold until boot process finishes up.
+[   25.133866] SRU-worked systemd[1]: Started Terminate Plymouth Boot Screen.
+[   25.134556] SRU-worked systemd[1]: Started Serial Getty on ttyS0.
+[   25.135527] SRU-worked systemd[1]: Started Set console scheme.
+[   25.136171] SRU-worked systemd[1]: Started Getty on tty1.
+[   25.140364] SRU-worked systemd[1]: Started Authorization Manager.
+[   25.140713] SRU-worked systemd[1]: Started Accounts Service.
+[   25.141013] SRU-worked systemd[1]: Started LSB: automatic crash report generation.
+[   25.145646] SRU-worked systemd[1]: Started Wait until snapd is fully seeded.
+[   25.146780] SRU-worked systemd[1]: Started Hostname Service.
+[   25.147561] SRU-worked systemd[1]: Started LXD - container startup/shutdown.
+[   25.150552] SRU-worked systemd[1]: Started Update UTMP about System Runlevel Changes.
+[   36.459523] SRU-worked systemd[1]: Started Apply the settings specified in cloud-config.
+[   37.322004] SRU-worked systemd[1]: Started Execute cloud user/final scripts.
+[   55.667757] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   61.061117] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   64.226965] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   66.544047] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   69.102105] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   72.330760] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   74.643809] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   81.206570] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   90.095671] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[  100.776651] SRU-worked systemd[1]: Started User Manager for UID 1000.
+$ ssh $EC2_INST -- 'grep "setting up datasource" /var/log/cloud-init.log';
+2018-07-05 22:24:42,015 - handlers.py[DEBUG]: start: init-network/setup-datasource: setting up datasource
+2018-07-05 22:24:42,015 - handlers.py[DEBUG]: finish: init-network/setup-datasource: SUCCESS: setting up datasource
+$ ssh $EC2_INST -- 'egrep -i "stable|udev" /var/log/cloud-init.log';
+2018-07-05 22:24:25,933 - __init__.py[DEBUG]: Found unstable nic names: ['eth0']; calling udevadm settle
+2018-07-05 22:24:25,933 - util.py[DEBUG]: Running command ['udevadm', 'settle'] with allowed return codes [0] (shell=False, capture=True)
+2018-07-05 22:24:26,371 - util.py[DEBUG]: Waiting for udev events to settle took 0.437 seconds
+2018-07-05 22:24:26,703 - util.py[DEBUG]: Running command ['udevadm', 'test-builtin', 'net_setup_link', '/sys/class/net/eth0'] with allowed return codes [0] (shell=False, capture=True)
+2018-07-05 22:24:26,707 - util.py[DEBUG]: Running command ['udevadm', 'test-builtin', 'net_setup_link', '/sys/class/net/lo'] with allowed return codes [0] (shell=False, capture=True)
+$ ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;  # not xenial, artful
+$ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
+$ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
+hi
+hi
+
+=== END SRU Validation Artful ===
+=== BEGIN SRU Validation Bionic ===
+$ release=bionic
+$ EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+$ ssh $EC2_INST -- cloud-init status --wait --long;
+The authenticity of host 'ec2-18-222-136-189.us-east-2.compute.amazonaws.com (18.222.136.189)' can't be established.
+ECDSA key fingerprint is SHA256:hNhNcbyRtEooqhWEWH3YgCjsE3HqjGvUnqFtCOFVz/s.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-222-136-189.us-east-2.compute.amazonaws.com,18.222.136.189' (ECDSA) to the list of known hosts.
+..........
+status: done
+time: Thu, 05 Jul 2018 22:28:04 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 3.880s (kernel) + 17.663s (userspace) = 21.544s
+graphical.target reached after 16.195s in userspace
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+          9.767s snapd.seeded.service
+          3.186s cloud-config.service
+          2.765s cloud-init-local.service
+          2.173s apparmor.service
+          2.096s dev-xvda1.device
+          1.467s cloud-final.service
+          1.367s cloud-init.service
+          1.153s pollinate.service
+          1.030s systemd-networkd-wait-online.service
+           784ms snapd.service
+           737ms networkd-dispatcher.service
+           520ms lxd-containers.service
+           488ms keyboard-setup.service
+           402ms systemd-udev-trigger.service
+           332ms iscsid.service
+           290ms accounts-daemon.service
+           283ms grub-common.service
+           251ms systemd-modules-load.service
+           203ms systemd-hostnamed.service
+           196ms apport.service
+           175ms lvm2-monitor.service
+           173ms systemd-remount-fs.service
+           170ms systemd-journal-flush.service
+           169ms systemd-journald.service
+           165ms systemd-logind.service
+           141ms rsyslog.service
+           133ms polkit.service
+           127ms dev-mqueue.mount
+           127ms dev-hugepages.mount
+           115ms ebtables.service
+            96ms ufw.service
+            84ms systemd-timesyncd.service
+            75ms sys-kernel-debug.mount
+            71ms snapd.socket
+            69ms ssh.service
+            67ms kmod-static-nodes.service
+            65ms systemd-tmpfiles-setup.service
+            63ms systemd-udevd.service
+            61ms systemd-tmpfiles-setup-dev.service
+            53ms systemd-resolved.service
+            47ms console-setup.service
+            36ms blk-availability.service
+            33ms lxd.socket
+            31ms systemd-networkd.service
+            30ms systemd-update-utmp.service
+            30ms snap-amazon\x2dssm\x2dagent-295.mount
+            28ms user@1000.service
+            28ms systemd-machine-id-commit.service
+            25ms plymouth-quit.service
+            25ms plymouth-quit-wait.service
+            24ms plymouth-read-write.service
+            24ms systemd-sysctl.service
+            21ms sys-kernel-config.mount
+            20ms sys-fs-fuse-connections.mount
+            19ms setvtrgb.service
+            18ms dev-loop1.device
+            17ms snap-core-4830.mount
+            17ms systemd-user-sessions.service
+            14ms systemd-update-utmp-runlevel.service
+            12ms dev-loop0.device
+            10ms systemd-random-seed.service
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.02500s +00.00000s
+|`->found local data from DataSourceEc2Local @00.04100s +00.59000s
+Finished stage: (init-local) 00.89700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.47500s +00.00400s
+|`->reading and applying user-data @02.54300s +00.00400s
+|`->reading and applying vendor-data @02.54700s +00.00000s
+|`->config-migrator ran successfully @02.71300s +00.00100s
+|`->config-seed_random ran successfully @02.71400s +00.00100s
+|`->config-bootcmd ran successfully @02.71500s +00.00100s
+|`->config-write-files ran successfully @02.71600s +00.00100s
+|`->config-growpart ran successfully @02.71700s +00.07800s
+|`->config-resizefs ran successfully @02.79500s +00.02600s
+|`->config-disk_setup ran successfully @02.82200s +00.00100s
+|`->config-mounts ran successfully @02.82300s +00.00200s
+|`->config-set_hostname ran successfully @02.82500s +00.00400s
+|`->config-update_hostname ran successfully @02.83000s +00.00100s
+|`->config-update_etc_hosts ran successfully @02.83100s +00.00100s
+|`->config-ca-certs ran successfully @02.83200s +00.00100s
+|`->config-rsyslog ran successfully @02.83300s +00.00100s
+|`->config-users-groups ran successfully @02.83400s +00.16800s
+|`->config-ssh ran successfully @03.00200s +00.29400s
+Finished stage: (init-network) 00.83500 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @05.24300s +00.00100s
+|`->config-snap ran successfully @05.24400s +00.00100s
+|`->config-snap_config ran successfully @05.24500s +00.00100s
+|`->config-ssh-import-id ran successfully @05.24600s +00.83400s
+|`->config-locale ran successfully @06.08100s +00.00200s
+|`->config-set-passwords ran successfully @06.08300s +00.01100s
+|`->config-grub-dpkg ran successfully @06.09400s +00.53400s
+|`->config-apt-pipelining ran successfully @06.62900s +00.00200s
+|`->config-apt-configure ran successfully @06.63100s +00.12000s
+|`->config-ubuntu-advantage ran successfully @06.75100s +00.00100s
+|`->config-ntp ran successfully @06.75200s +00.00100s
+|`->config-timezone ran successfully @06.75300s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @06.75900s +00.00000s
+|`->config-runcmd ran successfully @06.75900s +00.01300s
+|`->config-byobu ran successfully @06.77400s +00.00100s
+Finished stage: (modules-config) 01.59900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @15.03000s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @15.03200s +00.00100s
+|`->config-fan ran successfully @15.03300s +00.00100s
+|`->config-landscape ran successfully @15.03400s +00.00100s
+|`->config-lxd ran successfully @15.03500s +00.00100s
+|`->config-puppet ran successfully @15.03600s +00.01400s
+|`->config-chef ran successfully @15.05000s +00.00100s
+|`->config-mcollective ran successfully @15.05100s +00.00100s
+|`->config-salt-minion ran successfully @15.05200s +00.00100s
+|`->config-rightscale_userdata ran successfully @15.05300s +00.00100s
+|`->config-scripts-vendor ran successfully @15.05400s +00.00100s
+|`->config-scripts-per-once ran successfully @15.05500s +00.00100s
+|`->config-scripts-per-boot ran successfully @15.05600s +00.00000s
+|`->config-scripts-per-instance ran successfully @15.06300s +00.00100s
+|`->config-scripts-user ran successfully @15.06400s +00.01200s
+|`->config-ssh-authkey-fingerprints ran successfully @15.07700s +00.06600s
+|`->config-keys-to-console ran successfully @15.14300s +00.06700s
+|`->config-phone-home ran successfully @15.21000s +00.00100s
+|`->config-final-message ran successfully @15.21100s +00.00600s
+|`->config-power-state-change ran successfully @15.21700s +00.00100s
+Finished stage: (modules-final) 00.37500 seconds 
+
+Total Time: 3.70600 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST
+Welcome to Ubuntu 18.04 LTS (GNU/Linux 4.15.0-1010-aws x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ System information disabled due to load higher than 1.0
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+ubuntu@SRU-worked:~$ sudo  sh -c '
+>  mirror=http://archive.ubuntu.com/ubuntu
+>  echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+>  apt-get update -q
+>  apt-get install -qy cloud-init';
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+...
+Unpacking cloud-init (18.3-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+ubuntu@SRU-worked:~$ exit
+logout
+Connection to ec2-18-222-136-189.us-east-2.compute.amazonaws.com closed.
+$ ssh $EC2_INST sudo hostname;
+SRU-worked
+$ ssh $EC2_INST sudo hostname something-else;
+$ ssh $EC2_INST -- sudo cloud-init init;
+Cloud-init v. 18.3-0ubuntu1~18.04.1 running 'init' at Thu, 05 Jul 2018 22:29:06 +0000. Up 82.80 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.91         | 255.255.255.0 | global | 06:d1:29:44:4a:40 |
+ci-info: |  eth0  | True | fe80::4d1:29ff:fe44:4a40/64 |       .       |  link  | 06:d1:29:44:4a:40 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+Connection to ec2-18-222-136-189.us-east-2.compute.amazonaws.com closed by remote host.
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530829770.099230686
+
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:sxRy6E5eZO4xAueGo+mXt/caNnpzyUPW4q+FtY8XlOI.
+Please contact your system administrator.
+Add correct host key in /home/csmith/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/csmith/.ssh/known_hosts:1219
+  remove with:
+  ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-222-136-189.us-east-2.compute.amazonaws.com"
+ECDSA host key for ec2-18-222-136-189.us-east-2.compute.amazonaws.com has changed and you have requested strict checking.
+Host key verification failed.
+1530829785.856630321
+$ 
+$   ssh-keygen -f "/home/csmith/.ssh/known_hosts" -R "ec2-18-222-136-189.us-east-2.compute.amazonaws.com"
+# Host ec2-18-222-136-189.us-east-2.compute.amazonaws.com found: line 1219
+/home/csmith/.ssh/known_hosts updated.
+Original contents retained as /home/csmith/.ssh/known_hosts.old
+$ date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+1530829823.730103079
+The authenticity of host 'ec2-18-222-136-189.us-east-2.compute.amazonaws.com (18.222.136.189)' can't be established.
+ECDSA key fingerprint is SHA256:sxRy6E5eZO4xAueGo+mXt/caNnpzyUPW4q+FtY8XlOI.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-222-136-189.us-east-2.compute.amazonaws.com,18.222.136.189' (ECDSA) to the list of known hosts.
+
+status: done
+1530829827.287895801
+$ ssh $EC2_INST -- hostname;
+SRU-worked
+$ ssh $EC2_INST -- cloud-init status --long;
+status: done
+time: Thu, 05 Jul 2018 22:29:48 +0000
+detail:
+DataSourceEc2Local
+$ ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+$ ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+  "ds/user-data"
+  "user-data": "I2Nsb3VkLWNvbmZpZwpzc2hfaW1wb3J0X2lkIDogW2NoYWQuc21pdGhdCmhvc3RuYW1lOiBTUlUtd29ya2VkCnJ1bmNtZDoKICAtIGVjaG8gJ2hpJwogIC0gZWNobyAnaGknICAjIENoZWNrIExQOiAjMTc2NDI2NCBTY2hlbWE6IGRvIG5vdCB3YXJuIG9uIGR1cGxpY2F0ZSBpdGVtcwo=",
+$ ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+2018-07-05 22:29:41,323 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,330 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity (200, 33b) after 1 attempts
+2018-07-05 22:29:41,330 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,332 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/rsa2048 (200, 1422b) after 1 attempts
+2018-07-05 22:29:41,332 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/document', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,334 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/document (200, 466b) after 1 attempts
+2018-07-05 22:29:41,334 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,336 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/signature (200, 174b) after 1 attempts
+2018-07-05 22:29:41,337 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7' with {'url': 'http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7', 'allow_redirects': True, 'method': 'GET', 'timeout': 5.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,339 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2016-09-02/dynamic/instance-identity/pkcs7 (200, 1102b) after 1 attempts
+$ ssh $EC2_INST -- sudo systemd-analyze;
+Startup finished in 4.029s (kernel) + 10.768s (userspace) = 14.798s
+graphical.target reached after 8.298s in userspace
+$ ssh $EC2_INST -- sudo systemd-analyze blame;
+          2.611s cloud-init-local.service
+          2.500s dev-xvda1.device
+          1.800s snapd.service
+          1.754s cloud-config.service
+          1.702s systemd-networkd-wait-online.service
+          1.068s cloud-init.service
+           801ms networkd-dispatcher.service
+           693ms cloud-final.service
+           595ms dev-loop1.device
+           502ms dev-loop0.device
+           473ms systemd-udev-trigger.service
+           395ms lxd-containers.service
+           385ms apparmor.service
+           371ms keyboard-setup.service
+           326ms grub-common.service
+           311ms lvm2-monitor.service
+           286ms accounts-daemon.service
+           271ms systemd-journal-flush.service
+           246ms ssh.service
+           240ms systemd-remount-fs.service
+           231ms dev-mqueue.mount
+           230ms systemd-modules-load.service
+           222ms sys-kernel-debug.mount
+           215ms ufw.service
+           203ms kmod-static-nodes.service
+           202ms apport.service
+           200ms iscsid.service
+           153ms dev-hugepages.mount
+           107ms ebtables.service
+           106ms lxd.socket
+           103ms rsyslog.service
+            98ms snapd.socket
+            87ms polkit.service
+            79ms systemd-timesyncd.service
+            77ms systemd-journald.service
+            71ms snap-amazon\x2dssm\x2dagent-295.mount
+            71ms snap-core-4830.mount
+            69ms systemd-random-seed.service
+            67ms systemd-logind.service
+            56ms systemd-networkd.service
+            56ms systemd-tmpfiles-setup-dev.service
+            53ms systemd-sysctl.service
+            52ms sys-fs-fuse-connections.mount
+            52ms sys-kernel-config.mount
+            50ms plymouth-read-write.service
+            50ms console-setup.service
+            48ms systemd-resolved.service
+            41ms systemd-tmpfiles-setup.service
+            40ms snapd.seeded.service
+            38ms systemd-udevd.service
+            30ms systemd-user-sessions.service
+            28ms user@1000.service
+            22ms plymouth-quit.service
+            21ms systemd-update-utmp.service
+            17ms setvtrgb.service
+            16ms plymouth-quit-wait.service
+            13ms blk-availability.service
+            13ms systemd-update-utmp-runlevel.service
+$ ssh $EC2_INST -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00900s +00.00100s
+|`->found local data from DataSourceEc2Local @00.03000s +00.89400s
+Finished stage: (init-local) 01.11500 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @03.39400s +00.00400s
+|`->setting up datasource @03.45600s +00.00000s
+|`->reading and applying user-data @03.46400s +00.00500s
+|`->reading and applying vendor-data @03.46900s +00.00000s
+|`->activating datasource @03.49500s +00.00100s
+|`->config-migrator ran successfully @03.61500s +00.00100s
+|`->config-seed_random ran successfully @03.61600s +00.00100s
+|`->config-bootcmd ran successfully @03.61700s +00.00100s
+|`->config-write-files ran successfully @03.61800s +00.00100s
+|`->config-growpart ran successfully @03.61900s +00.06500s
+|`->config-resizefs ran successfully @03.68500s +00.03100s
+|`->config-disk_setup ran successfully @03.71700s +00.00100s
+|`->config-mounts ran successfully @03.71800s +00.00200s
+|`->config-set_hostname ran successfully @03.72000s +00.00500s
+|`->config-update_hostname ran successfully @03.72600s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.72700s +00.00100s
+|`->config-ca-certs ran successfully @03.72800s +00.00100s
+|`->config-rsyslog ran successfully @03.72900s +00.00100s
+|`->config-users-groups ran successfully @03.73000s +00.01800s
+|`->config-ssh ran successfully @03.74900s +00.15300s
+Finished stage: (init-network) 00.52300 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.76500s +00.00000s
+|`->config-snap ran successfully @06.76600s +00.00000s
+|`->config-snap_config ran successfully @06.76700s +00.00000s
+|`->config-ssh-import-id ran successfully @06.76800s +00.72300s
+|`->config-locale ran successfully @07.49200s +00.00200s
+|`->config-set-passwords ran successfully @07.49400s +00.00800s
+|`->config-grub-dpkg ran successfully @07.50300s +00.22200s
+|`->config-apt-pipelining ran successfully @07.72600s +00.00200s
+|`->config-apt-configure ran successfully @07.72900s +00.12600s
+|`->config-ubuntu-advantage ran successfully @07.85500s +00.00100s
+|`->config-ntp ran successfully @07.85600s +00.00100s
+|`->config-timezone ran successfully @07.85700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.85800s +00.00000s
+|`->config-runcmd ran successfully @07.85900s +00.00600s
+|`->config-byobu ran successfully @07.86500s +00.00100s
+Finished stage: (modules-config) 01.16600 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @08.43600s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @08.43800s +00.00100s
+|`->config-fan ran successfully @08.43900s +00.00100s
+|`->config-landscape ran successfully @08.44100s +00.00000s
+|`->config-lxd ran successfully @08.44100s +00.00100s
+|`->config-puppet ran successfully @08.44200s +00.00100s
+|`->config-chef ran successfully @08.44300s +00.00100s
+|`->config-mcollective ran successfully @08.44400s +00.00100s
+|`->config-salt-minion ran successfully @08.44500s +00.00100s
+|`->config-rightscale_userdata ran successfully @08.44600s +00.00100s
+|`->config-scripts-vendor ran successfully @08.44700s +00.00100s
+|`->config-scripts-per-once ran successfully @08.44800s +00.00100s
+|`->config-scripts-per-boot ran successfully @08.44900s +00.00000s
+|`->config-scripts-per-instance ran successfully @08.45000s +00.00000s
+|`->config-scripts-user ran successfully @08.45100s +00.01100s
+|`->config-ssh-authkey-fingerprints ran successfully @08.46200s +00.03200s
+|`->config-keys-to-console ran successfully @08.49500s +00.05600s
+|`->config-phone-home ran successfully @08.55200s +00.00100s
+|`->config-final-message ran successfully @08.55300s +00.00600s
+|`->config-power-state-change ran successfully @08.55900s +00.00100s
+Finished stage: (modules-final) 00.18800 seconds 
+
+Total Time: 2.99200 seconds
+
+1 boot records analyzed
+$ ssh $EC2_INST -- sudo journalctl -b -o short-monotonic -u *.service | grep Started;
+[    4.668256] SRU-worked systemd[1]: Started Remount Root and Kernel File Systems.
+[    4.691236] SRU-worked systemd[1]: Started LVM2 metadata daemon.
+[    4.760271] SRU-worked systemd[1]: Started Monitoring of LVM2 mirrors, snapshots etc. using dmeventd or progress polling.
+[    4.772462] SRU-worked systemd[1]: Started Load/Save Random Seed.
+[    4.781624] SRU-worked systemd[1]: Started Apply Kernel Variables.
+[    4.901863] SRU-worked systemd[1]: Started Create Static Device Nodes in /dev.
+[    4.905917] SRU-worked systemd[1]: Started udev Kernel Device Manager.
+[    4.912915] SRU-worked systemd[1]: Started Set the console keyboard layout.
+[    4.992779] SRU-worked systemd[1]: Started Flush Journal to Persistent Storage.
+[    5.016312] SRU-worked systemd[1]: Started Set console font and keymap.
+[    5.024939] SRU-worked systemd[1]: Started Tell Plymouth To Write Out Runtime Data.
+[    5.033664] SRU-worked systemd[1]: Started udev Coldplug all Devices.
+[    5.089087] SRU-worked systemd[1]: Started ebtables ruleset management.
+[    5.103840] SRU-worked systemd[1]: Started Create Volatile Files and Directories.
+[    5.131670] SRU-worked systemd[1]: Started Update UTMP about System Boot/Shutdown.
+[    5.198903] SRU-worked systemd[1]: Started Network Time Synchronization.
+[    5.340838] SRU-worked systemd[1]: Started AppArmor initialization.
+[    7.321850] ip-10-41-41-91 systemd[1]: Started Initial cloud-init job (pre-networking).
+[    7.387377] ip-10-41-41-91 systemd[1]: Started Network Service.
+[    7.451070] ip-10-41-41-91 systemd[1]: Started Network Name Resolution.
+[    9.094912] ip-10-41-41-91 systemd[1]: Started Wait for Network to be Configured.
+[   10.625020] SRU-worked systemd[1]: Started Initial cloud-init job (metadata service crawler).
+[   12.041437] SRU-worked systemd[1]: Started Regular background program processing daemon.
+[   12.045307] SRU-worked systemd[1]: Started FUSE filesystem for LXC.
+[   12.045620] SRU-worked systemd[1]: Started Service for snap application amazon-ssm-agent.amazon-ssm-agent.
+[   12.045835] SRU-worked systemd[1]: Started Deferred execution scheduler.
+[   12.045937] SRU-worked systemd[1]: Started irqbalance daemon.
+[   12.046038] SRU-worked systemd[1]: Started D-Bus System Message Bus.
+[   12.046664] SRU-worked systemd[1]: Started Login Service.
+[   12.047294] SRU-worked systemd[1]: Started Unattended Upgrades Shutdown.
+[   12.047387] SRU-worked systemd[1]: Started iSCSI initiator daemon (iscsid).
+[   12.048045] SRU-worked systemd[1]: Started System Logging Service.
+[   12.048197] SRU-worked systemd[1]: Started Availability of block devices.
+[   12.048294] SRU-worked systemd[1]: Started Permit User Sessions.
+[   12.050236] SRU-worked systemd[1]: Started Hold until boot process finishes up.
+[   12.053579] SRU-worked systemd[1]: Started Terminate Plymouth Boot Screen.
+[   12.053781] SRU-worked systemd[1]: Started Serial Getty on ttyS0.
+[   12.053971] SRU-worked systemd[1]: Started LSB: Record successful boot for GRUB.
+[   12.054064] SRU-worked systemd[1]: Started Set console scheme.
+[   12.054241] SRU-worked systemd[1]: Started Getty on tty1.
+[   12.054465] SRU-worked systemd[1]: Started Authorization Manager.
+[   12.054549] SRU-worked systemd[1]: Started Accounts Service.
+[   12.054633] SRU-worked systemd[1]: Started OpenBSD Secure Shell server.
+[   12.054848] SRU-worked systemd[1]: Started LSB: automatic crash report generation.
+[   12.058253] SRU-worked systemd[1]: Started Hostname Service.
+[   12.058637] SRU-worked systemd[1]: Started LXD - container startup/shutdown.
+[   12.058734] SRU-worked systemd[1]: Started Dispatcher daemon for systemd-networkd.
+[   12.264258] SRU-worked systemd[1]: Started Snappy daemon.
+[   12.310966] SRU-worked systemd[1]: Started Wait until snapd is fully seeded.
+[   12.355114] SRU-worked systemd[1]: Started Update UTMP about System Runlevel Changes.
+[   14.070719] SRU-worked systemd[1]: Started Apply the settings specified in cloud-config.
+[   14.769081] SRU-worked systemd[1]: Started Execute cloud user/final scripts.
+[   51.510478] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   78.838863] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   85.373650] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   88.007935] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   92.146870] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   95.917513] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[   98.733380] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[  102.906058] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[  106.581539] SRU-worked systemd[1]: Started User Manager for UID 1000.
+[  114.304236] SRU-worked systemd[1]: Started User Manager for UID 1000.
+$ ssh $EC2_INST -- 'grep "setting up datasource" /var/log/cloud-init.log';
+2018-07-05 22:29:43,880 - handlers.py[DEBUG]: start: init-network/setup-datasource: setting up datasource
+2018-07-05 22:29:43,880 - handlers.py[DEBUG]: finish: init-network/setup-datasource: SUCCESS: setting up datasource
+$ ssh $EC2_INST -- 'egrep -i "stable|udev" /var/log/cloud-init.log';
+2018-07-05 22:29:40,474 - __init__.py[DEBUG]: Found unstable nic names: ['eth0']; calling udevadm settle
+2018-07-05 22:29:40,475 - util.py[DEBUG]: Running command ['udevadm', 'settle'] with allowed return codes [0] (shell=False, capture=True)
+2018-07-05 22:29:41,139 - util.py[DEBUG]: Waiting for udev events to settle took 0.665 seconds
+2018-07-05 22:29:41,529 - util.py[DEBUG]: Running command ['udevadm', 'test-builtin', 'net_setup_link', '/sys/class/net/eth0'] with allowed return codes [0] (shell=False, capture=True)
+2018-07-05 22:29:41,534 - util.py[DEBUG]: Running command ['udevadm', 'test-builtin', 'net_setup_link', '/sys/class/net/lo'] with allowed return codes [0] (shell=False, capture=True)
+$ ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;  # not xenial, artful
+18.3-0ubuntu1~18.04.1 - cloud-guest-utils (16 (null)) cloud-utils (0 (null)) isc-dhcp-client (0 (null)) iproute2 (0 (null)) nplan (16 (null)) ifupdown (0 (null)) procps (0 (null)) python3 (0 (null)) python3-requests (0 (null)) python3-serial (0 (null)) debconf (18 0.5) debconf-2.0 (0 (null)) python3-configobj (0 (null)) python3-jinja2 (0 (null)) python3-jsonpatch (0 (null)) python3-jsonschema (0 (null)) python3-oauthlib (0 (null)) python3-six (0 (null)) python3-yaml (0 (null)) python3:any (2 3.3.2-2~) eatmydata (0 (null)) gdisk (0 (null)) software-properties-common (0 (null)) 
+18.2-27-g6ef92c98-0ubuntu1~18.04.1 - cloud-guest-utils (16 (null)) cloud-utils (0 (null)) isc-dhcp-client (0 (null)) iproute2 (0 (null)) nplan (16 (null)) ifupdown (0 (null)) procps (0 (null)) python3 (0 (null)) python3-requests (0 (null)) python3-serial (0 (null)) debconf (18 0.5) debconf-2.0 (0 (null)) python3-configobj (0 (null)) python3-jinja2 (0 (null)) python3-jsonpatch (0 (null)) python3-jsonschema (0 (null)) python3-oauthlib (0 (null)) python3-six (0 (null)) python3-yaml (0 (null)) python3:any (2 3.3.2-2~) eatmydata (0 (null)) gdisk (0 (null)) software-properties-common (0 (null)) 
+$ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
+$ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
+hi
+hi
+
+=== END SRU Validation Bionic ===
+
+
+
+
