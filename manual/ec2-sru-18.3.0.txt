@@ -46,6 +46,8 @@ ssh $EC2_INST -- apt-cache showpkg cloud-init | grep iproute2;  # not xenial, ar
 # Check LP: #1764264 Schema: do not warn on duplicate items in commands
 ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
 ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
+# Check LP: #1764264 Schema: do not warn on duplicate items in commands
+ssh $EC2_INST -- "egrep 'OpenStackLocal|169.254' /var/log/cloud-init.log" | head -n 5;   # should not see any 169.254 queries within OpenStackLocal discovery
 
 
 
@@ -550,6 +552,18 @@ $ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
 $ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
 hi
 hi
+$ ssh $EC2_INST -- "egrep 'Ec2|OpenStackLocal|169.254' /var/log/cloud-init.log"  | head -n 10 # should not see any 169.254 queries within OpenStackLocal discovery
+2018-07-05 22:15:15,449 - __init__.py[DEBUG]: Looking for data source in: ['NoCloud', 'ConfigDrive', 'OpenNebula', 'DigitalOcean', 'Azure', 'AltCloud', 'OVF', 'MAAS', 'GCE', 'OpenStack', 'CloudSigma', 'SmartOS', 'Bigstep', 'Scaleway', 'AliYun', 'Ec2', 'CloudStack', 'None'], via packages ['', 'cloudinit.sources'] that matches dependencies ['FILESYSTEM']
+2018-07-05 22:15:15,617 - __init__.py[DEBUG]: Searching for local data source in: ['DataSourceNoCloud', 'DataSourceConfigDrive', 'DataSourceOpenNebula', 'DataSourceDigitalOcean', 'DataSourceAzure', 'DataSourceOVF', 'DataSourceOpenStackLocal', 'DataSourceCloudSigma', 'DataSourceSmartOS', 'DataSourceEc2Local']
+2018-07-05 22:15:15,998 - DataSourceConfigDrive.py[DEBUG]: devices=[] dslist=['NoCloud', 'ConfigDrive', 'OpenNebula', 'DigitalOcean', 'Azure', 'AltCloud', 'OVF', 'MAAS', 'GCE', 'OpenStack', 'CloudSigma', 'SmartOS', 'Bigstep', 'Scaleway', 'AliYun', 'Ec2', 'CloudStack', 'None']
+2018-07-05 22:15:16,154 - handlers.py[DEBUG]: start: init-local/search-OpenStackLocal: searching for local data from DataSourceOpenStackLocal
+2018-07-05 22:15:16,154 - __init__.py[DEBUG]: Seeing if we can get any data from <class 'cloudinit.sources.DataSourceOpenStack.DataSourceOpenStackLocal'>
+2018-07-05 22:15:16,177 - handlers.py[DEBUG]: finish: init-local/search-OpenStackLocal: SUCCESS: no local data found from DataSourceOpenStackLocal
+2018-07-05 22:15:16,203 - handlers.py[DEBUG]: start: init-local/search-Ec2Local: searching for local data from DataSourceEc2Local
+2018-07-05 22:15:16,203 - __init__.py[DEBUG]: Seeing if we can get any data from <class 'cloudinit.sources.DataSourceEc2.DataSourceEc2Local'>
+2018-07-05 22:15:16,215 - DataSourceEc2.py[DEBUG]: strict_mode: warn, cloud_platform=AWS
+2018-07-05 22:15:17,740 - util.py[DEBUG]: Resolving URL: http://169.254.169.254 took 0.006 seconds
+
 $ # END manual sru verification Xenial
 
 === END SRU Validation Xenial ===
@@ -1018,6 +1032,18 @@ $ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
 $ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
 hi
 hi
+$ ssh $EC2_INST -- "egrep 'Ec2|OpenStackLocal|169.254' /var/log/cloud-init.log"  | head -n 10 # should not see any 169.254 queries within OpenStackLocal discovery
+2018-07-05 22:29:40,446 - __init__.py[DEBUG]: Looking for data source in: ['Ec2', 'None'], via packages ['', 'cloudinit.sources'] that matches dependencies ['FILESYSTEM']
+2018-07-05 22:29:40,454 - __init__.py[DEBUG]: Searching for local data source in: ['DataSourceEc2Local']
+2018-07-05 22:29:40,454 - handlers.py[DEBUG]: start: init-local/search-Ec2Local: searching for local data from DataSourceEc2Local
+2018-07-05 22:29:40,454 - __init__.py[DEBUG]: Seeing if we can get any data from <class 'cloudinit.sources.DataSourceEc2.DataSourceEc2Local'>
+2018-07-05 22:29:40,470 - DataSourceEc2.py[DEBUG]: strict_mode: warn, cloud_platform=AWS
+2018-07-05 22:29:41,194 - util.py[DEBUG]: Resolving URL: http://169.254.169.254 took 0.001 seconds
+2018-07-05 22:29:41,195 - DataSourceEc2.py[DEBUG]: Removed the following from metadata urls: ['http://instance-data.:8773']
+2018-07-05 22:29:41,195 - url_helper.py[DEBUG]: [0/1] open 'http://169.254.169.254/2009-04-04/meta-data/instance-id' with {'url': 'http://169.254.169.254/2009-04-04/meta-data/instance-id', 'allow_redirects': True, 'method': 'GET', 'timeout': 50.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~18.04.1'}} configuration
+2018-07-05 22:29:41,200 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2009-04-04/meta-data/instance-id (200, 19b) after 1 attempts
+2018-07-05 22:29:41,200 - DataSourceEc2.py[DEBUG]: Using metadata source: 'http://169.254.169.254'
+
 
 === END SRU Validation Artful ===
 === BEGIN SRU Validation Bionic ===
@@ -1515,6 +1541,18 @@ $ ssh $EC2_INST -- grep -i warning /var/log/cloud-init.log;
 $ ssh $EC2_INST -- grep hi /var/log/cloud-init-output.log;   # should see 2 hi's
 hi
 hi
+$ ssh $EC2_INS -- "egrep 'Ec2|OpenStackLocal|169.254' /var/log/cloud-init.log"  | head -n 10 # should not see any 169.254 queries within OpenStackLocal discovery
+2018-07-05 22:24:25,911 - __init__.py[DEBUG]: Looking for data source in: ['Ec2', 'None'], via packages ['', 'cloudinit.sources'] that matches dependencies ['FILESYSTEM']
+2018-07-05 22:24:25,917 - __init__.py[DEBUG]: Searching for local data source in: ['DataSourceEc2Local']
+2018-07-05 22:24:25,917 - handlers.py[DEBUG]: start: init-local/search-Ec2Local: searching for local data from DataSourceEc2Local
+2018-07-05 22:24:25,917 - __init__.py[DEBUG]: Seeing if we can get any data from <class 'cloudinit.sources.DataSourceEc2.DataSourceEc2Local'>
+2018-07-05 22:24:25,928 - DataSourceEc2.py[DEBUG]: strict_mode: warn, cloud_platform=AWS
+2018-07-05 22:24:26,410 - util.py[DEBUG]: Resolving URL: http://169.254.169.254 took 0.001 seconds
+2018-07-05 22:24:26,411 - DataSourceEc2.py[DEBUG]: Removed the following from metadata urls: ['http://instance-data.:8773']
+2018-07-05 22:24:26,411 - url_helper.py[DEBUG]: [0/1] open 'http://169.254.169.254/2009-04-04/meta-data/instance-id' with {'url': 'http://169.254.169.254/2009-04-04/meta-data/instance-id', 'allow_redirects': True, 'method': 'GET', 'timeout': 50.0, 'headers': {'User-Agent': 'Cloud-Init/18.3-0ubuntu1~17.10.1'}} configuration
+2018-07-05 22:24:26,415 - url_helper.py[DEBUG]: Read from http://169.254.169.254/2009-04-04/meta-data/instance-id (200, 19b) after 1 attempts
+2018-07-05 22:24:26,416 - DataSourceEc2.py[DEBUG]: Using metadata source: 'http://169.254.169.254'
+
 
 === END SRU Validation Bionic ===
 
