@@ -1,0 +1,140 @@
+http://pad.lv/1745235
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1745235
+
+=== Begin SRU Template ===
+[Impact]
+On Xenial, ntp client needs to be installed by default if unspecified in user-data.
+Without this change, -proposed version 18.3.0 would not have detected xenial and
+would have installed chrony by default.   This represented a change in behavior
+which is unacceptable from an SRU standpoint.
+
+[Test Case]
+Deploy with basic ntp cloud-config declaration and validate ntp client is installed
+on xenial but chrony on bionic.
+
+
+cat > ntp.yaml << EOF
+#cloud-config
+ntp:
+EOF
+cat > chrony.yaml << EOF
+#cloud-config
+ntp:
+EOF
+
+for series in xenial artful bionic;
+do
+   echo '=== BEGIN ' $series ' ==='
+   ref=$series-proposed;
+   lxc stop test-$series --force;
+   lxc delete test-$series --force;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$series;
+   lxc config set test-$series user.user-data - < ntp.yaml;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+   lxc exec test-$series -- "egrep 'Trace|WARNING' /var/log/cloud-init.log";
+   lxc exec test-$series -- egrep "Selected.*NTP" /var/log/cloud-init.log;
+   lxc exec test-$series -- dpkg -l | egrep 'ntp|chrony|timesyncd';
+done
+
+
+
+[Regression Potential]
+If done improperly, tracebacks could result in no ntp client being installed on
+new vms where the instance was deployed with cloud-config user-data declaring that ntp client should be installed.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=bbcc5e82
+
+=== End SRU Template ===
+=== Begin SRU validation ===
+
+csmith@downtown:~$ for series in xenial artful bionic;
+> do 
+>    echo '=== BEGIN ' $series ' ==='
+>    ref=$series-proposed; 
+>    lxc stop test-$series --force;
+>    lxc delete test-$series --force;
+>    lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$series;
+>    lxc config set test-$series user.user-data - < ntp.yaml;
+>    lxc start test-$series;
+>    lxc exec test-$series -- cloud-init status --wait --long;
+>    lxc exec test-$series -- "egrep 'Trace|WARNING' /var/log/cloud-init.log";
+>    lxc exec test-$series -- grep "Selected.*NTP" /var/log/cloud-init.log;
+>    lxc exec test-$series -- dpkg -l | egrep 'ntp|chrony|timesyncd';
+> done
+=== BEGIN  xenial  ===
+Creating xenial-proposed-2859730666
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 [371 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~16.04.1) over (18.2-4-g05926e48-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+..............................................................................
+status: done
+time: Wed, 11 Jul 2018 01:52:34 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2018-07-11 01:52:23,736 - cc_ntp.py[DEBUG]: Selected distro preferred NTP client "ntp", not yet installed
+ii  ntp                              1:4.2.8p4+dfsg-3ubuntu5.9                  amd64        Network Time Protocol daemon and utility programs
+=== BEGIN  artful  ===
+Creating artful-proposed-242155538
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 [368 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~17.10.1) over (18.2-4-g05926e48-0ubuntu1~17.10.2) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~17.10.1) ...
+Creating test-artful
+.....................................
+status: done
+time: Wed, 11 Jul 2018 01:54:18 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2018-07-11 01:54:17,985 - cc_ntp.py[DEBUG]: Selected NTP client "systemd-timesyncd", already installed
+=== BEGIN  bionic  ===
+Creating bionic-proposed-278166056
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 [364 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) ...
+Creating test-bionic
+..................................
+status: done
+time: Wed, 11 Jul 2018 01:56:00 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2018-07-11 01:55:59,643 - cc_ntp.py[DEBUG]: Selected NTP client "systemd-timesyncd", already installed
+
+
+# Additionally on bionic test that user-data can prefer chrony
+csmith@downtown:~$ series=bionic
+csmith@downtown:~$ ref=$series-proposed
+csmith@downtown:~$ lxc-proposed-snapshot -p -P bionic bionic-proposed
+Creating bionic-proposed-1186931326
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 [364 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) ...
+csmith@downtown:~$ lxc delete test-$series --force;
+csmith@downtown:~$ lxc init $ref test-$series;
+Creating test-bionic
+csmith@downtown:~$ lxc config set test-$series user.user-data - < chrony.yaml
+csmith@downtown:~$ lxc start test-$series;
+csmith@downtown:~$ lxc exec test-$series -- cloud-init status --wait --long;
+
+status: done
+time: Wed, 11 Jul 2018 02:26:42 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+csmith@downtown:~$ lxc exec test-$series -- "egrep 'Trace|WARNING' /var/log/cloud-init.log";
+csmith@downtown:~$ lxc exec test-$series -- grep "Selected.*NTP" /var/log/cloud-init.log;
+2018-07-11 02:26:24,221 - cc_ntp.py[DEBUG]: Selected NTP client "chrony" via user-data configuration
+
+=== End SRU validation ===

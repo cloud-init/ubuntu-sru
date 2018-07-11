@@ -16,8 +16,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1770712](http://pad.lv/1770712) | ✔ [verification output](../bugs/lp-1770712.txt) |
 | [# 1770462](http://pad.lv/1770462) | ✔ [verification output](../bugs/lp-1770462.txt) |
 | [# 1768600](http://pad.lv/1768600) | ✔ [verification output](../bugs/lp-1768600.txt) |
+| [# 1745235](http://pad.lv/1745235) | ✔ [verification output](../bugs/lp-1745235.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.3.0.txt) |
-| Manual azure test | [verification output](../manual/azure-sru-18.3.0.txt) |
+| Manual azure test | ✔ [verification output](../manual/azure-sru-18.3.0.txt) |
 | Manual gce test | ✔ [verification output](../manual/gce-sru-18.3.0.txt) |
 | Manual openstack test | ✔ [verification output](../manual/openstack-sru-18.3.0.txt) |
 | Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-18.3.0.txt) |
