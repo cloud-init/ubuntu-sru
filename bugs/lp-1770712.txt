@@ -7,10 +7,18 @@ Cloud-init logs should now contain full packaged version of cloud-init on xenial
 
 [Test Case]
 # We should see specific version and patch information
-$ packaged_version=$(dpkg-query --show -f '${version}' cloud-init)
-$ grep $packaged_version /var/log/cloud-init.log  # Expect to stage header logs
-...
-2018-07-10 19:33:16,406 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1 running 'init-local' at Tue, 10 Jul 2018 19:33:16 +0000. Up 1.00 seconds.
+for series in xenial artful bionic;
+do
+   echo '=== BEGIN ' $series ' ==='
+   ref=$series-proposed;
+   lxc delete test-$series --force;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$series;
+   lxc start test-$series;
+   packaged_version=`lxc exec test-$series -- dpkg-query --show -f '${version}' cloud-init`;
+   lxc exec test-$series -- grep $packaged_version /var/log/cloud-init.log;
+   lxc exec test-$series -- cloud-init --version;
+done
 
 # Also, cloud-init --version should show the packaged version
 # it should contain a -0ubuntu portion.
@@ -32,3 +40,37 @@ Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=525a9e8f
 
 === End SRU Template ===
+
+
+=== Begin SRU verification ===
+csmith@downtown:~$ for series in xenial artful bionic;
+> do
+>    echo '=== BEGIN ' $series ' ==='
+>    packaged_version=`lxc exec test-$series -- dpkg-query --show -f '${version}' cloud-init`;
+>    lxc exec test-$series -- grep $packaged_version /var/log/cloud-init.log;
+>    lxc exec test-$series -- cloud-init --version;
+> done
+=== BEGIN  xenial  ===
+2018-07-12 03:47:04,826 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 running 'init-local' at Thu, 12 Jul 2018 03:47:04 +0000. Up 1.00 seconds.
+2018-07-12 03:47:08,510 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 running 'init' at Thu, 12 Jul 2018 03:47:08 +0000. Up 4.00 seconds.
+2018-07-12 03:47:11,988 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 running 'modules:config' at Thu, 12 Jul 2018 03:47:11 +0000. Up 8.00 seconds.
+2018-07-12 03:47:13,228 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 running 'modules:final' at Thu, 12 Jul 2018 03:47:13 +0000. Up 9.00 seconds.
+2018-07-12 03:47:13,307 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 finished at Thu, 12 Jul 2018 03:47:13 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 9.00 seconds
+/usr/bin/cloud-init 18.3-9-g2e62cb8a-0ubuntu1~16.04.1
+=== BEGIN  artful  ===
+2018-07-12 03:49:02,228 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 running 'init-local' at Thu, 12 Jul 2018 03:49:02 +0000. Up 1.00 seconds.
+2018-07-12 03:49:06,212 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 running 'init' at Thu, 12 Jul 2018 03:49:06 +0000. Up 5.00 seconds.
+2018-07-12 03:49:09,961 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 running 'modules:config' at Thu, 12 Jul 2018 03:49:09 +0000. Up 9.00 seconds.
+2018-07-12 03:49:10,873 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 running 'modules:final' at Thu, 12 Jul 2018 03:49:10 +0000. Up 10.00 seconds.
+2018-07-12 03:49:11,135 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 finished at Thu, 12 Jul 2018 03:49:11 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.00 seconds
+/usr/bin/cloud-init 18.3-9-g2e62cb8a-0ubuntu1~17.10.1
+=== BEGIN  bionic  ===
+2018-07-12 03:50:51,346 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 running 'init-local' at Thu, 12 Jul 2018 03:50:51 +0000. Up 1.00 seconds.
+2018-07-12 03:50:55,077 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 running 'init' at Thu, 12 Jul 2018 03:50:55 +0000. Up 5.00 seconds.
+2018-07-12 03:50:58,617 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 running 'modules:config' at Thu, 12 Jul 2018 03:50:58 +0000. Up 8.00 seconds.
+2018-07-12 03:50:59,402 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 running 'modules:final' at Thu, 12 Jul 2018 03:50:59 +0000. Up 9.00 seconds.
+2018-07-12 03:50:59,510 - util.py[DEBUG]: Cloud-init v. 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 finished at Thu, 12 Jul 2018 03:50:59 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 9.00 seconds
+/usr/bin/cloud-init 18.3-9-g2e62cb8a-0ubuntu1~18.04.1
+
+
+=== End SRU verification ===
