@@ -1,0 +1,111 @@
+http://pad.lv/1771468
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1771468
+
+=== Begin SRU Template ===
+[Impact]
+Offer an explicit cloud-config option sudo: False to avoid having sudo access for
+certain users. This is also default implicit behavior of cloud-init.
+
+[Test Case]
+cat > nosudoer.yaml << EOF
+#cloud-config
+users:
+  - name: nopower
+    sudo: False
+  - name: allpower
+    sudo: ALL=(ALL) NOPASSWD:ALL
+EOF
+for series in xenial artful bionic;
+do
+   echo '=== BEGIN ' $series ' ==='
+   ref=$series-proposed;
+   lxc delete test-$series --force;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$series;
+   lxc config set test-$series user.user-data - < nosudoer.yaml;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+   lxc exec test-$series -- "egrep 'Trace|WARNING' /var/log/cloud-init.log";
+   lxc exec test-$series -- sudo touch /root/iwashere;
+   lxc exec test-$series -- fgrep -r power /etc/sudoers /etc/sudoers.d;
+done
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=4d69fb44
+
+=== End SRU Template ===
+=== Begin SRU Validation ===
+csmith@downtown:~$ cat > nosudoer.yaml << EOF
+> #cloud-config
+> users:
+>   - name: nopower
+>     sudo: False
+>   - name: allpower
+>     sudo: ALL=(ALL) NOPASSWD:ALL
+> EOF
+csmith@downtown:~$ for series in xenial artful bionic;
+> do
+>    echo '=== BEGIN ' $series ' ==='
+>    ref=$series-proposed;
+>    lxc delete test-$series --force;
+>    lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$series;
+>    lxc config set test-$series user.user-data - < nosudoer.yaml;
+>    lxc start test-$series;
+>    lxc exec test-$series -- cloud-init status --wait --long;
+>    lxc exec test-$series -- "egrep 'Trace|WARNING' /var/log/cloud-init.log";
+>    lxc exec test-$series -- sudo touch /root/iwashere;
+>    lxc exec test-$series -- fgrep -r power /etc/sudoers /etc/sudoers.d;
+> done
+=== BEGIN  xenial  ===
+Creating xenial-proposed-2608914191
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~16.04.1 [371 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~16.04.1) over (18.2-4-g05926e48-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+...................................
+status: done
+time: Thu, 12 Jul 2018 03:47:13 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+/etc/sudoers.d/90-cloud-init-users:# User rules for allpower
+/etc/sudoers.d/90-cloud-init-users:allpower ALL=(ALL) NOPASSWD:ALL
+=== BEGIN  artful  ===
+Creating artful-proposed-90379858
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~17.10.1 [368 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~17.10.1) over (18.2-4-g05926e48-0ubuntu1~17.10.2) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~17.10.1) ...
+Creating test-artful
+..................................
+status: done
+time: Thu, 12 Jul 2018 03:49:11 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+/etc/sudoers.d/90-cloud-init-users:# User rules for allpower
+/etc/sudoers.d/90-cloud-init-users:allpower ALL=(ALL) NOPASSWD:ALL
+=== BEGIN  bionic  ===
+Creating bionic-proposed-206705578
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.3-9-g2e62cb8a-0ubuntu1~18.04.1 [364 kB]
+Preparing to unpack .../cloud-init_18.3-9-g2e62cb8a-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+Setting up cloud-init (18.3-9-g2e62cb8a-0ubuntu1~18.04.1) ...
+Creating test-bionic
+.................................
+status: done
+time: Thu, 12 Jul 2018 03:50:59 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+/etc/sudoers.d/90-cloud-init-users:# User rules for allpower
+/etc/sudoers.d/90-cloud-init-users:allpower ALL=(ALL) NOPASSWD:ALL
+
+
+=== End SRU Validation ===
