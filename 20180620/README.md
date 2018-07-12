@@ -32,7 +32,8 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 
 Attached to the bug are full logs from the jenkins run:
 
-| ------ |  -------- | ----- |
+| Release | Log | Artifacts |
+| ------- | -------- | ----- |
 | xenial | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162553/+files/xenial-integration-console.log) | [artifacts](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162552/+files/xenial-integration-artifacts.tar.xz) |
 | artful | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162549/+files/artful-integration-console.log) | [artifacts](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162548/+files/artful-integration-artifacts.tar.xz) |
 | bionic | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162551/+files/bionic-integration-console.log) | [artifacts]https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162550/+files/bionic-integration-artifacts.tar.xz() |
