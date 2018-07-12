@@ -1,0 +1,65 @@
+http://pad.lv/1774666
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1774666
+    
+=== Begin cloud-init SRU Template ===
+[Impact] 
+Virtual devices such as VLANs, bridges and bonds were ignoring MTU settings.
+This would result in dropped packets if mtu setting should have been 9000 was
+dropped to default of 1500.
+
+[Test Case]
+The basic idea below is:
+ a.) launch an instance with proposed version of cloud-init.
+ b.) inside instance, get cloud-init's network rendering tool from trunk
+ c.) run the rendering tool against a config that failed before.
+ d.) check rendered netplan config to verify it has mtu settings present.
+
+wget https://git.launchpad.net/~cloud-init-dev/cloud-init/plain/tools/net-convert.py -O net-convert.py
+
+## write a network config with mtu on subnets
+cat > subnet-mtu.yaml << EOF
+version: 1
+config:
+  - type: 'physical'
+    name: 'iface0'
+    mtu: 8999
+    subnets:
+      - type: static
+        address: 192.168.14.2/24
+        mtu: 9000
+      - type: static
+        address: 2001:1::1/64
+        mtu: 1500
+EOF
+
+## write a network config with mtu on bridge bond and vlan interfaces
+
+## launch an instance.
+for series in xenial artful bionic; do
+  ref=$series-proposed;
+  lxc-proposed-snapshot --proposed --publish $series $ref;
+  lxc launch $ref test-$series;
+  lxc file push net-convert.py test-$series/;
+  lxc file push subnet-mtu.yaml test-$series/;
+  lxc file push virtual-infs-mtu.yaml test-$series/;
+
+
+  for k in eni netplan sysconfig; do
+     python3 /net-convert.py \
+      --network-data=net-config.yaml --kind=yaml \
+      --output-kind=$k \
+      --directory=out.d ; done
+
+  lxc exec test-$series -- cat out.d/etc/network/interfaces;
+  lxc exec test-$series -- cat out.d/etc/netplan/50-cloud-init.yaml;
+done
+
+
+[Regression Potential] 
+Fairly low chance for regression this improves ENI and netplan rendering for mtu specific configuration parameters mentioned not being written, and now they will be.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=c3f1ad9a
+
+=== End cloud-init SRU Template ===
