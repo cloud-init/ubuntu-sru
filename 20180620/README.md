@@ -25,8 +25,13 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual azure test | ✔ [verification output](../manual/azure-sru-18.3.0.txt) |
 | Manual gce test | ✔ [verification output](../manual/gce-sru-18.3.0.txt) |
 | Manual openstack test | ✔ [verification output](../manual/openstack-sru-18.3.0.txt) |
-| Manual softlayer test | ✗ [verification output](../manual/softlayer-sru-18.3.9.txt) |
-| Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-18.3.0.txt) |
-| Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-18.3.0.txt) |
+| Manual softlayer test | ✔ [verification output](../manual/softlayer-sru-18.3.9.txt) |
 
-lp-1770462.txt  lp-1768600.txt
+
+## Automated test results
+
+Attached to the bug are full logs from the jenkins run:
+
+| xenial | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162553/+files/xenial-integration-console.log) | [artifacts](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162552/+files/xenial-integration-artifacts.tar.xz) |
+| artful | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162549/+files/artful-integration-console.log) | [artifacts](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162548/+files/artful-integration-artifacts.tar.xz) |
+| bionic | [console](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162551/+files/bionic-integration-console.log) | [artifacts]https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1777912/+attachment/5162550/+files/bionic-integration-artifacts.tar.xz() |
