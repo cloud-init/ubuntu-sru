@@ -1,0 +1,124 @@
+The issue provided in the bug was wrt a config like below.
+Important is the fact that the mtu is put on the bond, not on a subnet.
+When rendered to netplan, the 'bonds' entry would not have any mtu
+at all.  The fixed version has mtu 9000 on the bond.
+
+Test is most easily done with using tools/net-convert.
+   ./tools/net-convert.py --debug \
+       --network-data=bond.yaml --kind=yaml \
+       --directory=out.d/ --output-kind=netplan
+
+Example input config showing bug (bond.yaml):
+network:
+ version: 1
+ config:
+  - id: nic1
+    mac_address: 8c:dc:d4:b6:e2:bc
+    mtu: 1500
+    name: iface1
+    type: physical
+  - id: nic2
+    mac_address: 8c:dc:d4:b6:e2:bd
+    mtu: 1500
+    name: iface2
+    type: physical
+  - bond_interfaces:
+    - iface1
+    - iface2
+    id: bond0
+    mac_address: 8c:dc:d4:b6:e2:bc
+    name: bond0
+    mtu: 9000
+    params:
+      bond-miimon: 100
+    subnets:
+    - address: 192.168.35.2/26
+      type: static
+    type: bond
+
+Expected output for the 'bond0' looked like this.  The bad output was the
+same except for it was missing 'mtu'.
+    bonds:
+        bond0:
+            addresses:
+            - 192.168.35.2/26
+            interfaces:
+            - iface1
+            - iface2
+            mtu: 9000
+            parameters:
+                mii-monitor-interval: 100
+
+
+
+Test results:
+
+### bionic ###
+$ dpkg-query --show cloud-init
+cloud-init	18.3-9-g2e62cb8a-0ubuntu1~18.04.1
+$ git clone https://git.launchpad.net/cloud-init/
+Cloning into 'cloud-init'...
+remote: Counting objects: 31429, done.
+remote: Compressing objects: 100% (10888/10888), done.
+remote: Total 31429 (delta 23109), reused 28197 (delta 20248)
+Receiving objects: 100% (31429/31429), 18.09 MiB | 1.50 MiB/s, done.
+Resolving deltas: 100% (23109/23109), done.
+
+$ cat bond.yaml
+network:
+ version: 1
+ config:
+  - id: nic1
+    mac_address: 8c:dc:d4:b6:e2:bc
+    mtu: 1500
+    name: iface1
+    type: physical
+  - id: nic2
+    mac_address: 8c:dc:d4:b6:e2:bd
+    mtu: 1500
+    name: iface2
+    type: physical
+  - bond_interfaces:
+    - iface1
+    - iface2
+    id: bond0
+    mac_address: 8c:dc:d4:b6:e2:bc
+    name: bond0
+    params:
+      bond-miimon: 100
+    subnets:
+    - address: 192.168.35.2/26
+      type: static
+      mtu: 9000
+    type: bond
+
+
+$ cp cloud-init/tools/net-convert.py .
+$ python3 ./net-convert.py \
+   --network-data=bond.yaml --kind=yaml \
+   --directory=out.d --output-kind=netplan >debug.out
+$ cat out.d/etc/netplan/50-cloud-init.yaml
+
+network:
+    version: 2
+    ethernets:
+        iface1:
+            match:
+                macaddress: 8c:dc:d4:b6:e2:bc
+            mtu: 1500
+            set-name: iface1
+        iface2:
+            match:
+                macaddress: 8c:dc:d4:b6:e2:bd
+            mtu: 1500
+            set-name: iface2
+    bonds:
+        bond0:
+            addresses:
+            - 192.168.35.2/26
+            interfaces:
+            - iface1
+            - iface2
+            mtu: 9000
+            parameters:
+                mii-monitor-interval: 100
