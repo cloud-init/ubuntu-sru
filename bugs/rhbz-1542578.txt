@@ -1,0 +1,33 @@
+https://git.launchpad.net/cloud-init/commit/?id=529d48f6
+commit 529d48f69d3784b2314397f5eab9d750ab03cf6a
+
+To reproduce a problem:
+ a.) boot fresh openstack instance (assuming /dev/vdb is ephemeral0)
+ b.) remove the added 'cloudconfig' entry for /dev/vdb in /etc/fstab
+ c.) add one with '/dev/vdb /opt auto defaults 0 2'.
+ d.) sudo cloud-init clean --logs --reboot
+ e.) up reboot see 2 entries in /etc/fstab for '/dev/vdb'
+
+Upgrade cloud-init and you'll see only the entry you wrote.
+
+BAD:
+  $ grep vdb /etc/fstab
+  /dev/vdb /opt auto defaults 0 2
+  /dev/vdb /mnt auto defaults,nofail,x-systemd.requires=cloud-init.service,comment=cloudconfig 0 2
+
+GOOD:
+  $ grep vdb /etc/fstab
+  /dev/vdb /opt auto defaults 0 2
+
+
+I verified that if you upgrade cloud-init to proposed above between
+steps 'c' and 'd' then you get GOOD result.
+
+
+## xenial ##
+$ dpkg-query --show cloud-init
+cloud-init 18.3-9-g2e62cb8a-0ubuntu1~16.04.1
+
+$ cat /etc/fstab 
+LABEL=cloudimg-rootfs /  ext4 defaults 0 0
+/dev/vdb /opt auto defaults 0 2

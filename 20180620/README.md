@@ -22,6 +22,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1771468](http://pad.lv/1771468) | ✔ [verification output](../bugs/lp-1771468.txt) |
 | [# 1766711](http://pad.lv/1766711) | ✔ [verification output](../bugs/lp-1766711.txt) |
 | [# 1777912](http://pad.lv/1777912) | ✔ [verification output](../bugs/lp-1777912.txt) |
+| [rhbz# 1542578](https://bugzilla.redhat.com/show_bug.cgi?id=1542578) | ✔ [verification output](../bugs/rhbz-1542578.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.3.0.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-18.3.0.txt) |
 | Manual gce test | ✔ [verification output](../manual/gce-sru-18.3.0.txt) |
