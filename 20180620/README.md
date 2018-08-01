@@ -8,6 +8,9 @@ Given [cloud-init's exception process](https://wiki.ubuntu.com/CloudinitUpdates)
 
 
 06/20/2018 SRU: [launchpad process bug:#1777912](https://pad.lv/1777912)
+07/31/2018 SRU Exception discovered during testing:
+
+ * [LP: #1784685](https://pad.lv/1784685)
 
 
 The links listed below are to bugs fixed in this SRU and the verification of those bugs.
@@ -15,6 +18,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
+| [# 1784685](http://pad.lv/1784685) | ✔ [verification output](../bugs/lp-1784685.txt) |
 | [# 1770712](http://pad.lv/1770712) | ✔ [verification output](../bugs/lp-1770712.txt) |
 | [# 1770462](http://pad.lv/1770462) | ✔ [verification output](../bugs/lp-1770462.txt) |
 | [# 1768600](http://pad.lv/1768600) | ✔ [verification output](../bugs/lp-1768600.txt) |
