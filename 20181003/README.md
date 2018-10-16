@@ -1,4 +1,4 @@
-Ubuntu SRU xenial, artful: 10/03/2018
+Ubuntu SRU xenial, bionic: 10/03/2018
 =====
 This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on 10/03/2018. It updates Ubuntu Xenial and Bionic series.
 
