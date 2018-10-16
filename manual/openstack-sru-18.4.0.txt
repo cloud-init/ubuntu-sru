@@ -1,0 +1,78 @@
+# Manual OpenStack upgrade and clean install validation Xenial, Bionic
+cat > cloud-config.yaml << EOF
+## template: jinja
+#cloud-config
+hostname: SRU-worked
+users:
+  - name: sru
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    ssh_authorized_keys:
+     - |
+       ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+cat > 50_enable_network_json.cfg <<EOF
+datasource:
+  OpenStack:
+     apply_network_config: True
+EOF
+
+# Create xenial instance with nic on the on admin_net
+ADMIN_NET_ID=`openstack network list -f json | jq -r '.[] | select(.Name == "blackboxsw_admin_net") | .ID'`;
+openstack image list --property architecture=x86_64 -f json > images.json
+XENIAL_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID' | tail -n 1`
+ARTFUL_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("artful"))) | .ID' | tail -n 1`
+BIONIC_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("bionic"))) | .ID' | tail -n 1`
+
+VM_IP=`openstack floating ip create ext_net -f json | | jq '.floating_ip_address' -r`;
+
+for release in xenial artful bionic; do
+  openstack server create --flavor m1.small --image $ARTFUL_IMAGE --key-name mykey --nic net-id=$ADMIN_NET_ID --user-data cloud-config.yaml test-$release --wait;
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+  openstack server add floating ip test-$release $VM_IP;
+  ssh sru@$VM_IP -- cloud-init status --long --wait;
+  ssh sru@$VM_IP -- cat /run/cloud-init/result.json;
+  ssh sru@$VM_IP -- grep Trace /var/log/cloud-init.log;
+  ssh sru@$VM_IP -- sudo systemd-analyze;
+  ssh sru@$VM_IP -- sudo systemd-analyze blame;
+  ssh sru@$VM_IP -- sudo cloud-init analyze show;
+  scp setup_proposed.sh sru@$VM_IP:.;
+  ssh sru@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+  ssh sru@$VM_IP sudo hostname;
+  ssh sru@$VM_IP sudo hostname something-else;
+  ssh sru@$VM_IP -- sudo cloud-init init;
+  ssh sru@$VM_IP -- grep Trace /var/log/cloud-init*;
+  ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+  ssh sru@$VM_IP -- hostname;
+  date --utc +%s.%N; ssh sru@$VM_IP -- cloud-init status --wait --long; date --utc +%s.%N;
+  ssh sru@$VM_IP -- grep Trace /var/log/cloud-init*;
+  ssh sru@$VM_IP -- sudo grep user-data /run/cloud-init/instance-data.json;
+  ssh sru@$VM_IP -- sudo cat /run/cloud-init/instance-data.json;
+  ssh sru@$VM_IP -- sudo systemd-analyze;
+  ssh sru@$VM_IP -- sudo systemd-analyze blame;
+  ssh sru@$VM_IP -- sudo cloud-init analyze show;
+  echo "Expect no network_json logs by default because we don't change behavior"
+  ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+  scp 50_enable_network_json.cfg sru@$VM_IP:.;
+  ssh sru@$VM_IP sudo cp 50_enable_network_json.cfg /etc/cloud/cloud.cfg.d
+  ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+  echo "Now expect network_json logs with apply_network_config enabled"
+  ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+  openstack server delete test-$release;
+  # Validate LP: #1792157 READING OF versioned network_data.json 
+done
+
+### BEGIN Xenial openstack validation
+### END Xenial openstack validation
+### BEGIN Bionic openstack validation
+### END Bionic openstack validation
