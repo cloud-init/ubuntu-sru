@@ -1,8 +1,12 @@
 # Manual EC2 upgrade and clean install validation Xenial and Artful 
-ssh_import_id : [raharper]
-hostname: SRU-worked
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
+for release in xenial bionic; do
 EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
 ssh $EC2_INST -- cat /run/cloud-init/result.json;
 ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
@@ -29,3 +33,5 @@ ssh $EC2_INST -- sudo systemd-analyze;
 ssh $EC2_INST -- sudo cloud-init analyze show;
 
 # TODO add cloud-specific verification steps for this particular SRU
+
+done
