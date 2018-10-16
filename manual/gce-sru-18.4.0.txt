@@ -1,0 +1,50 @@
+==== GCE Xenial upgrade and fresh install test 17.1.46 -> 17.2.35 ====
+# General test flow is as follows on xenial and artful
+# part 1 Show current installed cloud-init with user-data and check performance
+#   via tracebacks and cloud-init/systemd analyze
+# part 2 upgrade cloud-init on a live system cloud-init init checking for
+#   failures
+# part 3 clean reboot and check performance (tracebacks and analyze)
+# part 4 check specific bug fix behavior:
+
+# Deployed via gcloud CLI with userdata
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+# Xenial instance with user-data
+IMAGE_VERSION=`image-status gce xenial | grep us-central | awk '{print $2}'`;
+
+# part 1 deploy with user-data
+gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
+
+GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
+ssh $GCE_VM -- dpkg-query --show cloud-init;
+ssh $GCE_VM sudo cat /run/cloud-init/result.json;
+ssh $GCE_VM cloud-init status --long;
+ssh $GCE_VM grep Trace /var/log/cloud-init.log;
+ssh $GCE_VM systemd-analyze;
+ssh $GCE_VM systemd-analyze blame;
+ssh $GCE_VM cloud-init analyze show;
+ssh $GCE_VM cloud-init analyze blame;
+# part 2 upgrade cloud-init on live system
+ssh $GCE_VM -- sh -c '
+> mirror=http://archive.ubuntu.com/ubuntu
+> echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+> apt-get update -q
+> apt-get install -qy cloud-init';
+ssh $GCE_VM -- dpkg-query --show cloud-init;
+ssh $GCE_VM sudo cloud-init init;
+# part 3 clean boot cloud-init
+ssh $GCE_VM sudo hostname SRU-didnt-work;
+ssh $GCE_VM sudo cloud-init clean --logs --reboot;
+ssh $GCE_VM grep Trace /var/log/cloud-init*;
+ssh $GCE_VM sudo cat /run/cloud-init/result.json;
+ssh $GCE_VM cloud-init status --long;
+ssh $GCE_VM sudo sytemd-analyze blame;
+ssh $GCE_VM cloud-init analyze show;
+ssh $GCE_VM cloud-init analyze blame;
+# part 4 custom validation of specific fixed bug behavior for this SRU

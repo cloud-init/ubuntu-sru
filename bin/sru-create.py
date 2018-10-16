@@ -9,6 +9,7 @@ import sys
 BUG_VERIFY_TMPL = "| [# {bugid}](http://pad.lv/{bugid}) | [verification output](../bugs/lp-{bugid}.txt) |"
 MANUAL_VERIFY_TMPL = "| {title} | [verification output](../manual/{versioned_file}) |"
 
+
 def get_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -23,7 +24,7 @@ def get_parser():
     parser.add_argument(
         '--bugs', default=[],  type=int, nargs='*',
         help=('Space separated list of bug-ids fixed by the SRU.'
-              ' E.g. --verified-bugs 123 124'))
+              ' E.g. --bugs 123 124'))
     return parser
 
 

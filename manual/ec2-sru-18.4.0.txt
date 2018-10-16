@@ -1,0 +1,38 @@
+# Manual EC2 upgrade and clean install validation Xenial and Artful 
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+for release in xenial bionic; do
+
+EC2_INST=`launch-ec2 --series $release -u sethostname.yaml | awk '/Found/{print $5}'`;
+ssh $EC2_INST -- cat /run/cloud-init/result.json;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+ssh $EC2_INST -- sudo grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sh -c '
+ mirror=http://archive.ubuntu.com/ubuntu
+ echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+ apt-get update -q
+ apt-get install -qy cloud-init';
+ssh $EC2_INST sudo hostname;
+ssh $EC2_INST sudo hostname something-else;
+ssh $EC2_INST -- sudo cloud-init init;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+ssh $EC2_INST -- hostname;
+date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait; date --utc +%s.%N;
+ssh $EC2_INST -- cloud-init status --long;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init*;
+ssh $EC2_INST -- sudo grep user-data /run/cloud-init/instance-data.json;
+ssh $EC2_INST -- grep instance-identity /var/log/cloud-init.log;
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+
+# TODO add cloud-specific verification steps for this particular SRU
+
+done
