@@ -1,0 +1,236 @@
+http://pad.lv/1770462
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1770462
+
+=== Begin SRU Template ===
+[Impact]
+Tracebacks would result if images provided an empty cloud_config_modules section.
+
+[Test Case]
+Place additional config file in /etc/cloud/cloud.cfg.d/empty.cfg which defines an empty config for active cloud config modules and ensure no tracebacks.
+
+cat > empty.cfg << EOF
+cloud_config_modules: []
+EOF
+
+for series in xenial artful bionic;
+do
+   echo '=== BEGIN ' $series ' ==='
+   ref=$series-proposed;
+   lxc-proposed-snapshot -p -P $series $ref;
+   lxc init $ref test-$series;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+   lxc file push empty.cfg test-$series/etc/cloud/cloud.cfg.d/empty.cfg;
+   lxc exec test-$series -- cloud-init modules --mode config;
+   lxc exec test-$series -- grep Trace /var/log/cloud-init.log;
+done
+
+[Regression Potential]
+None, just avoid unwanted tracebacks.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=fef2616b
+
+=== End SRU Template ===
+
+=== BEGIN Abridged Verification Output ===
+$ for series in xenial artful bionic;
+> do
+>    echo '=== BEGIN ' $series ' ==='
+>    ref=$series-proposed;
+>    lxc-proposed-snapshot -p -P $series $ref;
+>    lxc init $ref test-$series;
+>    lxc start test-$series;
+>    lxc exec test-$series -- cloud-init status --wait --long;
+>    lxc file push empty.cfg test-$series/etc/cloud/cloud.cfg.d/empty.cfg;
+>    lxc exec test-$series -- cloud-init modules --mode config;
+>    lxc exec test-$series -- grep Trace /var/log/cloud-init.log;
+> done
+=== BEGIN  xenial  ===
+Creating xenial-proposed-1931419302
+
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [107 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [356 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [258 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [133 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [3456 B]
+Get:9 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [1744 B]
+Get:11 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:12 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [804 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [641 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [258 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.4 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8344 B]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [6748 B]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4180 B]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [7412 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [3996 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [21.4 kB]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [9560 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [20.2 kB]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [8676 B]
+Fetched 15.0 MB in 4s (3181 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 15 not upgraded.
+Need to get 369 kB of archives.
+After this operation, 66.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.3-0ubuntu1~16.04.1 [369 kB]
+Preconfiguring packages ...
+Fetched 369 kB in 0s (423 kB/s)
+(Reading database ... 25657 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~16.04.1) over (18.2-4-g05926e48-0ubuntu1~16.04.2) ...
+Processing triggers for ureadahead (0.100.0-19) ...
+Setting up cloud-init (18.3-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Container published with fingerprint: fdd97f1ad89f5f72f4f5f863c169a3c53bbc40b5689f0aa13e01d4c36651ced4
+Creating test-xenial
+
+......................................
+status: done
+time: Fri, 06 Jul 2018 19:16:57 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~16.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:16:58 +0000. Up 11.00 seconds.
+No 'config' modules to run under section 'cloud_config_modules'
+=== BEGIN  artful  ===
+Creating artful-proposed-117992623
+Hit:1 http://archive.ubuntu.com/ubuntu artful InRelease
+Get:2 http://security.ubuntu.com/ubuntu artful-security InRelease [83.2 kB]
+Get:3 http://archive.ubuntu.com/ubuntu artful-updates InRelease [88.7 kB]
+Get:4 http://archive.ubuntu.com/ubuntu artful-backports InRelease [74.6 kB]
+Get:5 http://security.ubuntu.com/ubuntu artful-security/main amd64 Packages [191 kB]
+Get:6 http://archive.ubuntu.com/ubuntu artful-proposed InRelease [240 kB]
+Get:7 http://security.ubuntu.com/ubuntu artful-security/main Translation-en [85.5 kB]
+Get:8 http://archive.ubuntu.com/ubuntu artful/universe amd64 Packages [8103 kB]
+Get:9 http://security.ubuntu.com/ubuntu artful-security/universe amd64 Packages [69.9 kB]
+Get:10 http://security.ubuntu.com/ubuntu artful-security/universe Translation-en [42.9 kB]
+Get:11 http://security.ubuntu.com/ubuntu artful-security/multiverse amd64 Packages [1820 B]
+Get:12 http://security.ubuntu.com/ubuntu artful-security/multiverse Translation-en [1124 B]
+Get:13 http://archive.ubuntu.com/ubuntu artful/universe Translation-en [4789 kB]
+Get:14 http://archive.ubuntu.com/ubuntu artful/multiverse amd64 Packages [150 kB]
+Get:15 http://archive.ubuntu.com/ubuntu artful/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu artful-updates/main amd64 Packages [287 kB]
+Get:17 http://archive.ubuntu.com/ubuntu artful-updates/main Translation-en [129 kB]
+Get:18 http://archive.ubuntu.com/ubuntu artful-updates/universe amd64 Packages [122 kB]
+Get:19 http://archive.ubuntu.com/ubuntu artful-updates/universe Translation-en [69.9 kB]
+Get:20 http://archive.ubuntu.com/ubuntu artful-updates/multiverse amd64 Packages [4124 B]
+Get:21 http://archive.ubuntu.com/ubuntu artful-updates/multiverse Translation-en [2264 B]
+Get:22 http://archive.ubuntu.com/ubuntu artful-backports/main amd64 Packages [1516 B]
+Get:23 http://archive.ubuntu.com/ubuntu artful-backports/main Translation-en [668 B]
+Get:24 http://archive.ubuntu.com/ubuntu artful-backports/universe amd64 Packages [4076 B]
+Get:25 http://archive.ubuntu.com/ubuntu artful-backports/universe Translation-en [2116 B]
+Get:26 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 Packages [13.5 kB]
+Get:27 http://archive.ubuntu.com/ubuntu artful-proposed/main Translation-en [6280 B]
+Get:28 http://archive.ubuntu.com/ubuntu artful-proposed/universe amd64 Packages [11.3 kB]
+Get:29 http://archive.ubuntu.com/ubuntu artful-proposed/universe Translation-en [6108 B]
+Fetched 14.7 MB in 5s (2805 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 366 kB of archives.
+After this operation, 67.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.3-0ubuntu1~17.10.1 [366 kB]
+Preconfiguring packages ...
+Fetched 366 kB in 0s (401 kB/s)
+(Reading database ... 26666 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~17.10.1) over (18.2-4-g05926e48-0ubuntu1~17.10.2) ...
+Processing triggers for rsyslog (8.16.0-1ubuntu9) ...
+invoke-rc.d: could not determine current runlevel
+Setting up cloud-init (18.3-0ubuntu1~17.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Container published with fingerprint: 5465f23bf3a07b33e7c4b77e1274ef585f9a1e8a68c4d55c97aff011ab56ec44
+Creating test-artful
+Error: UNIQUE constraint failed: storage_volumes.storage_pool_id, storage_volumes.node_id, storage_volumes.name, storage_volumes.type
+Error: not found
+Error: not found
+Error: not found
+Error: not found
+Error: not found
+=== BEGIN  bionic  ===
+Creating bionic-proposed-832226581
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [83.2 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [111 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [43.7 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [34.8 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [19.8 kB]
+Get:10 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [1176 B]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [632 B]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [175 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [69.7 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [114 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [48.4 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [3544 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [2060 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [2704 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [1136 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [63.8 kB]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [25.4 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [45.1 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [20.4 kB]
+Fetched 15.0 MB in 5s (3232 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 24 not upgraded.
+Need to get 362 kB of archives.
+After this operation, 25.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.3-0ubuntu1~18.04.1 [362 kB]
+Preconfiguring packages ...
+Fetched 362 kB in 1s (410 kB/s)
+(Reading database ... 28485 files and directories currently installed.)
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Setting up cloud-init (18.3-0ubuntu1~18.04.1) ...
+Container published with fingerprint: 18d182b4885b578cbb25a38c6c7f3a654ca72052cecdb8750371af45f2bc3929
+Creating test-bionic
+..................................
+status: done
+time: Fri, 06 Jul 2018 19:19:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~18.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:19:25 +0000. Up 10.00 seconds.
+No 'config' modules to run under section 'cloud_config_modules'
+
+
+=== END Abridged Verification Output ===

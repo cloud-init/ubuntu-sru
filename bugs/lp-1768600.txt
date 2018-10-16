@@ -1,0 +1,142 @@
+http://pad.lv/1768600
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1768600
+
+=== Begin SRU Template ===
+[Impact]
+Any scripts or user-data containing unicode characters would cause a traceback and could not be run.
+
+[Test Case]
+Deploy container using cloud-config or x-shell attachment as userdata containing unicode characters. Make sure we don't hit tracebacks.
+
+cat > unicode1.yaml << EOF
+#cloud-config
+runcmd:
+  - echo TEST Ä
+EOF
+
+cat > unicode2.yaml << EOF
+#!/bin/bash
+echo TEST Ä
+EOF
+
+for series in xenial artful bionic;
+do
+   echo '=== BEGIN ' $series ' ==='
+   ref=$series-proposed;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   for file in unicode1.yaml unicode2.yaml;
+   do
+     echo ' - processing user-data: ' $file ' -'
+     lxc stop test-$series;
+     lxc delete test-$series;
+     lxc init $ref test-$series;
+     lxc config set test-$series user.user-data - < $file;
+     lxc start test-$series;
+     lxc exec test-$series -- cloud-init status --wait --long;
+     lxc exec test-$series -- cloud-init modules --mode config;
+     lxc exec test-$series -- grep Trace /var/log/cloud-init.log;
+   done
+done
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=faa6f07e
+
+=== End SRU Template ===
+
+=== BEGIN SRU Abridged validation ===
+$ for series in xenial artful bionic;
+> do
+>    echo '=== BEGIN ' $series ' ==='
+>    ref=$series-proposed;
+>    lxc-proposed-snapshot -p -P $series $ref | grep cloud-init;
+>    for file in unicode1.yaml unicode2.yaml;
+>    do
+>      echo ' - processing user-data: ' $file ' -'
+>      lxc stop test-$series;
+>      lxc delete test-$series;
+>      lxc init $ref test-$series; 
+>      lxc config set test-$series user.user-data - < $file;
+>      lxc start test-$series;
+>      lxc exec test-$series -- cloud-init status --wait --long;
+>      lxc exec test-$series -- cloud-init modules --mode config;
+>      lxc exec test-$series -- grep Trace /var/log/cloud-init.log;
+>    done 
+> done
+=== BEGIN  xenial  ===
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.3-0ubuntu1~16.04.1 [369 kB]
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~16.04.1) over (18.2-4-g05926e48-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+ - processing user-data:  unicode1.yaml  -
+Creating test-xenial
+.....................................
+status: done
+time: Fri, 06 Jul 2018 19:22:09 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~16.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:22:10 +0000. Up 10.00 seconds.
+ - processing user-data:  unicode2.yaml  -
+Creating test-xenial
+....................................
+status: done
+time: Fri, 06 Jul 2018 19:22:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~16.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:22:26 +0000. Up 10.00 seconds.
+=== BEGIN  artful  ===
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu artful-proposed/main amd64 cloud-init all 18.3-0ubuntu1~17.10.1 [366 kB]
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~17.10.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~17.10.1) over (18.2-4-g05926e48-0ubuntu1~17.10.2) ...
+Setting up cloud-init (18.3-0ubuntu1~17.10.1) ...
+ - processing user-data:  unicode1.yaml  -
+Error: not found
+Error: not found
+Creating test-artful
+....................................
+status: done
+time: Fri, 06 Jul 2018 19:23:53 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~17.10.1 running 'modules:config' at Fri, 06 Jul 2018 19:23:53 +0000. Up 11.00 seconds.
+ - processing user-data:  unicode2.yaml  -
+Creating test-artful
+......................................
+status: done
+time: Fri, 06 Jul 2018 19:24:08 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~17.10.1 running 'modules:config' at Fri, 06 Jul 2018 19:24:09 +0000. Up 10.00 seconds.
+=== BEGIN  bionic  ===
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.3-0ubuntu1~18.04.1 [362 kB]
+Preparing to unpack .../cloud-init_18.3-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.3-0ubuntu1~18.04.1) over (18.2-27-g6ef92c98-0ubuntu1~18.04.1) ...
+Setting up cloud-init (18.3-0ubuntu1~18.04.1) ...
+ - processing user-data:  unicode1.yaml  -
+Creating test-bionic
+..................................
+status: done
+time: Fri, 06 Jul 2018 19:25:38 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~18.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:25:38 +0000. Up 10.00 seconds.
+ - processing user-data:  unicode2.yaml  -
+Creating test-bionic
+..................................
+status: done
+time: Fri, 06 Jul 2018 19:25:52 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Cloud-init v. 18.3-0ubuntu1~18.04.1 running 'modules:config' at Fri, 06 Jul 2018 19:25:53 +0000. Up 10.00 seconds.
+
+
+
+
+=== End SRU Abridged validation ===
