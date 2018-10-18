@@ -29,37 +29,37 @@ EOF
 ADMIN_NET_ID=`openstack network list -f json | jq -r '.[] | select(.Name == "blackboxsw_admin_net") | .ID'`;
 openstack image list --property architecture=x86_64 -f json > images.json
 XENIAL_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID' | tail -n 1`
-ARTFUL_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("artful"))) | .ID' | tail -n 1`
 BIONIC_IMAGE=`cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("bionic"))) | .ID' | tail -n 1`
 
 VM_IP=`openstack floating ip create ext_net -f json | | jq '.floating_ip_address' -r`;
 
-for release in xenial artful bionic; do
+for release in xenial bionic; do
+  echo "### BEGIN $release";
   openstack server create --flavor m1.small --image $ARTFUL_IMAGE --key-name mykey --nic net-id=$ADMIN_NET_ID --user-data cloud-config.yaml test-$release --wait;
   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
   openstack server add floating ip test-$release $VM_IP;
   ssh sru@$VM_IP -- cloud-init status --long --wait;
-  ssh sru@$VM_IP -- cat /run/cloud-init/result.json;
   ssh sru@$VM_IP -- grep Trace /var/log/cloud-init.log;
   ssh sru@$VM_IP -- sudo systemd-analyze;
   ssh sru@$VM_IP -- sudo systemd-analyze blame;
   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+  ssh sru@$VM_IP -- sudo cloud-init analyze blame;
   scp setup_proposed.sh sru@$VM_IP:.;
   ssh sru@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
   ssh sru@$VM_IP sudo hostname;
   ssh sru@$VM_IP sudo hostname something-else;
   ssh sru@$VM_IP -- sudo cloud-init init;
-  ssh sru@$VM_IP -- grep Trace /var/log/cloud-init*;
+  ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
   ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
-  ssh sru@$VM_IP -- hostname;
   date --utc +%s.%N; ssh sru@$VM_IP -- cloud-init status --wait --long; date --utc +%s.%N;
-  ssh sru@$VM_IP -- grep Trace /var/log/cloud-init*;
-  ssh sru@$VM_IP -- sudo grep user-data /run/cloud-init/instance-data.json;
-  ssh sru@$VM_IP -- sudo cat /run/cloud-init/instance-data.json;
+  ssh sru@$VM_IP -- hostname;
+  ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
+  ssh sru@$VM_IP -- sudo cloud-init query --all;
   ssh sru@$VM_IP -- sudo systemd-analyze;
   ssh sru@$VM_IP -- sudo systemd-analyze blame;
   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+  ssh sru@$VM_IP -- sudo cloud-init analyze blame;
   echo "Expect no network_json logs by default because we don't change behavior"
   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
   scp 50_enable_network_json.cfg sru@$VM_IP:.;
@@ -68,11 +68,1488 @@ for release in xenial artful bionic; do
   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
   echo "Now expect network_json logs with apply_network_config enabled"
   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+  echo "Validate LP: #1792157 OpenStack: fix bug causing ‘latest’ version to be used from network.";
+  echo "Validate LP: #1792157 OpenStack: fix bug causing ‘latest’ version to be used from network.";
+  ssh sru@$VM_IP grep 2017 /var/log/cloud-init.log | grep network;
   openstack server delete test-$release;
-  # Validate LP: #1792157 READING OF versioned network_data.json 
 done
 
 ### BEGIN Xenial openstack validation
+ubuntu@blackboxsw-bastion:~$ release=xenial
+ubuntu@blackboxsw-bastion:~$ openstack server create --flavor m1.small --image $XENIAL_IMAGE --key-name mykey --nic net-id=$ADMIN_NET_ID --user-data cloud-config.yaml test-$release --wait;
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2018-10-18T20:44:08.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.12                                                                       |
+| adminPass                   | KQu7MPUj9Wom                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2018-10-18T20:44:00Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 2c09c7b48939af42ec51ec3453d34cad2e6eb793d4291e6a85a37458                                             |
+| id                          | 0c319919-ad60-4ed4-883e-36252ebb7deb                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20181016-disk1.img (b1d2113b-5e97-4ce5-949c-da3bda785000) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-xenial                                                                                          |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2018-10-18T20:44:08Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$   openstack server add floating ip test-$release $VM_IP;
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- cloud-init status --long --wait;
+
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:BVF9Bso/eWMlPSXtied3hBHxUN5qlWanS0KIFqwb08M.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+.............................................
+status: done
+time: Thu, 18 Oct 2018 20:46:54 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- cat /run/cloud-init/result.json;
+{
+ "v1": {
+  "datasource": "DataSourceOpenStackLocal [net,ver=2]",
+  "errors": []
+ }
+}
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep Trace /var/log/cloud-init.log;
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze;
+sudo: unable to resolve host SRU-worked
+Startup finished in 7.351s (kernel) + 2min 34.711s (userspace) = 2min 42.062s
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze blame;
+sudo: unable to resolve host SRU-worked
+    1min 24.415s cloud-config.service
+         26.500s snapd.seeded.service
+         22.900s cloud-init-local.service
+         16.722s snapd.service
+         13.147s pollinate.service
+         13.038s lxd-containers.service
+         12.692s dev-vda1.device
+         10.143s console-setup.service
+          8.850s apparmor.service
+          5.049s accounts-daemon.service
+          5.029s grub-common.service
+          5.027s iscsid.service
+          5.002s systemd-logind.service
+          4.965s mdadm.service
+          3.682s rsyslog.service
+          2.499s rc-local.service
+          1.600s systemd-udev-trigger.service
+          1.141s cloud-init.service
+           968ms lvm2-monitor.service
+           913ms systemd-tmpfiles-setup.service
+           875ms systemd-machine-id-commit.service
+           859ms systemd-journald.service
+           827ms kmod-static-nodes.service
+           700ms resolvconf.service
+           684ms systemd-modules-load.service
+           653ms systemd-remount-fs.service
+           625ms dev-mqueue.mount
+           585ms cloud-final.service
+           471ms dev-hugepages.mount
+           460ms keyboard-setup.service
+           452ms ufw.service
+           212ms systemd-tmpfiles-setup-dev.service
+           194ms sys-kernel-debug.mount
+           190ms networking.service
+           165ms systemd-timesyncd.service
+           136ms systemd-update-utmp.service
+           133ms apport.service
+           125ms irqbalance.service
+            81ms polkitd.service
+            78ms ondemand.service
+            55ms systemd-random-seed.service
+            52ms systemd-update-utmp-runlevel.service
+            51ms systemd-journal-flush.service
+            47ms systemd-sysctl.service
+            45ms user@1000.service
+            44ms open-iscsi.service
+            43ms systemd-udevd.service
+            34ms ssh.service
+            26ms plymouth-quit.service
+            26ms lxd.socket
+            26ms snapd.socket
+            23ms plymouth-read-write.service
+            22ms sys-fs-fuse-connections.mount
+            21ms setvtrgb.service
+            16ms systemd-user-sessions.service
+            13ms plymouth-quit-wait.service
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01600s +00.00000s
+|`->no local data found from DataSourceNoCloud @00.56700s +00.05000s
+|`->no local data found from DataSourceConfigDrive @00.61800s +00.02400s
+|`->no local data found from DataSourceOpenNebula @00.64200s +00.00800s
+|`->no local data found from DataSourceDigitalOcean @00.65000s +00.00700s
+|`->no local data found from DataSourceAzure @00.65800s +00.00700s
+|`->no local data found from DataSourceOVF @00.66500s +00.01000s
+|`->found local data from DataSourceOpenStackLocal @00.67500s +13.05100s
+Finished stage: (init-local) 13.80000 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @14.43200s +00.00500s
+|`->setting up datasource @14.50400s +00.00000s
+|`->reading and applying user-data @14.51400s +00.00600s
+|`->reading and applying vendor-data @14.52000s +00.00100s
+|`->activating datasource @14.55100s +00.00100s
+|`->config-migrator ran successfully @14.61600s +00.00100s
+|`->config-seed_random ran successfully @14.61700s +00.00100s
+|`->config-bootcmd ran successfully @14.61900s +00.00000s
+|`->config-write-files ran successfully @14.61900s +00.00100s
+|`->config-growpart ran successfully @14.62100s +00.09500s
+|`->config-resizefs ran successfully @14.71700s +00.04200s
+|`->config-disk_setup ran successfully @14.75900s +00.00100s
+|`->config-mounts ran successfully @14.76100s +00.10200s
+|`->config-set_hostname ran successfully @14.86400s +00.00600s
+|`->config-update_hostname ran successfully @14.87100s +00.00100s
+|`->config-update_etc_hosts ran successfully @14.87200s +00.00100s
+|`->config-ca-certs ran successfully @14.87300s +00.00100s
+|`->config-rsyslog ran successfully @14.87400s +00.00100s
+|`->config-users-groups ran successfully @14.87600s +00.04200s
+|`->config-ssh ran successfully @14.91900s +00.18900s
+Finished stage: (init-network) 00.69500 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @80.74000s +00.00100s
+|`->config-snap ran successfully @80.74100s +00.00600s
+|`->config-snap_config ran successfully @80.74700s +00.00100s
+|`->config-ssh-import-id ran successfully @80.74800s +00.00100s
+|`->config-locale ran successfully @80.75000s +61.95600s
+|`->config-set-passwords ran successfully @142.70700s +00.00200s
+|`->config-grub-dpkg ran successfully @142.71000s +00.16800s
+|`->config-apt-pipelining ran successfully @142.87900s +00.00300s
+|`->config-apt-configure ran successfully @142.88300s +00.12300s
+|`->config-ubuntu-advantage ran successfully @143.00600s +00.00100s
+|`->config-ntp ran successfully @143.00800s +00.00100s
+|`->config-timezone ran successfully @143.00900s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @143.01000s +00.00000s
+|`->config-runcmd ran successfully @143.01100s +00.00100s
+|`->config-byobu ran successfully @143.01200s +00.00100s
+Finished stage: (modules-config) 67.58100 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @143.50900s +00.00300s
+|`->config-package-update-upgrade-install ran successfully @143.51200s +00.00100s
+|`->config-fan ran successfully @143.51300s +00.00100s
+|`->config-landscape ran successfully @143.51400s +00.00100s
+|`->config-lxd ran successfully @143.51500s +00.00100s
+|`->config-puppet ran successfully @143.51600s +00.00100s
+|`->config-chef ran successfully @143.51700s +00.00100s
+|`->config-mcollective ran successfully @143.51900s +00.00000s
+|`->config-salt-minion ran successfully @143.52000s +00.00000s
+|`->config-rightscale_userdata ran successfully @143.52100s +00.00100s
+|`->config-scripts-vendor ran successfully @143.52200s +00.00100s
+|`->config-scripts-per-once ran successfully @143.52300s +00.00100s
+|`->config-scripts-per-boot ran successfully @143.52400s +00.00000s
+|`->config-scripts-per-instance ran successfully @143.52500s +00.00000s
+|`->config-scripts-user ran successfully @143.52600s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @143.52700s +00.01800s
+|`->config-keys-to-console ran successfully @143.54500s +00.05200s
+|`->config-phone-home ran successfully @143.59700s +00.00200s
+|`->config-final-message ran successfully @143.59900s +00.00500s
+|`->config-power-state-change ran successfully @143.60500s +00.00100s
+Finished stage: (modules-final) 00.15700 seconds 
+
+Total Time: 82.23300 seconds
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze blame;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+     61.95600s (modules-config/config-locale)
+     13.05100s (init-local/search-OpenStackLocal)
+     00.18900s (init-network/config-ssh)
+     00.16800s (modules-config/config-grub-dpkg)
+     00.12300s (modules-config/config-apt-configure)
+     00.10200s (init-network/config-mounts)
+     00.09500s (init-network/config-growpart)
+     00.05200s (modules-final/config-keys-to-console)
+     00.05000s (init-local/search-NoCloud)
+     00.04200s (init-network/config-users-groups)
+     00.04200s (init-network/config-resizefs)
+     00.02400s (init-local/search-ConfigDrive)
+     00.01800s (modules-final/config-ssh-authkey-fingerprints)
+     00.01000s (init-local/search-OVF)
+     00.00800s (init-local/search-OpenNebula)
+     00.00700s (init-local/search-DigitalOcean)
+     00.00700s (init-local/search-Azure)
+     00.00600s (modules-config/config-snap)
+     00.00600s (init-network/consume-user-data)
+     00.00600s (init-network/config-set_hostname)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/check-cache)
+     00.00300s (modules-final/config-snappy)
+     00.00300s (modules-config/config-apt-pipelining)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-set-passwords)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-per-instance)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$ cat 
+.bash_history
+.bash_logout
+.bashrc
+.cache/
+.gnupg/
+.lesshst
+.novaclient/
+.profile
+.ssh/
+.sudo_as_admin_successful
+.viminfo
+1
+50_enable_network_json.cfg
+cloud-config.yaml
+cloud-init_18.4-7-g7c3f1b6a-1~bddeb_all.deb
+images.json
+instance-data.json
+network.json
+novarc
+sethostname.yaml
+setup_proposed.sh
+ubuntu@blackboxsw-bastion:~$ cat setup_proposed.sh 
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+ubuntu@blackboxsw-bastion:~$   scp setup_proposed.sh sru@$VM_IP:.;
+setup_proposed.sh                             100%  196    88.6KB/s   00:00    
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.4-0ubuntu1~16.04.2 [383 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~16.04.2_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~16.04.2) over (18.3-9-g2e62cb8a-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~16.04.2) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo hostname;
+sudo: unable to resolve host SRU-worked
+SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo hostname something-else;
+sudo: unable to resolve host SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init init;
+sudo: unable to resolve host something-else
+Cloud-init v. 18.4-0ubuntu1~16.04.2 running 'init' at Thu, 18 Oct 2018 20:52:13 +0000. Up 480.78 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address            |     Mask    | Scope  |     Hw-Address    |
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: |  ens3  | True |          10.5.0.12           | 255.255.0.0 | global | fa:16:3e:7a:21:d9 |
+ci-info: |  ens3  | True | fe80::f816:3eff:fe7a:21d9/64 |      .      |  link  | fa:16:3e:7a:21:d9 |
+ci-info: |   lo   | True |          127.0.0.1           |  255.0.0.0  |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128            |      .      |  host  |         .         |
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.5.0.1 |     0.0.0.0     |    ens3   |   UG  |
+ci-info: |   1   |     10.5.0.0    | 0.0.0.0  |   255.255.0.0   |    ens3   |   U   |
+ci-info: |   2   | 169.254.169.254 | 10.5.0.1 | 255.255.255.255 |    ens3   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   0   |  fe80::/64  |    ::   |    ens3   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    ens3   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+sudo: unable to resolve host something-else
+Connection to 10.245.162.170 closed by remote host.
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$ date --utc +%s.%N; ssh sru@$VM_IP -- cloud-init status --wait --long; date --utc +%s.%N;
+1539895980.070343208
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:hVkR3InF+o6zYvKDMKlRXxyFzl7l18unmZcxYsjI2NA.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+
+status: done
+time: Thu, 18 Oct 2018 20:52:57 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+1539895982.236883242
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- hostname;
+SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init query --all;
+sudo: unable to resolve host SRU-worked
+{
+ "availability_zone": "nova",
+ "base64_encoded_keys": [
+  "ds/meta_data/random_seed"
+ ],
+ "cloud_name": "openstack",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "ec2_metadata": {
+   "ami_id": "ami-000001d3",
+   "ami_launch_index": "0",
+   "ami_manifest_path": "FIXME",
+   "block_device_mapping": {
+    "ami": "vda",
+    "ephemeral0": "/dev/vdb",
+    "root": "/dev/vda"
+   },
+   "hostname": "test-xenial.novalocal",
+   "instance_action": "none",
+   "instance_id": "i-00065d8f",
+   "instance_type": "m1.small",
+   "local_hostname": "test-xenial.novalocal",
+   "local_ipv4": "10.5.0.12",
+   "placement": {
+    "availability_zone": "nova"
+   },
+   "public_hostname": "test-xenial.novalocal",
+   "public_ipv4": "10.245.162.170",
+   "public_keys": {
+    "mykey": [
+     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion"
+    ]
+   },
+   "reservation_id": "r-xoqco1ug",
+   "security_groups": ""
+  },
+  "meta_data": {
+   "availability_zone": "nova",
+   "devices": [],
+   "hostname": "test-xenial.novalocal",
+   "instance_id": "0c319919-ad60-4ed4-883e-36252ebb7deb",
+   "keys": [
+    {
+     "data": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n",
+     "name": "mykey",
+     "type": "ssh"
+    }
+   ],
+   "launch_index": 0,
+   "local_hostname": "test-xenial.novalocal",
+   "name": "test-xenial",
+   "project_id": "3354f8a4ec5e4fbd827a6999c311f5d1",
+   "public_keys": {
+    "mykey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n"
+   },
+   "random_seed": "NN0/0zAwAACg/QDs17jBRy3WD1U7diLi9rm5oeYZ2h8k6T9K89Kb8IpH/Pd0QSgOoE0Xy5J5kpEBntKFLw35TZEBmKWziweQ3axal/5ytN40bt8fCo20D8cmK9QpRyhtDjTwsmDjOs4ehkFuIZtwArJkWgKk0eGloO1QOhu7Qimlqzyf+PMhrrNjJX7DbKf29PiOQlVESt4wkoaLYEerMserbq1gcJ+bUxysPJLN8aip1opnDhel+F5S76EjIKu6MBf6hnYn6i2cS9mxd6YZzbnQTjsT824bHfqooyYegpLFRS4ZHU0iI7wpo3Ua5yCLb5mSd8nLRgx9JEIsadTmzA//1mXJRUgiRSVHK+j/zEakY4Q0rci56x3LWErVsH4RcFyzNDxGvKzLNRcoxxNxKUcocyt6MTlFuhDnS6vLYOfgW7zW8pqpb9s5BNdjZIqanirHlwtgmjZCt3/pa9SAtAOtP4AiVgr21pWGd+efkRubZZJxDzh8oL3509GXyW9R4SvhI+DLyicUoAysWhDO3N0DfGe9nk0fB8Z047uMZnaudIlojE+IMKPT01bp+yQt7FzAMOLo7SyOQKCUCLIc7VYZ7YBQXhLQWSeOaqmJSf8gXzFTF+4F8ERQpFrPaGw0ima+mdjXFNZPalJqBh1zAPAG2TStcHsFSLkhnwy3OG8=",
+   "uuid": "0c319919-ad60-4ed4-883e-36252ebb7deb"
+  },
+  "network_json": {
+   "links": [
+    {
+     "ethernet_mac_address": "fa:16:3e:7a:21:d9",
+     "id": "tap536d54c8-8d",
+     "mtu": 8958,
+     "type": "ovs",
+     "vif_id": "536d54c8-8d5f-49ab-85a0-9f8f0eb39300"
+    }
+   ],
+   "networks": [
+    {
+     "id": "network0",
+     "link": "tap536d54c8-8d",
+     "network_id": "243d8067-501d-454b-bd96-28c929b6202d",
+     "type": "ipv4_dhcp"
+    }
+   ],
+   "services": []
+  }
+ },
+ "instance_id": "0c319919-ad60-4ed4-883e-36252ebb7deb",
+ "local_hostname": "test-xenial",
+ "region": null,
+ "sensitive_keys": [],
+ "userdata": "#cloud-config\nhostname: SRU-worked\nusers:\n  - name: sru\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    ssh_authorized_keys:\n     - |\n       ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n",
+ "v1": {
+  "availability_zone": "nova",
+  "cloud_name": "openstack",
+  "instance_id": "0c319919-ad60-4ed4-883e-36252ebb7deb",
+  "local_hostname": "test-xenial",
+  "region": null
+ },
+ "vendordata": ""
+}
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze;
+sudo: unable to resolve host SRU-worked
+Startup finished in 3.959s (kernel) + 19.167s (userspace) = 23.127s
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze blame;
+sudo: unable to resolve host SRU-worked
+         14.388s cloud-init-local.service
+          2.269s dev-vda1.device
+          1.563s console-setup.service
+          1.114s cloud-config.service
+           891ms cloud-init.service
+           697ms cloud-final.service
+           499ms snapd.service
+           438ms systemd-logind.service
+           415ms apparmor.service
+           406ms accounts-daemon.service
+           394ms lvm2-monitor.service
+           283ms grub-common.service
+           282ms mdadm.service
+           257ms open-iscsi.service
+           220ms kmod-static-nodes.service
+           218ms systemd-remount-fs.service
+           216ms apport.service
+           209ms irqbalance.service
+           205ms lxd-containers.service
+           192ms ufw.service
+           183ms networking.service
+           178ms systemd-journald.service
+           176ms resolvconf.service
+           175ms rc-local.service
+           174ms sys-kernel-debug.mount
+           171ms systemd-modules-load.service
+           157ms systemd-fsck@dev-vdb.service
+           153ms keyboard-setup.service
+           145ms ondemand.service
+           132ms dev-mqueue.mount
+           119ms systemd-udev-trigger.service
+           117ms rsyslog.service
+           104ms systemd-journal-flush.service
+           102ms polkitd.service
+            98ms snapd.seeded.service
+            98ms ssh.service
+            90ms iscsid.service
+            82ms systemd-udevd.service
+            80ms mnt.mount
+            70ms systemd-tmpfiles-setup.service
+            65ms systemd-sysctl.service
+            57ms dev-hugepages.mount
+            54ms systemd-random-seed.service
+            54ms sys-fs-fuse-connections.mount
+            53ms systemd-user-sessions.service
+            52ms systemd-timesyncd.service
+            47ms lxd.socket
+            44ms systemd-tmpfiles-setup-dev.service
+            41ms systemd-update-utmp-runlevel.service
+            39ms systemd-update-utmp.service
+            35ms user@1000.service
+            33ms snapd.socket
+            31ms setvtrgb.service
+            28ms plymouth-read-write.service
+            20ms plymouth-quit.service
+            14ms plymouth-quit-wait.service
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.05100s +00.00100s
+|`->no local data found from DataSourceNoCloud @00.71000s +00.03200s
+|`->no local data found from DataSourceConfigDrive @00.74300s +00.02100s
+|`->no local data found from DataSourceOpenNebula @00.76400s +00.00900s
+|`->no local data found from DataSourceDigitalOcean @00.77300s +00.00800s
+|`->no local data found from DataSourceAzure @00.78100s +00.00900s
+|`->no local data found from DataSourceOVF @00.79000s +00.01200s
+|`->found local data from DataSourceOpenStackLocal @00.80300s +11.92400s
+Finished stage: (init-local) 12.80400 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @13.44000s +00.00500s
+|`->setting up datasource @13.50600s +00.00100s
+|`->reading and applying user-data @13.51700s +00.00800s
+|`->reading and applying vendor-data @13.52500s +00.00000s
+|`->activating datasource @13.55600s +00.00200s
+|`->config-migrator ran successfully @13.57300s +00.00100s
+|`->config-seed_random ran successfully @13.57400s +00.00100s
+|`->config-bootcmd ran successfully @13.57600s +00.00000s
+|`->config-write-files ran successfully @13.57600s +00.00100s
+|`->config-growpart ran successfully @13.57700s +00.04700s
+|`->config-resizefs ran successfully @13.62400s +00.01500s
+|`->config-disk_setup ran successfully @13.64000s +00.00100s
+|`->config-mounts ran successfully @13.64200s +00.01200s
+|`->config-set_hostname ran successfully @13.65500s +00.00500s
+|`->config-update_hostname ran successfully @13.66100s +00.00100s
+|`->config-update_etc_hosts ran successfully @13.66300s +00.00000s
+|`->config-ca-certs ran successfully @13.66300s +00.00100s
+|`->config-rsyslog ran successfully @13.66500s +00.00000s
+|`->config-users-groups ran successfully @13.66600s +00.03200s
+|`->config-ssh ran successfully @13.69900s +00.13300s
+Finished stage: (init-network) 00.40800 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @15.40200s +00.00000s
+|`->config-snap ran successfully @15.40200s +00.00100s
+|`->config-snap_config ran successfully @15.40400s +00.00000s
+|`->config-ssh-import-id ran successfully @15.40500s +00.00100s
+|`->config-locale ran successfully @15.40600s +00.00100s
+|`->config-set-passwords ran successfully @15.40700s +00.00100s
+|`->config-grub-dpkg ran successfully @15.40900s +00.32900s
+|`->config-apt-pipelining ran successfully @15.73900s +00.02000s
+|`->config-apt-configure ran successfully @15.76000s +00.13100s
+|`->config-ubuntu-advantage ran successfully @15.89200s +00.00100s
+|`->config-ntp ran successfully @15.89400s +00.00100s
+|`->config-timezone ran successfully @15.89500s +00.00200s
+|`->config-disable-ec2-metadata ran successfully @15.89700s +00.00000s
+|`->config-runcmd ran successfully @15.89800s +00.00100s
+|`->config-byobu ran successfully @15.90000s +00.00100s
+Finished stage: (modules-config) 00.51600 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @16.41700s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @16.42000s +00.00300s
+|`->config-fan ran successfully @16.42300s +00.00100s
+|`->config-landscape ran successfully @16.42500s +00.00000s
+|`->config-lxd ran successfully @16.42600s +00.00800s
+|`->config-puppet ran successfully @16.43400s +00.00100s
+|`->config-chef ran successfully @16.43500s +00.00100s
+|`->config-mcollective ran successfully @16.43700s +00.00000s
+|`->config-salt-minion ran successfully @16.43800s +00.00100s
+|`->config-rightscale_userdata ran successfully @16.43900s +00.00100s
+|`->config-scripts-vendor ran successfully @16.44000s +00.00100s
+|`->config-scripts-per-once ran successfully @16.44100s +00.00100s
+|`->config-scripts-per-boot ran successfully @16.44300s +00.00000s
+|`->config-scripts-per-instance ran successfully @16.44300s +00.00100s
+|`->config-scripts-user ran successfully @16.44400s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @16.44500s +00.02500s
+|`->config-keys-to-console ran successfully @16.47000s +00.11200s
+|`->config-phone-home ran successfully @16.58300s +00.00100s
+|`->config-final-message ran successfully @16.58500s +00.00500s
+|`->config-power-state-change ran successfully @16.59100s +00.00000s
+Finished stage: (modules-final) 00.19200 seconds 
+
+Total Time: 13.92000 seconds
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze blame;
+sudo: unable to resolve host SRU-worked
+-- Boot Record 01 --
+     11.92400s (init-local/search-OpenStackLocal)
+     00.32900s (modules-config/config-grub-dpkg)
+     00.13300s (init-network/config-ssh)
+     00.13100s (modules-config/config-apt-configure)
+     00.11200s (modules-final/config-keys-to-console)
+     00.04700s (init-network/config-growpart)
+     00.03200s (init-network/config-users-groups)
+     00.03200s (init-local/search-NoCloud)
+     00.02500s (modules-final/config-ssh-authkey-fingerprints)
+     00.02100s (init-local/search-ConfigDrive)
+     00.02000s (modules-config/config-apt-pipelining)
+     00.01500s (init-network/config-resizefs)
+     00.01200s (init-network/config-mounts)
+     00.01200s (init-local/search-OVF)
+     00.00900s (init-local/search-OpenNebula)
+     00.00900s (init-local/search-Azure)
+     00.00800s (modules-final/config-lxd)
+     00.00800s (init-network/consume-user-data)
+     00.00800s (init-local/search-DigitalOcean)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/config-set_hostname)
+     00.00500s (init-network/check-cache)
+     00.00300s (modules-final/config-package-update-upgrade-install)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-timezone)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/setup-datasource)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-config/config-snap_config)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-bootcmd)
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   echo "Expect no network_json logs by default because we don't change behavior"
+Expect no network_json logs by default because we don't change behavior
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+ubuntu@blackboxsw-bastion:~$   scp 50_enable_network_json.cfg sru@$VM_IP:.;
+50_enable_network_json.cfg                    100%   57    16.3KB/s   00:00    
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo cp 50_enable_network_json.cfg /etc/cloud/cloud.cfg.d
+sudo: unable to resolve host SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+sudo: unable to resolve host SRU-worked
+Connection to 10.245.162.170 closed by remote host.
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$   echo "Now expect network_json logs with apply_network_config enabled"
+Now expect network_json logs with apply_network_config enabled
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:pkUR25BH39SKIdHmICqmYJ4GPM9F55M6JMm1eRB+seg.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+2018-10-18 20:55:47,419 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 20:55:47,419 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 20:55:47,466 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 20:55:47,466 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 20:55:47,481 - DataSourceOpenStack.py[DEBUG]: network config provided via network_json
+2018-10-18 20:55:48,186 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 20:55:48,186 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 20:55:48,216 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 20:55:48,216 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 20:55:48,223 - DataSourceOpenStack.py[DEBUG]: network config provided via network_json
+2018-10-18 20:55:48,278 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 20:55:48,278 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+ubuntu@blackboxsw-bastion:~$   openstack server delete test-$release;
 ### END Xenial openstack validation
+
 ### BEGIN Bionic openstack validation
+ubuntu@blackboxsw-bastion:~$ release=bionic
+ubuntu@blackboxsw-bastion:~$ openstack server create --flavor m1.small --image $BIONIC_IMAGE --key-name mykey --nic net-id=$ADMIN_NET_ID --user-data cloud-config.yaml test-$release --wait;
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2018-10-18T20:58:09.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.3                                                                        |
+| adminPass                   | bHaaD3HjXFyF                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2018-10-18T20:57:32Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | a8227fedd20b917fd7051fc8ad4dec41486a7e92eab5e5dc8701a775                                             |
+| id                          | 2bfdd175-76a5-4f84-9f85-23c449556150                                                                 |
+| image                       | auto-sync/ubuntu-bionic-daily-amd64-server-20181015-disk1.img (55a61e46-09b9-409b-ac46-11ecd25d5a9f) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-bionic                                                                                          |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2018-10-18T20:58:09Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$   openstack server add floating ip test-$release $VM_IP;
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- cloud-init status --long --wait;
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:T79Poo6IvATpX7c21+VQRQBRmFZVRpCzR39ZDwoGdfo.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+
+status: done
+time: Thu, 18 Oct 2018 21:01:19 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep Trace /var/log/cloud-init.log;
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze;
+Startup finished in 41.336s (kernel) + 1min 13.375s (userspace) = 1min 54.712s
+graphical.target reached after 1min 1.059s in userspace
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze blame;
+         30.735s cloud-init-local.service
+         16.692s pollinate.service
+         16.456s networkd-dispatcher.service
+         14.001s snapd.seeded.service
+         12.168s dev-vda1.device
+         11.474s cloud-config.service
+          7.474s snapd.service
+          4.087s cloud-init.service
+          3.312s accounts-daemon.service
+          3.270s lxd-containers.service
+          2.991s polkit.service
+          2.526s apparmor.service
+          2.049s lvm2-monitor.service
+          1.877s systemd-networkd-wait-online.service
+          1.708s systemd-journal-flush.service
+          1.681s keyboard-setup.service
+          1.567s systemd-udev-trigger.service
+          1.481s systemd-udevd.service
+          1.409s sys-kernel-config.mount
+          1.394s sys-fs-fuse-connections.mount
+          1.390s systemd-sysctl.service
+          1.088s systemd-journald.service
+          1.039s ssh.service
+           821ms cloud-final.service
+           721ms apport.service
+           659ms grub-common.service
+           565ms rsyslog.service
+           291ms systemd-modules-load.service
+           181ms ebtables.service
+           178ms systemd-timesyncd.service
+           162ms systemd-logind.service
+           147ms systemd-remount-fs.service
+           146ms systemd-user-sessions.service
+           145ms kmod-static-nodes.service
+           143ms dev-mqueue.mount
+           139ms sys-kernel-debug.mount
+           107ms systemd-tmpfiles-setup-dev.service
+            93ms systemd-tmpfiles-setup.service
+            82ms ufw.service
+            77ms blk-availability.service
+            74ms systemd-resolved.service
+            71ms dev-hugepages.mount
+            70ms systemd-machine-id-commit.service
+            63ms snapd.socket
+            59ms lxd.socket
+            59ms user@1000.service
+            53ms plymouth-quit.service
+            46ms systemd-update-utmp.service
+            40ms setvtrgb.service
+            38ms systemd-networkd.service
+            34ms console-setup.service
+            23ms plymouth-read-write.service
+            19ms systemd-update-utmp-runlevel.service
+            18ms systemd-random-seed.service
+            13ms plymouth-quit-wait.service
+            13ms boot-efi.mount
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01600s +00.00000s
+|`->found local data from DataSourceOpenStackLocal @00.03100s +16.59000s
+Finished stage: (init-local) 17.61700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @20.16000s +00.00500s
+|`->setting up datasource @20.23000s +00.00000s
+|`->reading and applying user-data @20.23900s +00.00600s
+|`->reading and applying vendor-data @20.24500s +00.00000s
+|`->activating datasource @20.27100s +00.00100s
+|`->config-migrator ran successfully @20.37000s +00.00200s
+|`->config-seed_random ran successfully @20.37200s +00.00200s
+|`->config-bootcmd ran successfully @20.37400s +00.00100s
+|`->config-write-files ran successfully @20.37500s +00.00200s
+|`->config-growpart ran successfully @20.37700s +00.18600s
+|`->config-resizefs ran successfully @20.56300s +00.12700s
+|`->config-disk_setup ran successfully @20.69100s +00.00100s
+|`->config-mounts ran successfully @20.69300s +02.74200s
+|`->config-set_hostname ran successfully @23.43500s +00.01100s
+|`->config-update_hostname ran successfully @23.44700s +00.00200s
+|`->config-update_etc_hosts ran successfully @23.44900s +00.00000s
+|`->config-ca-certs ran successfully @23.45000s +00.00000s
+|`->config-rsyslog ran successfully @23.45100s +00.00000s
+|`->config-users-groups ran successfully @23.45200s +00.04300s
+|`->config-ssh ran successfully @23.49500s +00.08600s
+Finished stage: (init-network) 03.44200 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @52.89600s +00.00000s
+|`->config-snap ran successfully @52.89600s +00.00100s
+|`->config-snap_config ran successfully @52.89800s +00.00000s
+|`->config-ssh-import-id ran successfully @52.89900s +00.00100s
+|`->config-locale ran successfully @52.90000s +00.00100s
+|`->config-set-passwords ran successfully @52.90100s +00.00100s
+|`->config-grub-dpkg ran successfully @52.90200s +03.83700s
+|`->config-apt-pipelining ran successfully @56.74000s +00.00300s
+|`->config-apt-configure ran successfully @56.74300s +00.14400s
+|`->config-ubuntu-advantage ran successfully @56.88700s +00.00200s
+|`->config-ntp ran successfully @56.88900s +00.00100s
+|`->config-timezone ran successfully @56.89000s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @56.89100s +00.00000s
+|`->config-runcmd ran successfully @56.89200s +00.00100s
+|`->config-byobu ran successfully @56.89300s +00.00100s
+Finished stage: (modules-config) 05.56700 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @57.61200s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @57.61400s +00.00100s
+|`->config-fan ran successfully @57.61500s +00.00100s
+|`->config-landscape ran successfully @57.61700s +00.00000s
+|`->config-lxd ran successfully @57.61800s +00.00000s
+|`->config-puppet ran successfully @57.61900s +00.00000s
+|`->config-chef ran successfully @57.62000s +00.00000s
+|`->config-mcollective ran successfully @57.62100s +00.00100s
+|`->config-salt-minion ran successfully @57.62200s +00.00100s
+|`->config-rightscale_userdata ran successfully @57.62300s +00.00100s
+|`->config-scripts-vendor ran successfully @57.62400s +00.00100s
+|`->config-scripts-per-once ran successfully @57.62500s +00.00100s
+|`->config-scripts-per-boot ran successfully @57.62600s +00.00000s
+|`->config-scripts-per-instance ran successfully @57.62700s +00.00100s
+|`->config-scripts-user ran successfully @57.62800s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @57.62900s +00.01900s
+|`->config-keys-to-console ran successfully @57.64800s +00.05900s
+|`->config-phone-home ran successfully @57.70800s +00.00100s
+|`->config-final-message ran successfully @57.70900s +00.00600s
+|`->config-power-state-change ran successfully @57.71600s +00.00000s
+Finished stage: (modules-final) 00.18600 seconds 
+
+Total Time: 26.81200 seconds
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze blame;
+-- Boot Record 01 --
+     16.59000s (init-local/search-OpenStackLocal)
+     03.83700s (modules-config/config-grub-dpkg)
+     02.74200s (init-network/config-mounts)
+     00.18600s (init-network/config-growpart)
+     00.14400s (modules-config/config-apt-configure)
+     00.12700s (init-network/config-resizefs)
+     00.08600s (init-network/config-ssh)
+     00.05900s (modules-final/config-keys-to-console)
+     00.04300s (init-network/config-users-groups)
+     00.01900s (modules-final/config-ssh-authkey-fingerprints)
+     00.01100s (init-network/config-set_hostname)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (init-network/consume-user-data)
+     00.00500s (init-network/check-cache)
+     00.00300s (modules-config/config-apt-pipelining)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (init-network/config-write-files)
+     00.00200s (init-network/config-update_hostname)
+     00.00200s (init-network/config-seed_random)
+     00.00200s (init-network/config-migrator)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-lxd)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-snap_config)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   scp setup_proposed.sh sru@$VM_IP:.;
+setup_proposed.sh                             100%  196   134.7KB/s   00:00    
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.4-0ubuntu1~18.04.1 [378 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~18.04.1) over (18.3-9-g2e62cb8a-0ubuntu1~18.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo hostname;
+SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo hostname something-else;
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init init;
+Cloud-init v. 18.4-0ubuntu1~18.04.1 running 'init' at Thu, 18 Oct 2018 21:03:58 +0000. Up 272.86 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address            |     Mask    | Scope  |     Hw-Address    |
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: |  ens3  | True |           10.5.0.3           | 255.255.0.0 | global | fa:16:3e:d3:c8:bd |
+ci-info: |  ens3  | True | fe80::f816:3eff:fed3:c8bd/64 |      .      |  link  | fa:16:3e:d3:c8:bd |
+ci-info: |   lo   | True |          127.0.0.1           |  255.0.0.0  |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128            |      .      |  host  |         .         |
+ci-info: +--------+------+------------------------------+-------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.5.0.1 |     0.0.0.0     |    ens3   |   UG  |
+ci-info: |   1   |     10.5.0.0    | 0.0.0.0  |   255.255.0.0   |    ens3   |   U   |
+ci-info: |   2   | 169.254.169.254 | 10.5.0.1 | 255.255.255.255 |    ens3   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    ens3   |   U   |
+ci-info: |   3   |    local    |    ::   |    ens3   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    ens3   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+Connection to 10.245.162.170 closed by remote host.
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$ date --utc +%s.%N; ssh sru@$VM_IP -- cloud-init status --wait --long; date --utc +%s.%N;
+1539896689.307633053
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:Onep7mrg6U0plKs52akoAOfqefIFyTm2+S1lHEIZKm0.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+
+status: done
+time: Thu, 18 Oct 2018 21:04:46 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+1539896694.280504871
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- hostname;
+SRU-worked
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- "grep Trace /var/log/cloud-init*";
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init query --all;
+{
+ "availability_zone": "nova",
+ "base64_encoded_keys": [
+  "ds/meta_data/random_seed"
+ ],
+ "cloud_name": "openstack",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "ec2_metadata": {
+   "ami_id": "ami-000001ca",
+   "ami_launch_index": "0",
+   "ami_manifest_path": "FIXME",
+   "block_device_mapping": {
+    "ami": "vda",
+    "ephemeral0": "/dev/vdb",
+    "root": "/dev/vda"
+   },
+   "hostname": "test-bionic.novalocal",
+   "instance_action": "none",
+   "instance_id": "i-00065db0",
+   "instance_type": "m1.small",
+   "local_hostname": "test-bionic.novalocal",
+   "local_ipv4": "10.5.0.3",
+   "placement": {
+    "availability_zone": "nova"
+   },
+   "public_hostname": "test-bionic.novalocal",
+   "public_ipv4": "10.245.162.170",
+   "public_keys": {
+    "mykey": [
+     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion"
+    ]
+   },
+   "reservation_id": "r-fl055475",
+   "security_groups": ""
+  },
+  "meta_data": {
+   "availability_zone": "nova",
+   "devices": [],
+   "hostname": "test-bionic.novalocal",
+   "instance_id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+   "keys": [
+    {
+     "data": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n",
+     "name": "mykey",
+     "type": "ssh"
+    }
+   ],
+   "launch_index": 0,
+   "local_hostname": "test-bionic.novalocal",
+   "name": "test-bionic",
+   "project_id": "3354f8a4ec5e4fbd827a6999c311f5d1",
+   "public_keys": {
+    "mykey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n"
+   },
+   "random_seed": "uYVmYXztHaaOkT7eCn+9sRpTaclIuomI4qGWcZN7mJoYz5JEhsiVikWPKehmvJh1gbaUOWs2bJllOrGJFjYLxH3CrMejdSndSO9gqnaZzHEW/ZMPOE7sgszgNS5IwcCYnlM2Mx2W7iDA0xFMZDEsJaBC+bDBTy3wiV5khwcNW/YqaryNh0jdVj2Dl+/f6OwwLdLCx9ZpNr4E/i0HS+L5cX5czCbxYhYJCiIXTcDlDnmmUE5V4MMVk9y8ztQo60ErPb+9x7R4hdibS3KGhsD29zta29NQboFf6dHNBVm5v3YSDEIBgfjTWS/QWszItwzjADG6Gfnm2aGCoR1PcWcvHMGX7qRAwsPMgUJR487VTzQXz/1ZkvfRLJJLGmGVnVb2L7JMq69Rc2KdO6Uyrz9I7LgiaBmyiYE02c3PySdhtNkuLUDIvOPrQQp9+u9QX7kMEgZDzgBaDJce1/rjbnXCnwPs5RWi6OBd9lsoQuj3OmY+r7KoRbwyv+Xol1BBDIiHvv6oeME7MTKyh8Zg5PK8tlgTL0YOKc6HHukRfSAi+y4rKTpkqWw5frSCx/a+4hA40YG0epiWZuj1gm88OeQQQjXjajbkVxWNPeYXlbgGQAcxadIbZ6Zvu+XKX3asJMhro1VpO98Gx7NTZ7CJ/fUCzAGwPgr2qbrG++uyhlQgEzU=",
+   "uuid": "2bfdd175-76a5-4f84-9f85-23c449556150"
+  },
+  "network_json": {
+   "links": [
+    {
+     "ethernet_mac_address": "fa:16:3e:d3:c8:bd",
+     "id": "tap30544651-68",
+     "mtu": 8958,
+     "type": "ovs",
+     "vif_id": "30544651-68c0-4e77-80e3-1bdf9b2d4559"
+    }
+   ],
+   "networks": [
+    {
+     "id": "network0",
+     "link": "tap30544651-68",
+     "network_id": "243d8067-501d-454b-bd96-28c929b6202d",
+     "type": "ipv4_dhcp"
+    }
+   ],
+   "services": []
+  }
+ },
+ "instance_id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+ "local_hostname": "test-bionic",
+ "region": null,
+ "sensitive_keys": [],
+ "userdata": "#cloud-config\nhostname: SRU-worked\nusers:\n  - name: sru\n    sudo: ALL=(ALL) NOPASSWD:ALL\n    ssh_authorized_keys:\n     - |\n       ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n",
+ "v1": {
+  "availability_zone": "nova",
+  "cloud_name": "openstack",
+  "instance_id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+  "local_hostname": "test-bionic",
+  "region": null
+ },
+ "vendordata": ""
+}
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze;
+Startup finished in 4.067s (kernel) + 22.979s (userspace) = 27.047s
+graphical.target reached after 20.183s in userspace
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo systemd-analyze blame;
+         14.472s cloud-init-local.service
+          1.940s dev-vda1.device
+          1.890s cloud-config.service
+          1.746s systemd-networkd-wait-online.service
+          1.731s cloud-init.service
+           847ms cloud-final.service
+           832ms apparmor.service
+           589ms systemd-fsck@dev-vdb.service
+           555ms networkd-dispatcher.service
+           494ms keyboard-setup.service
+           409ms accounts-daemon.service
+           392ms systemd-tmpfiles-setup.service
+           377ms grub-common.service
+           367ms systemd-udev-trigger.service
+           355ms ebtables.service
+           345ms snapd.service
+           300ms systemd-journald.service
+           296ms systemd-modules-load.service
+           278ms rsyslog.service
+           237ms lxd-containers.service
+           231ms apport.service
+           211ms ssh.service
+           211ms blk-availability.service
+           210ms lvm2-monitor.service
+           192ms mnt.mount
+           182ms systemd-timesyncd.service
+           132ms systemd-logind.service
+           121ms ufw.service
+           106ms systemd-udevd.service
+           103ms systemd-journal-flush.service
+            87ms systemd-remount-fs.service
+            86ms systemd-resolved.service
+            75ms systemd-tmpfiles-setup-dev.service
+            75ms dev-mqueue.mount
+            72ms systemd-user-sessions.service
+            63ms user@1000.service
+            63ms snapd.seeded.service
+            61ms sys-kernel-debug.mount
+            56ms polkit.service
+            51ms kmod-static-nodes.service
+            49ms console-setup.service
+            47ms snapd.socket
+            46ms lxd.socket
+            44ms systemd-networkd.service
+            38ms systemd-sysctl.service
+            38ms dev-hugepages.mount
+            34ms plymouth-quit.service
+            27ms plymouth-read-write.service
+            25ms boot-efi.mount
+            25ms systemd-update-utmp-runlevel.service
+            25ms sys-kernel-config.mount
+            18ms systemd-update-utmp.service
+            17ms setvtrgb.service
+            16ms systemd-random-seed.service
+            16ms sys-fs-fuse-connections.mount
+             9ms plymouth-quit-wait.service
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze show;
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01100s +00.00000s
+|`->found local data from DataSourceOpenStackLocal @00.06400s +12.23500s
+Finished stage: (init-local) 12.70700 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @15.29100s +00.00800s
+|`->setting up datasource @15.40900s +00.00000s
+|`->reading and applying user-data @15.42700s +00.01100s
+|`->reading and applying vendor-data @15.43800s +00.00100s
+|`->activating datasource @15.48700s +00.00200s
+|`->config-migrator ran successfully @15.53300s +00.00000s
+|`->config-seed_random ran successfully @15.53400s +00.00100s
+|`->config-bootcmd ran successfully @15.53600s +00.00000s
+|`->config-write-files ran successfully @15.53600s +00.00100s
+|`->config-growpart ran successfully @15.53700s +00.09200s
+|`->config-resizefs ran successfully @15.62900s +00.03600s
+|`->config-disk_setup ran successfully @15.66600s +00.00100s
+|`->config-mounts ran successfully @15.67200s +00.02200s
+|`->config-set_hostname ran successfully @15.69400s +00.00800s
+|`->config-update_hostname ran successfully @15.70300s +00.00100s
+|`->config-update_etc_hosts ran successfully @15.70500s +00.00000s
+|`->config-ca-certs ran successfully @15.70600s +00.00100s
+|`->config-rsyslog ran successfully @15.70700s +00.00100s
+|`->config-users-groups ran successfully @15.70800s +00.13200s
+|`->config-ssh ran successfully @15.84000s +00.31300s
+Finished stage: (init-network) 00.88600 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @18.50300s +00.00000s
+|`->config-snap ran successfully @18.50300s +00.00400s
+|`->config-snap_config ran successfully @18.50700s +00.00200s
+|`->config-ssh-import-id ran successfully @18.50900s +00.00100s
+|`->config-locale ran successfully @18.51000s +00.00100s
+|`->config-set-passwords ran successfully @18.51200s +00.00000s
+|`->config-grub-dpkg ran successfully @18.51300s +00.41200s
+|`->config-apt-pipelining ran successfully @18.92600s +00.00400s
+|`->config-apt-configure ran successfully @18.93000s +00.20500s
+|`->config-ubuntu-advantage ran successfully @19.13500s +00.00200s
+|`->config-ntp ran successfully @19.13700s +00.00100s
+|`->config-timezone ran successfully @19.13800s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @19.13900s +00.00000s
+|`->config-runcmd ran successfully @19.14000s +00.00100s
+|`->config-byobu ran successfully @19.14100s +00.00000s
+Finished stage: (modules-config) 00.94400 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @19.88300s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @19.88500s +00.00100s
+|`->config-fan ran successfully @19.88600s +00.00100s
+|`->config-landscape ran successfully @19.88700s +00.00100s
+|`->config-lxd ran successfully @19.88800s +00.00100s
+|`->config-puppet ran successfully @19.88900s +00.00100s
+|`->config-chef ran successfully @19.89000s +00.00100s
+|`->config-mcollective ran successfully @19.89100s +00.00100s
+|`->config-salt-minion ran successfully @19.89200s +00.00100s
+|`->config-rightscale_userdata ran successfully @19.89300s +00.00100s
+|`->config-scripts-vendor ran successfully @19.89400s +00.00100s
+|`->config-scripts-per-once ran successfully @19.89500s +00.00100s
+|`->config-scripts-per-boot ran successfully @19.89700s +00.00000s
+|`->config-scripts-per-instance ran successfully @19.89700s +00.00100s
+|`->config-scripts-user ran successfully @19.89800s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @19.89900s +00.01700s
+|`->config-keys-to-console ran successfully @19.91700s +00.05900s
+|`->config-phone-home ran successfully @19.97700s +00.00100s
+|`->config-final-message ran successfully @19.97800s +00.00700s
+|`->config-power-state-change ran successfully @19.98500s +00.00100s
+Finished stage: (modules-final) 00.19700 seconds 
+
+Total Time: 14.73400 seconds
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init analyze blame;
+-- Boot Record 01 --
+     12.23500s (init-local/search-OpenStackLocal)
+     00.41200s (modules-config/config-grub-dpkg)
+     00.31300s (init-network/config-ssh)
+     00.20500s (modules-config/config-apt-configure)
+     00.13200s (init-network/config-users-groups)
+     00.09200s (init-network/config-growpart)
+     00.05900s (modules-final/config-keys-to-console)
+     00.03600s (init-network/config-resizefs)
+     00.02200s (init-network/config-mounts)
+     00.01700s (modules-final/config-ssh-authkey-fingerprints)
+     00.01100s (init-network/consume-user-data)
+     00.00800s (init-network/config-set_hostname)
+     00.00800s (init-network/check-cache)
+     00.00700s (modules-final/config-final-message)
+     00.00400s (modules-config/config-snap)
+     00.00400s (modules-config/config-apt-pipelining)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-config/config-snap_config)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-config/config-set-passwords)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+ubuntu@blackboxsw-bastion:~$   echo "Expect no network_json logs by default because we don't change behavior"
+Expect no network_json logs by default because we don't change behavior
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+ubuntu@blackboxsw-bastion:~$   scp 50_enable_network_json.cfg sru@$VM_IP:.;
+50_enable_network_json.cfg                    100%   57    37.7KB/s   00:00    
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP sudo cp 50_enable_network_json.cfg /etc/cloud/cloud.cfg.d
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- sudo cloud-init clean --logs --reboot;
+Connection to 10.245.162.170 closed by remote host.
+ubuntu@blackboxsw-bastion:~$   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP;
+# Host 10.245.162.170 found: line 4
+/home/ubuntu/.ssh/known_hosts updated.
+Original contents retained as /home/ubuntu/.ssh/known_hosts.old
+ubuntu@blackboxsw-bastion:~$   echo "Now expect network_json logs with apply_network_config enabled"
+Now expect network_json logs with apply_network_config enabled
+ubuntu@blackboxsw-bastion:~$   ssh sru@$VM_IP -- grep network_json /var/log/cloud-init.log;
+The authenticity of host '10.245.162.170 (10.245.162.170)' can't be established.
+ECDSA key fingerprint is SHA256:Ef5zV0ddo3hkICk/2vihqbe2zPV0AwT07kdjVDj+ucQ.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '10.245.162.170' (ECDSA) to the list of known hosts.
+2018-10-18 21:08:41,182 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 21:08:41,182 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 21:08:41,213 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 21:08:41,213 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 21:08:41,229 - DataSourceOpenStack.py[DEBUG]: network config provided via network_json
+2018-10-18 21:08:44,242 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 21:08:44,243 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 21:08:44,269 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 21:08:44,269 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+2018-10-18 21:08:44,276 - DataSourceOpenStack.py[DEBUG]: network config provided via network_json
+2018-10-18 21:08:44,318 - util.py[DEBUG]: Reading from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg (quiet=False)
+2018-10-18 21:08:44,318 - util.py[DEBUG]: Read 57 bytes from /etc/cloud/cloud.cfg.d/50_enable_network_json.cfg
+ubuntu@blackboxsw-bastion:~$ ssh sru@$VM_IP sudo cat /run/cloud-init/instance-data.json
+{
+ "base64_encoded_keys": [
+  "ds/meta_data/random_seed"
+ ],
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "ec2_metadata": {
+   "ami-id": "ami-000001ca",
+   "ami-launch-index": "0",
+   "ami-manifest-path": "FIXME",
+   "block-device-mapping": {
+    "ami": "vda",
+    "ephemeral0": "/dev/vdb",
+    "root": "/dev/vda"
+   },
+   "hostname": "test-bionic.novalocal",
+   "instance-action": "none",
+   "instance-id": "i-00065db0",
+   "instance-type": "m1.small",
+   "local-hostname": "test-bionic.novalocal",
+   "local-ipv4": "10.5.0.3",
+   "placement": {
+    "availability-zone": "nova"
+   },
+   "public-hostname": "test-bionic.novalocal",
+   "public-ipv4": "10.245.162.170",
+   "public-keys": {
+    "mykey": [
+     "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion"
+    ]
+   },
+   "reservation-id": "r-fl055475",
+   "security-groups": ""
+  },
+  "meta_data": {
+   "availability_zone": "nova",
+   "devices": [],
+   "hostname": "test-bionic.novalocal",
+   "instance-id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+   "keys": [
+    {
+     "data": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n",
+     "name": "mykey",
+     "type": "ssh"
+    }
+   ],
+   "launch_index": 0,
+   "local-hostname": "test-bionic.novalocal",
+   "name": "test-bionic",
+   "project_id": "3354f8a4ec5e4fbd827a6999c311f5d1",
+   "public_keys": {
+    "mykey": "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCeJ7e0INdC10Ly1ufyBovZkFjKz9pfgfpGvPkcvU64eUlIKytQvb3PvK03jSJvq8fWXeE0fl6kJBzP/WjZcZFQVcWUKxSSCTOkpMlrMtKzUtR0uBa+yC03ehoWx/M21tmE67aAEzoc0ktdkieoU+wyvHJL8KmfPmd2fVhj2ns3O9J7aZq3Ryfa49xfD/rckt4QHKqhyKIWKVg/bIzN+rY7XYHUXKJBXptE8ymx2bDGshvVjEcZuECjzUIk/m2p2q6BnErY0uLep0cI+ThVHbtufCoudm9MiVpP+EMQEJw7m+VGcdb3043He0o+kcl3ZlNq5i1O2yzPysY/kwHdhsTr ubuntu@blackboxsw-bastion\n"
+   },
+   "random_seed": "YE/haBs83LxAaSpjK32Z8Q0PNp0is0DG9auQvV7iLb6Yw8O2gTgPI/S6cIGiQncR5CfRAWc+vD6Qxg2v1yveM01PbwafGX8sJUC6tzGRIhwO+7n4GQa84G9sI0hUuoyPfp5B8socCjZMwxfCVFYkwLikLhNeJlgOHmXB7PZDEqdjX1F1Y8PomDave0yCU+V7qr6nqDO2T0QXdsCdiX4dHHoS+efvk95i6Vynd65NwxiyeSfIO4nPkC5P/VXSyXA8uYZbjf3DaW1loDxfzN490IY4Ert+c4/WlpibkDcOQTrJ4eO3i2zfvuOT9+7ADc01ATDVdIUEESvchFrjsf22R/ySe3BefwQJluKEP6JD+zi0dqFgIcJbxNTr8z6yi1bYc6CFYC4ZFvpIKZN+/RdOp+2x2fUrZQze+cc5GN/VuaXYvLiSq3hg2At5tTHk6AP8fXSlWR0wgKTRRnTUtqSBL9HWB3keZpYwA9l8RfamyB0J9+xoQQycETAJ/1uGa4fymM3rfR/ZkdQM9bjbRr+XeAE0DMcfjVehjJQH263HT08xrZ9P16OyIXUwpGHJJBo6xj1kmvQlmKv6HGKvafPCHAx0nNIKw2J7gY/IQFYje+0VsOHtCuHJ4gFZe5coFI2PxbKBxQ6oplkjZYYd/VlKS8iSI6vwYGH1IUFARxEXtIs=",
+   "uuid": "2bfdd175-76a5-4f84-9f85-23c449556150"
+  },
+  "network_json": {
+   "links": [
+    {
+     "ethernet_mac_address": "fa:16:3e:d3:c8:bd",
+     "id": "tap30544651-68",
+     "mtu": 8958,
+     "type": "ovs",
+     "vif_id": "30544651-68c0-4e77-80e3-1bdf9b2d4559"
+    }
+   ],
+   "networks": [
+    {
+     "id": "network0",
+     "link": "tap30544651-68",
+     "network_id": "243d8067-501d-454b-bd96-28c929b6202d",
+     "type": "ipv4_dhcp"
+    }
+   ],
+   "services": []
+  }
+ },
+ "sensitive_keys": [],
+ "v1": {
+  "availability-zone": "nova",
+  "availability_zone": "nova",
+  "cloud-name": "openstack",
+  "cloud_name": "openstack",
+  "instance-id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+  "instance_id": "2bfdd175-76a5-4f84-9f85-23c449556150",
+  "local-hostname": "test-bionic",
+  "local_hostname": "test-bionic",
+  "region": null
+ }
+}
+ubuntu@blackboxsw-bastion:~$ ssh sru@$VM_IP 
+Welcome to Ubuntu 18.04.1 LTS (GNU/Linux 4.15.0-36-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Thu Oct 18 21:13:56 UTC 2018
+
+  System load:  0.0               Processes:           82
+  Usage of /:   5.9% of 19.21GB   Users logged in:     0
+  Memory usage: 6%                IP address for ens3: 10.5.0.3
+  Swap usage:   0%
+
+
+  Get cloud support with Ubuntu Advantage Cloud Guest:
+    http://www.ubuntu.com/business/services/cloud
+
+46 packages can be updated.
+0 updates are security updates.
+
+
+$ vi /var/log/cloud-init.log
+$ dpkg -L cloud-init | grep OpenS
+/usr/lib/python3/dist-packages/cloudinit/sources/DataSourceOpenStack.py
+$ vi /usr/lib/python3/dist-packages/cloudinit/sources/DataSourceOpenStack.py
+$ vi /usr/lib/python3/dist-packages/cloudinit/sources/helpers/openstack.py
+$ LP: #1791781 user-data: jinja template to render instance-data.json in cloud-config [c7555762]
+-sh: 5: LP:: not found
+$ fgrep 2017 /var/log/cloud-init.log
+2018-10-18 21:08:29,430 - openstack.py[DEBUG]: Selected version '2017-02-22' from ['2012-08-10', '2013-04-04', '2013-10-17', '2015-10-15', '2016-06-30', '2016-10-06', '2017-02-22', 'latest']
+2018-10-18 21:08:29,431 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/openstack/2017-02-22/meta_data.json' with {'url': 'http://169.254.169.254/openstack/2017-02-22/meta_data.json', 'allow_redirects': True, 'method': 'GET', 'timeout': 10.0, 'headers': {'User-Agent': 'Cloud-Init/18.4-0ubuntu1~18.04.1'}} configuration
+2018-10-18 21:08:29,856 - url_helper.py[DEBUG]: Read from http://169.254.169.254/openstack/2017-02-22/meta_data.json (200, 1826b) after 1 attempts
+2018-10-18 21:08:29,857 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/openstack/2017-02-22/user_data' with {'url': 'http://169.254.169.254/openstack/2017-02-22/user_data', 'allow_redirects': True, 'method': 'GET', 'timeout': 10.0, 'headers': {'User-Agent': 'Cloud-Init/18.4-0ubuntu1~18.04.1'}} configuration
+2018-10-18 21:08:30,316 - url_helper.py[DEBUG]: Read from http://169.254.169.254/openstack/2017-02-22/user_data (200, 537b) after 1 attempts
+2018-10-18 21:08:30,317 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/openstack/2017-02-22/vendor_data.json' with {'url': 'http://169.254.169.254/openstack/2017-02-22/vendor_data.json', 'allow_redirects': True, 'method': 'GET', 'timeout': 10.0, 'headers': {'User-Agent': 'Cloud-Init/18.4-0ubuntu1~18.04.1'}} configuration
+2018-10-18 21:08:30,724 - url_helper.py[DEBUG]: Read from http://169.254.169.254/openstack/2017-02-22/vendor_data.json (200, 2b) after 1 attempts
+2018-10-18 21:08:30,724 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/openstack/2017-02-22/network_data.json' with {'url': 'http://169.254.169.254/openstack/2017-02-22/network_data.json', 'allow_redirects': True, 'method': 'GET', 'timeout': 10.0, 'headers': {'User-Agent': 'Cloud-Init/18.4-0ubuntu1~18.04.1'}} configuration
+2018-10-18 21:08:31,277 - url_helper.py[DEBUG]: Read from http://169.254.169.254/openstack/2017-02-22/network_data.json (200, 311b) after 1 attempts
+$ exit    
+Connection to 10.245.162.170 closed.
+ubuntu@blackboxsw-bastion:~$ ssh sru@$VM_IP grep 2017 /var/log/cloud-init.log | grep network
+2018-10-18 21:08:30,724 - url_helper.py[DEBUG]: [0/6] open 'http://169.254.169.254/openstack/2017-02-22/network_data.json' with {'url': 'http://169.254.169.254/openstack/2017-02-22/network_data.json', 'allow_redirects': True, 'method': 'GET', 'timeout': 10.0, 'headers': {'User-Agent': 'Cloud-Init/18.4-0ubuntu1~18.04.1'}} configuration
+2018-10-18 21:08:31,277 - url_helper.py[DEBUG]: Read from http://169.254.169.254/openstack/2017-02-22/network_data.json (200, 311b) after 1 attempts
+
 ### END Bionic openstack validation
