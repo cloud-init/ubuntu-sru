@@ -6,6 +6,7 @@ Given [cloud-init's exception process](https://wiki.ubuntu.com/CloudinitUpdates)
 
 
 10/03/2018 SRU: [launchpad process bug:#1795953](https://pad.lv/1795953)
+10/17/2018 SRU-regression Xenial: [regression bug:#1798424](https://pad.lv/1798424) Azure network_config default on Xenial needs to be fallback network not imds.
 
 
 The links listed below are to bugs fixed in this SRU and the verification of those bugs.
@@ -15,9 +16,8 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 | [# 1682064](http://pad.lv/1682064) | [verification output](../bugs/lp-1682064.txt) |
 | [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
-| [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
 | [# 1792157](http://pad.lv/1792157) | [verification output](../bugs/lp-1792157.txt) |
-| [# 1791781](http://pad.lv/1791781) | [verification output](../bugs/lp-1791781.txt) |
+| [# 1791781](http://pad.lv/1791781) | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | [# 1766538](http://pad.lv/1766538) | [verification output](../bugs/lp-1766538.txt) |
 | [# 1784699](http://pad.lv/1784699) | [verification output](../bugs/lp-1784699.txt) |
 | [# 1784713](http://pad.lv/1784713) | [verification output](../bugs/lp-1784713.txt) |
@@ -25,7 +25,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1784685](http://pad.lv/1784685) | [verification output](../bugs/lp-1784685.txt) |
 | [# 1781229](http://pad.lv/1781229) | [verification output](../bugs/lp-1781229.txt) |
 | Manual gce test | [verification output](../manual/gce-sru-18.4.0.txt) |
-| Manual azure test | [verification output](../manual/azure-sru-18.4.0.txt) |
+| Manual azure test | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | Manual ec2 test | [verification output](../manual/ec2-sru-18.4.0.txt) |
 | Manual openstack test | [verification output](../manual/openstack-sru-18.4.0.txt) |
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-18.4.0.txt) |

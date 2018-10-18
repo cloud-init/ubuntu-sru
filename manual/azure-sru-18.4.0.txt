@@ -8,41 +8,69 @@ ssh_import_id : [chad.smith]
 hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# Validate HyperV logging
+cat > 90-setupkvp-log.cfg <<EOF
+reporting:
+    logging:
+        type: log
+    telemetry:
+        type: hyperv
+EOF
+
 
 # Xenial
-az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
-# Artful
-az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugroup1 --admin-username=ubuntu --custom-data sethostname.yaml
+# Bionic
+az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g srugroup1 --admin-username=ubuntu --custom-data sethostname.yaml
 
 for name in my-x1 my-b1; do
-vm_ip=`az vm list-ip-addresses --name my-x1 | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+vm_ip=`az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
 
-echo $vm_ip;
 ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
 ssh ubuntu@$vm_ip grep CODE /etc/os-release;
 ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
 ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
-ssh ubuntu@$vm_ip -- sh -c '
-mirror=http://archive.ubuntu.com/ubuntu
-echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
-apt-get update -q
-apt-get install -qy cloud-init';
+scp setup_proposed.sh ubuntu@$vm_ip:.;
+scp 90-setupkvp-log.cfg ubuntu@$vm_ip:.;
+ssh ubuntu@$vm_ip sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
 ssh ubuntu@$vm_ip -- sudo cloud-init init;
 ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+ssh ubuntu@$vm_ip -- 'grep Trace /var/log/cloud-init*log';
 ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
 ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+ssh-keygen -f /root/.ssh/known_hosts -R $vm_ip; sleep 5;
 ssh ubuntu@$vm_ip -- cloud-init status --wait --long;
 ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
-ssh ubuntu@$vm_ip -- grep Trace /var/log/cloud-init*;
+ssh ubuntu@$vm_ip -- 'grep Trace /var/log/cloud-init*';
 ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
-ssh ubuntu@$vm_ip -- sudo cat /run/cloud-init/instance-data.json;
+ssh ubuntu@$vm_ip -- sudo cloud-init query --all;
 ssh ubuntu@$vm_ip -- sudo systemd-analyze;
 ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
 
-# TODO add cloud-specific verification steps for this particular SRU
+echo 'Verify cloud-init query subcommand';
+ssh ubuntu@$vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}';
 
-# Verify cloud-init query subcommand
-ssh ubuntu@$vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+echo 'Validating hyperv logging';
+ssh ubuntu@$vm_ip -- sudo mv /home/ubuntu/90-setupkvp-log.cfg /etc/cloud/cloud.cfg.d/;
+echo 'Expecting no kvp_pool_content';
+ssh ubuntu@$vm_ip --  od -c -N 40 /var/lib/hyperv/.kvp_pool_1;
+ssh ubuntu@$vm_ip sudo reboot; sleep 5;
+echo 'Expecting kvp_pool_content';
+ssh ubuntu@$vm_ip --  od -c -N 40 /var/lib/hyperv/.kvp_pool_1;
+if [ "$name" == "my-x1" ]; then
+  echo "Checking Xenial network_config is version 1 not imds version 2";
+  ssh ubuntu@$vm_ip -- "sudo python3 -c 'from cloudinit.stages import _pkl_load; print(_pkl_load(\"/var/lib/cloud/instance/obj.pkl\").network_config)'"
+fi
+
 
 done
+
+# Validate Xenial network_config is fallback version 1 not imds version 2
