@@ -29,29 +29,29 @@ IMAGE_VERSION=`image-status gce xenial | grep us-central | awk '{print $2}'`;
 # part 1 deploy with user-data
 gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
 
-GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{$5}'`
-ssh ubuntu@$GCE_VM -- dpkg-query --show cloud-init;
-ssh ubuntu@$GCE_VM sudo cat /run/cloud-init/result.json;
-ssh ubuntu@$GCE_VM cloud-init status --long;
-ssh ubuntu@$GCE_VM grep Trace /var/log/cloud-init.log;
-ssh ubuntu@$GCE_VM systemd-analyze;
-ssh ubuntu@$GCE_VM systemd-analyze blame;
-ssh ubuntu@$GCE_VM cloud-init analyze show;
-ssh ubuntu@$GCE_VM cloud-init analyze blame;
+GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
+ssh $GCE_VM -- dpkg-query --show cloud-init;
+ssh $GCE_VM sudo cat /run/cloud-init/result.json;
+ssh $GCE_VM cloud-init status --long;
+ssh $GCE_VM grep Trace /var/log/cloud-init.log;
+ssh $GCE_VM systemd-analyze;
+ssh $GCE_VM systemd-analyze blame;
+ssh $GCE_VM cloud-init analyze show;
+ssh $GCE_VM cloud-init analyze blame;
 # part 2 upgrade cloud-init on live system
-scp setup_proposed.sh ubuntu@$GCE_VM:.;
-ssh ubuntu@$GCE_VM sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
-ssh ubuntu@$GCE_VM -- dpkg-query --show cloud-init;
-ssh ubuntu@$GCE_VM sudo cloud-init init;
+scp setup_proposed.sh $GCE_VM:.;
+ssh $GCE_VM sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+ssh $GCE_VM -- dpkg-query --show cloud-init;
+ssh $GCE_VM sudo cloud-init init;
 # part 3 clean boot cloud-init
-ssh ubuntu@$GCE_VM sudo hostname SRU-didnt-work;
-ssh ubuntu@$GCE_VM sudo cloud-init clean --logs --reboot;
-ssh-keygen -f /root/.ssh/known_hosts -R $GCE_VM; sleep 5;
-ssh ubuntu@$GCE_VM cloud-init status --wait --long;
-ssh ubuntu@$GCE_VM grep Trace /var/log/cloud-init*;
-ssh ubuntu@$GCE_VM sudo cat /run/cloud-init/result.json;
-ssh ubuntu@$GCE_VM sudo sytemd-analyze blame;
-ssh ubuntu@$GCE_VM cloud-init analyze show;
-ssh ubuntu@$GCE_VM cloud-init analyze blame;
-ssh ubuntu@$GCE_VM -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+ssh $GCE_VM sudo hostname SRU-didnt-work;
+ssh $GCE_VM sudo cloud-init clean --logs --reboot;
+ssh-keygen -f /root/.ssh/known_hosts -R ${GCE_VM/ubuntu@}; sleep 5;
+ssh $GCE_VM cloud-init status --wait --long;
+ssh $GCE_VM grep Trace /var/log/cloud-init*;
+ssh $GCE_VM sudo cat /run/cloud-init/result.json;
+ssh $GCE_VM sudo sytemd-analyze blame;
+ssh $GCE_VM cloud-init analyze show;
+ssh $GCE_VM cloud-init analyze blame;
+ssh $GCE_VM -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
 # part 4 custom validation of specific fixed bug behavior for this SRU
