@@ -16,6 +16,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 
 | lxd module uses waitready | ✔ [verification output](../bugs/lp-test-lxd.txt) |
+| disable ssh login | ✔ [verification output](../bugs/lp-test-ssh-redirect.txt) |
 | [# 1682064](http://pad.lv/1682064) | ✔  [verification output](../bugs/lp-1682064.txt) |
 | [# 1787459](http://pad.lv/1787459) | ✔ [verification output](../bugs/lp-1787459.txt) |
 | [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
@@ -25,7 +26,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1784699](http://pad.lv/1784699) | ✔ [verification output](../bugs/lp-1784699.txt) |
 | [# 1784713](http://pad.lv/1784713) | [verification output](../bugs/lp-1784713.txt) |
 | [# 1781229](http://pad.lv/1781229) | [verification output](../bugs/lp-1781229.txt) |
-| Manual gce test | [verification output](../manual/gce-sru-18.4.0.txt) |
+| Manual gce test | ✔ [verification output](../manual/gce-sru-18.4.0.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.4.0.txt) |
 | Manual openstack test | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |

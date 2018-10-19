@@ -1,0 +1,76 @@
+=== Begin SRU Template ===
+[Impact]
+Users can now disable ssh logins to a non-root user.
+
+[Test Case]
+cat > nologin.yaml << EOF
+ssh_import_id: chad.smith
+#cloud-config
+users:
+  - default
+  - name: nologin
+    ssh_redirect_user: true
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   EC2_INST=`launch-ec2 --series $SERIES -u nologin.yaml | awk '/Found/{print $5}'`;
+   scp setup_proposed.sh $EC2_INST:;
+   ssh $EC2_INST sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+   ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+   ssh-keygen -f ~/.ssh/known_hosts -R ${EC2_INST/ubuntu@}; sleep 5;
+   ssh nologin${EC2_INST/ubuntu};
+done
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
+
+
+=== BEGIN SRU Verification output ===
+=== BEGIN  xenial
+The authenticity of host 'ec2-18-224-7-201.us-east-2.compute.amazonaws.com (18.224.7.201)' can't be established.
+ECDSA key fingerprint is SHA256:9yGL/UMNGKXqVOGO7MWvcgJHKpkBA8tO0U64HtamiIg.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added 'ec2-18-224-7-201.us-east-2.compute.amazonaws.com,18.224.7.201' (ECDSA) to the list of known hosts.
+setup_proposed.sh                                                                                                                      100%  196     3.1KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.4-0ubuntu1~16.04.2 [383 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~16.04.2_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~16.04.2) over (18.3-9-g2e62cb8a-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~16.04.2) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Connection to ec2-18-224-7-201.us-east-2.compute.amazonaws.com closed by remote host.
+Please login as the user "ubuntu" rather than the user "nologin".
+=== BEGIN  bionic
+The authenticity of host 'ec2-18-188-32-159.us-east-2.compute.amazonaws.com (18.188.32.159)' can't be established.
+ECDSA key fingerprint is SHA256:ZUKFBAaPAWVCNpLG9rQwqkDhqeRskrMc/c+NXoN+bzA.
+Are you sure you want to continue connecting (yes/no)? yes 
+Warning: Permanently added 'ec2-18-188-32-159.us-east-2.compute.amazonaws.com,18.188.32.159' (ECDSA) to the list of known hosts.
+setup_proposed.sh                                                                                                                      100%  196     3.1KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.4-0ubuntu1~18.04.1 [378 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~18.04.1) over (18.3-9-g2e62cb8a-0ubuntu1~18.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Connection to ec2-18-188-32-159.us-east-2.compute.amazonaws.com closed by remote host.
+Please login as the user "ubuntu" rather than the user "nologin".
+
+
+=== END SRU Verification output ===
