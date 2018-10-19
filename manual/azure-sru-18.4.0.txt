@@ -8,6 +8,14 @@ ssh_import_id : [chad.smith]
 hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
+# Test that we can turn on IMDS data for hot-plug across boots
+cat > 50_enable_network_imds.cfg <<EOF
+datasource:
+  Azure:
+     apply_network_config: True
+EOF
+
+
 cat > setup_proposed.sh <<EOF
 #/bin/bash
 mirror=http://archive.ubuntu.com/ubuntu
@@ -40,6 +48,7 @@ ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
 ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
 scp setup_proposed.sh ubuntu@$vm_ip:.;
 scp 90-setupkvp-log.cfg ubuntu@$vm_ip:.;
+scp 50_enable_network_imds.cfg ubuntu@$vm_ip:.;
 ssh ubuntu@$vm_ip sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
 ssh ubuntu@$vm_ip -- sudo cloud-init init;
 ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
@@ -55,10 +64,10 @@ ssh ubuntu@$vm_ip -- sudo cloud-init query --all;
 ssh ubuntu@$vm_ip -- sudo systemd-analyze;
 ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
 
-echo 'Verify cloud-init query subcommand';
+echo '--- Verify cloud-init query subcommand';
 ssh ubuntu@$vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}';
 
-echo 'Validating hyperv logging';
+echo '--- Validating hyperv logging';
 ssh ubuntu@$vm_ip -- sudo mv /home/ubuntu/90-setupkvp-log.cfg /etc/cloud/cloud.cfg.d/;
 echo 'Expecting no kvp_pool_content';
 ssh ubuntu@$vm_ip --  od -c -N 40 /var/lib/hyperv/.kvp_pool_1;
@@ -70,7 +79,714 @@ if [ "$name" == "my-x1" ]; then
   ssh ubuntu@$vm_ip -- "sudo python3 -c 'from cloudinit.stages import _pkl_load; print(_pkl_load(\"/var/lib/cloud/instance/obj.pkl\").network_config)'"
 fi
 
+echo '--- Validating network from IMDS activation';
+echo '--- Before IMDS';
+if [ "$name" == "my-x1" ]; then
+    ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+    ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+else
+    ssh ubuntu@$vm_ip -- ls /etc/netplan;
+    ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+fi
 
-done
+ssh ubuntu@$vm_ip -- sudo mv /home/ubuntu/50_enable_network_imds.cfg /etc/cloud/cloud.cfg.d/;
+ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+ssh-keygen -f /root/.ssh/known_hosts -R $vm_ip; sleep 5;
+echo '--- After IMDS';
+if [ "$name" == "my-x1" ]; then
+    ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+    ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+else
+    ssh ubuntu@$vm_ip -- ls /etc/netplan;
+    ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+fi
+ssh ubuntu@$vm_ip -- grep IMDS /var/log/cloud-init.log;
+
+echo '--- After Nic Add IMDS';
+if [ "$name" == "my-x1" ]; then
+    ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+    ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+else
+    ssh ubuntu@$vm_ip -- ls /etc/netplan;
+    ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+fi
+
+done | tee az-sru.out
+
 
 # Validate Xenial network_config is fallback version 1 not imds version 2
+
+
+=== BEGIN SRU validation output ===
+root@publishing:~# for name in my-x1 my-b1; do
+> vm_ip=`az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'`;
+> 
+> ssh ubuntu@$vm_ip 'dpkg-query --show cloud-init';
+> ssh ubuntu@$vm_ip grep CODE /etc/os-release;
+> ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+> ssh ubuntu@$vm_ip 'grep Traceback /var/log/cloud-init*log';
+> scp setup_proposed.sh ubuntu@$vm_ip:.;
+> scp 90-setupkvp-log.cfg ubuntu@$vm_ip:.;
+> scp 50_enable_network_imds.cfg ubuntu@$vm_ip:.;
+> ssh ubuntu@$vm_ip sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+> ssh ubuntu@$vm_ip -- sudo cloud-init init;
+> ssh ubuntu@$vm_ip -- sudo cloud-init status --long;
+> ssh ubuntu@$vm_ip -- 'grep Trace /var/log/cloud-init*log';
+> ssh ubuntu@$vm_ip 'cat /run/cloud-init/result.json';
+> ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+> ssh-keygen -f /root/.ssh/known_hosts -R $vm_ip; sleep 5;
+> ssh ubuntu@$vm_ip -- cloud-init status --wait --long;
+> ssh ubuntu@$vm_ip -- cat /run/cloud-init/result.json;
+> ssh ubuntu@$vm_ip -- 'grep Trace /var/log/cloud-init*';
+> ssh ubuntu@$vm_ip -- dpkg-query --show cloud-init;
+> ssh ubuntu@$vm_ip -- sudo cloud-init query --all;
+> ssh ubuntu@$vm_ip -- sudo systemd-analyze;
+> ssh ubuntu@$vm_ip -- sudo cloud-init analyze show;
+> 
+> echo '--- Verify cloud-init query subcommand';
+> ssh ubuntu@$vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}';
+> 
+> echo '--- Validating hyperv logging';
+> ssh ubuntu@$vm_ip -- sudo mv /home/ubuntu/90-setupkvp-log.cfg /etc/cloud/cloud.cfg.d/;
+> echo 'Expecting no kvp_pool_content';
+> ssh ubuntu@$vm_ip --  od -c -N 40 /var/lib/hyperv/.kvp_pool_1;
+> ssh ubuntu@$vm_ip sudo reboot; sleep 5;
+> echo 'Expecting kvp_pool_content';
+> ssh ubuntu@$vm_ip --  od -c -N 40 /var/lib/hyperv/.kvp_pool_1;
+> if [ "$name" == "my-x1" ]; then
+>   echo "Checking Xenial network_config is version 1 not imds version 2";
+>   ssh ubuntu@$vm_ip -- "sudo python3 -c 'from cloudinit.stages import _pkl_load; print(_pkl_load(\"/var/lib/cloud/instance/obj.pkl\").network_config)'"
+> fi
+> 
+> echo '--- Validating network from IMDS activation';
+> echo '--- Before IMDS';
+> if [ "$name" == "my-x1" ]; then
+>     ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+>     ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+> else
+>     ssh ubuntu@$vm_ip -- ls /etc/netplan;
+>     ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+> fi
+> 
+> ssh ubuntu@$vm_ip -- sudo mv /home/ubuntu/50_enable_network_imds.cfg /etc/cloud/cloud.cfg.d/;
+> ssh ubuntu@$vm_ip 'sudo cloud-init clean --logs --reboot';
+> ssh-keygen -f /root/.ssh/known_hosts -R $vm_ip; sleep 5;
+> echo '--- After IMDS';
+> if [ "$name" == "my-x1" ]; then
+>     ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+>     ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+> else
+>     ssh ubuntu@$vm_ip -- ls /etc/netplan;
+>     ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+> fi
+> echo '--- After Nic Add IMDS';
+> if [ "$name" == "my-x1" ]; then
+>     ssh ubuntu@$vm_ip -- ls /etc/network/interfaces.d;
+>     ssh ubuntu@$vm_ip -- cat /etc/network/interfaces.d/50-cloud-init.cfg;
+> else
+>     ssh ubuntu@$vm_ip -- ls /etc/netplan;
+>     ssh ubuntu@$vm_ip -- cat /etc/netplan/50-cloud-init.yaml;
+> fi
+> 
+> done | tee az-sru.out
+cloud-init	18.4-0ubuntu1~16.04.2
+VERSION_CODENAME=xenial
+UBUNTU_CODENAME=xenial
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+cloud-init is already the newest version (18.4-0ubuntu1~16.04.2).
+Cloud-init v. 18.4-0ubuntu1~16.04.2 running 'init' at Fri, 19 Oct 2018 19:32:01 +0000. Up 734.40 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.5          | 255.255.255.0 | global | 00:0d:3a:00:6f:5d |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe00:6f5d/64 |       .       |  link  | 00:0d:3a:00:6f:5d |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   0   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   2   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   3   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+2018-10-19 19:32:01,493 - __init__.py[WARNING]: Unhandled non-multipart (text/x-not-multipart) userdata: 'b'## template: jinja'...'
+status: done
+time: Fri, 19 Oct 2018 19:32:01 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Connection to 40.84.2.54 closed by remote host.
+# Host 40.84.2.54 found: line 146
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+The authenticity of host '40.84.2.54 (40.84.2.54)' can't be established.
+ECDSA key fingerprint is SHA256:Xx2/0A8HyR5Opi08EhCeKyRphkMq7cd6D3hZhH5R1gw.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.84.2.54' (ECDSA) to the list of known hosts.
+
+status: done
+time: Fri, 19 Oct 2018 19:32:44 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+cloud-init	18.4-0ubuntu1~16.04.2
+sudo: unable to resolve host SRU-worked-azure
+{
+ "availability_zone": null,
+ "base64_encoded_keys": [
+  "ds/meta_data/random_seed"
+ ],
+ "cloud_name": "azure",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "meta_data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "imds": {
+    "compute": {
+     "location": "eastus2",
+     "name": "my-x1",
+     "offer": "UbuntuServer",
+     "osType": "Linux",
+     "placementGroupId": "",
+     "platformFaultDomain": "0",
+     "platformUpdateDomain": "0",
+     "publisher": "Canonical",
+     "resourceGroupName": "srugroup1",
+     "sku": "16.04-DAILY-LTS",
+     "subscriptionId": "12aad61c-6de4-4e53-a6c6-5aff52a83777",
+     "tags": "",
+     "version": "16.04.201810180",
+     "vmId": "806c9661-ff69-4a03-8f3c-35a3dd31e2b4",
+     "vmScaleSetName": "",
+     "vmSize": "Standard_DS1_v2",
+     "zone": ""
+    },
+    "network": {
+     "interface": [
+      {
+       "ipv4": {
+        "ipAddress": [
+         {
+          "privateIpAddress": "10.0.0.5",
+          "publicIpAddress": "40.84.2.54"
+         }
+        ],
+        "subnet": [
+         {
+          "address": "10.0.0.0",
+          "prefix": "24"
+         }
+        ]
+       },
+       "ipv6": {
+        "ipAddress": []
+       },
+       "macAddress": "000D3A006F5D"
+      }
+     ]
+    }
+   },
+   "instance_id": "61966C80-69FF-034A-8F3C-35A3DD31E2B4",
+   "local_hostname": "my-x1",
+   "random_seed": "T0VNMGQAAAABQVZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAwTxg86+XLhJki5qldeo4HD29kdO9YGmwQFUsNplshPHquiSaNnD4mTljDP9SlqPWr0nrsTGxTHZluMkja7C6oQ=="
+  }
+ },
+ "instance_id": "61966C80-69FF-034A-8F3C-35A3DD31E2B4",
+ "local_hostname": "my-x1",
+ "region": null,
+ "sensitive_keys": [],
+ "userdata": "## template: jinja\n#cloud-config\nssh_import_id : [chad.smith]\nhostname: SRU-worked-{{v1.cloud_name}}\n",
+ "v1": {
+  "availability_zone": null,
+  "cloud_name": "azure",
+  "instance_id": "61966C80-69FF-034A-8F3C-35A3DD31E2B4",
+  "local_hostname": "my-x1",
+  "region": null
+ },
+ "vendordata": ""
+}
+sudo: unable to resolve host SRU-worked-azure
+Startup finished in 7.550s (kernel) + 16.486s (userspace) = 24.036s
+sudo: unable to resolve host SRU-worked-azure
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00100s
+|`->found local data from DataSourceAzure @00.03000s +00.35300s
+Finished stage: (init-local) 00.47200 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @01.54300s +00.01900s
+|`->setting up datasource @01.64300s +00.19200s
+|`->reading and applying user-data @01.84800s +00.01600s
+|`->reading and applying vendor-data @01.86400s +00.00000s
+|`->activating datasource @01.92200s +00.08800s
+|`->config-migrator ran successfully @02.07000s +00.00100s
+|`->config-seed_random ran successfully @02.07100s +00.00100s
+|`->config-bootcmd ran successfully @02.07300s +00.00000s
+|`->config-write-files ran successfully @02.07400s +00.01100s
+|`->config-growpart ran successfully @02.08500s +00.13200s
+|`->config-resizefs ran successfully @02.21700s +00.02500s
+|`->config-disk_setup ran successfully @02.24200s +00.24100s
+|`->config-mounts ran successfully @02.48400s +00.00200s
+|`->config-set_hostname ran successfully @02.51000s +00.02900s
+|`->config-update_hostname ran successfully @02.53900s +00.00200s
+|`->config-update_etc_hosts ran successfully @02.54100s +00.00000s
+|`->config-ca-certs ran successfully @02.54200s +00.00300s
+|`->config-rsyslog ran successfully @02.54500s +00.00500s
+|`->config-users-groups ran successfully @02.55100s +00.08100s
+|`->config-ssh ran successfully @02.63300s +00.79300s
+Finished stage: (init-network) 01.89700 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @08.40200s +00.00000s
+|`->config-snap ran successfully @08.40300s +00.00000s
+|`->config-snap_config ran successfully @08.40400s +00.00000s
+|`->config-ssh-import-id ran successfully @08.40500s +01.47900s
+|`->config-locale ran successfully @09.88700s +00.00200s
+|`->config-set-passwords ran successfully @09.88900s +00.02900s
+|`->config-grub-dpkg ran successfully @09.91900s +00.64600s
+|`->config-apt-pipelining ran successfully @10.56600s +00.00200s
+|`->config-apt-configure ran successfully @10.56800s +00.14500s
+|`->config-ubuntu-advantage ran successfully @10.71300s +00.00100s
+|`->config-ntp ran successfully @10.71400s +00.00100s
+|`->config-timezone ran successfully @10.71600s +00.00000s
+|`->config-disable-ec2-metadata ran successfully @10.71700s +00.00000s
+|`->config-runcmd ran successfully @10.71700s +00.00100s
+|`->config-byobu ran successfully @10.71800s +00.00100s
+Finished stage: (modules-config) 02.38800 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @11.43000s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @11.43200s +00.00100s
+|`->config-fan ran successfully @11.43300s +00.00100s
+|`->config-landscape ran successfully @11.43400s +00.00100s
+|`->config-lxd ran successfully @11.43500s +00.00100s
+|`->config-puppet ran successfully @11.43600s +00.00100s
+|`->config-chef ran successfully @11.43700s +00.00100s
+|`->config-mcollective ran successfully @11.43800s +00.00100s
+|`->config-salt-minion ran successfully @11.43900s +00.00100s
+|`->config-rightscale_userdata ran successfully @11.44000s +00.00100s
+|`->config-scripts-vendor ran successfully @11.44100s +00.00100s
+|`->config-scripts-per-once ran successfully @11.44300s +00.00000s
+|`->config-scripts-per-boot ran successfully @11.44300s +00.00100s
+|`->config-scripts-per-instance ran successfully @11.44400s +00.00100s
+|`->config-scripts-user ran successfully @11.44500s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @11.44600s +00.23900s
+|`->config-keys-to-console ran successfully @11.68500s +00.37500s
+|`->config-phone-home ran successfully @12.06100s +00.00100s
+|`->config-final-message ran successfully @12.06200s +00.00400s
+|`->config-power-state-change ran successfully @12.06700s +00.00100s
+Finished stage: (modules-final) 00.65400 seconds 
+
+Total Time: 5.41100 seconds
+
+1 boot records analyzed
+--- Verify cloud-init query subcommand
+cloud-region:
+--- Validating hyperv logging
+sudo: unable to resolve host SRU-worked-azure
+Expecting no kvp_pool_content
+0000000
+sudo: unable to resolve host SRU-worked-azure
+Connection to 40.84.2.54 closed by remote host.
+Expecting kvp_pool_content
+0000000   C   L   O   U   D   _   I   N   I   T   |   1   5   3   9   9
+0000020   7   7   5   8   9   |   s   t   a   r   t   |   i   n   i   t
+0000040   -   l   o   c   a   l   /   c
+0000050
+Checking Xenial network_config is version 1 not imds version 2
+{'config': [{'mac_address': '00:0d:3a:00:6f:5d', 'params': {'device_id': '0x3', 'driver': 'hv_netvsc'}, 'type': 'physical', 'name': 'eth0', 'subnets': [{'type': 'dhcp'}]}], 'version': 1}
+--- Validating network from IMDS activation
+--- Before IMDS
+50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+Connection to 40.84.2.54 closed by remote host.
+# Host 40.84.2.54 found: line 146
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+--- After IMDS
+The authenticity of host '40.84.2.54 (40.84.2.54)' can't be established.
+ECDSA key fingerprint is SHA256:Z7cDmtLMo1O1MieH+QbLE/zG4BpvNlRbSSD/E5TAXLk.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '40.84.2.54' (ECDSA) to the list of known hosts.
+Connection closed by 40.84.2.54 port 22
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+ECDSA key fingerprint is SHA256:Z7cDmtLMo1O1MieH+QbLE/zG4BpvNlRbSSD/E5TAXLk.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '52.147.172.202' (ECDSA) to the list of known hosts.
+2018-10-19 19:34:04,207 - util.py[DEBUG]: Crawl of Azure Instance Metadata Service (IMDS) took 0.013 seconds
+2018-10-19 19:34:04,299 - DataSourceAzure.py[DEBUG]: Azure: generating network configuration from IMDS
+2018-10-19 19:34:06,206 - DataSourceAzure.py[DEBUG]: Azure: generating network configuration from IMDS
+
+--- After Nic Add IMDS
+50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
+
+auto eth1              # SUCCESS eth1 hotplugged by cloud-init
+iface eth1 inet dhcp
+
+### Start bionic
+cloud-init	18.3-9-g2e62cb8a-0ubuntu1~18.04.2
+VERSION_CODENAME=bionic
+UBUNTU_CODENAME=bionic
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.4-0ubuntu1~18.04.1 [378 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~18.04.1) over (18.3-9-g2e62cb8a-0ubuntu1~18.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Cloud-init v. 18.4-0ubuntu1~18.04.1 running 'init' at Fri, 19 Oct 2018 20:03:30 +0000. Up 2771.05 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.4          | 255.255.255.0 | global | 00:0d:3a:01:f4:30 |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe01:f430/64 |       .       |  link  | 00:0d:3a:01:f4:30 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+2018-10-19 20:03:30,353 - __init__.py[WARNING]: Unhandled non-multipart (text/x-not-multipart) userdata: 'b'## template: jinja'...'
+status: done
+time: Fri, 19 Oct 2018 20:03:30 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Connection to 104.209.152.190 closed by remote host.
+# Host 104.209.152.190 found: line 145
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+The authenticity of host '104.209.152.190 (104.209.152.190)' can't be established.
+ECDSA key fingerprint is SHA256:Ceb6b9PtO3xRCDWngt9QlKgzyVoS3uFONKT3+DHE2ew.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '104.209.152.190' (ECDSA) to the list of known hosts.
+
+status: done
+time: Fri, 19 Oct 2018 20:04:28 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+cloud-init	18.4-0ubuntu1~18.04.1
+{
+ "availability_zone": null,
+ "base64_encoded_keys": [
+  "ds/meta_data/random_seed"
+ ],
+ "cloud_name": "azure",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "meta_data": {
+   "azure_data": {
+    "configurationsettype": "LinuxProvisioningConfiguration"
+   },
+   "imds": {
+    "compute": {
+     "location": "eastus2",
+     "name": "my-b1",
+     "offer": "UbuntuServer",
+     "osType": "Linux",
+     "placementGroupId": "",
+     "platformFaultDomain": "0",
+     "platformUpdateDomain": "0",
+     "publisher": "Canonical",
+     "resourceGroupName": "srugroup1",
+     "sku": "18.04-DAILY-LTS",
+     "subscriptionId": "12aad61c-6de4-4e53-a6c6-5aff52a83777",
+     "tags": "",
+     "version": "18.04.201810180",
+     "vmId": "4c5fcbcc-9735-48ba-91c8-23861d25f118",
+     "vmScaleSetName": "",
+     "vmSize": "Standard_DS1_v2",
+     "zone": ""
+    },
+    "network": {
+     "interface": [
+      {
+       "ipv4": {
+        "ipAddress": [
+         {
+          "privateIpAddress": "10.0.0.4",
+          "publicIpAddress": "104.209.152.190"
+         }
+        ],
+        "subnet": [
+         {
+          "address": "10.0.0.0",
+          "prefix": "24"
+         }
+        ]
+       },
+       "ipv6": {
+        "ipAddress": []
+       },
+       "macAddress": "000D3A01F430"
+      }
+     ]
+    }
+   },
+   "instance_id": "CCCB5F4C-3597-BA48-91C8-23861D25F118",
+   "local_hostname": "my-b1",
+   "random_seed": "T0VNMGQAAAABNlZSVFVBTE1JQ1JPU0ZUAhcABk1TRlSXAAAAZGVcWugtNhSAaTflgOUQ2TPjbltrG55Ik6hcDNRfcnOX4GefchOprmIbRFRkp1JvBqXFIifNcAT6jwhrIHE/6A=="
+  }
+ },
+ "instance_id": "CCCB5F4C-3597-BA48-91C8-23861D25F118",
+ "local_hostname": "my-b1",
+ "region": null,
+ "sensitive_keys": [],
+ "userdata": "## template: jinja\n#cloud-config\nssh_import_id : [chad.smith]\nhostname: SRU-worked-{{v1.cloud_name}}\n",
+ "v1": {
+  "availability_zone": null,
+  "cloud_name": "azure",
+  "instance_id": "CCCB5F4C-3597-BA48-91C8-23861D25F118",
+  "local_hostname": "my-b1",
+  "region": null
+ },
+ "vendordata": ""
+}
+Startup finished in 6.814s (kernel) + 18.862s (userspace) = 25.677s
+graphical.target reached after 17.545s in userspace
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->found local data from DataSourceAzure @00.03800s +00.45800s
+Finished stage: (init-local) 00.66400 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @03.35900s +00.02800s
+|`->setting up datasource @03.43900s +00.21300s
+|`->reading and applying user-data @03.65800s +00.00800s
+|`->reading and applying vendor-data @03.66600s +00.00000s
+|`->activating datasource @03.68800s +00.09300s
+|`->config-migrator ran successfully @03.79400s +00.00100s
+|`->config-seed_random ran successfully @03.79500s +00.00100s
+|`->config-bootcmd ran successfully @03.79600s +00.00000s
+|`->config-write-files ran successfully @03.79700s +00.00000s
+|`->config-growpart ran successfully @03.79800s +00.05500s
+|`->config-resizefs ran successfully @03.85400s +00.02100s
+|`->config-disk_setup ran successfully @03.87600s +00.22300s
+|`->config-mounts ran successfully @04.10000s +00.00400s
+|`->config-set_hostname ran successfully @04.10400s +00.03400s
+|`->config-update_hostname ran successfully @04.13800s +00.00200s
+|`->config-update_etc_hosts ran successfully @04.14000s +00.00000s
+|`->config-ca-certs ran successfully @04.14000s +00.00700s
+|`->config-rsyslog ran successfully @04.14700s +00.00100s
+|`->config-users-groups ran successfully @04.14800s +00.29100s
+|`->config-ssh ran successfully @04.43900s +00.15500s
+Finished stage: (init-network) 01.24900 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @09.80000s +00.00000s
+|`->config-snap ran successfully @09.80000s +00.00700s
+|`->config-snap_config ran successfully @09.80700s +00.00100s
+|`->config-ssh-import-id ran successfully @09.81100s +01.27200s
+|`->config-locale ran successfully @11.08300s +00.00200s
+|`->config-set-passwords ran successfully @11.08500s +00.00100s
+|`->config-grub-dpkg ran successfully @11.08700s +01.36400s
+|`->config-apt-pipelining ran successfully @12.45200s +00.00100s
+|`->config-apt-configure ran successfully @12.45400s +00.13800s
+|`->config-ubuntu-advantage ran successfully @12.59200s +00.00100s
+|`->config-ntp ran successfully @12.59300s +00.00100s
+|`->config-timezone ran successfully @12.59400s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @12.59500s +00.00000s
+|`->config-runcmd ran successfully @12.59600s +00.00000s
+|`->config-byobu ran successfully @12.59700s +00.00000s
+Finished stage: (modules-config) 02.91900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @13.19200s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @13.19400s +00.00000s
+|`->config-fan ran successfully @13.19500s +00.00000s
+|`->config-landscape ran successfully @13.19600s +00.00000s
+|`->config-lxd ran successfully @13.19600s +00.00100s
+|`->config-puppet ran successfully @13.19700s +00.00100s
+|`->config-chef ran successfully @13.19800s +00.00100s
+|`->config-mcollective ran successfully @13.19900s +00.00100s
+|`->config-salt-minion ran successfully @13.20000s +00.00100s
+|`->config-rightscale_userdata ran successfully @13.20100s +00.00100s
+|`->config-scripts-vendor ran successfully @13.20200s +00.00100s
+|`->config-scripts-per-once ran successfully @13.20300s +00.00100s
+|`->config-scripts-per-boot ran successfully @13.20400s +00.00000s
+|`->config-scripts-per-instance ran successfully @13.20400s +00.00100s
+|`->config-scripts-user ran successfully @13.20500s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @13.20600s +00.29700s
+|`->config-keys-to-console ran successfully @13.50400s +00.37000s
+|`->config-phone-home ran successfully @13.87500s +00.00000s
+|`->config-final-message ran successfully @13.87600s +00.00500s
+|`->config-power-state-change ran successfully @13.88100s +00.00100s
+Finished stage: (modules-final) 00.70600 seconds 
+
+Total Time: 5.53800 seconds
+
+1 boot records analyzed
+--- Verify cloud-init query subcommand
+cloud-region:
+--- Validating hyperv logging
+Expecting no kvp_pool_content
+0000000
+Connection to 104.209.152.190 closed by remote host.
+Expecting kvp_pool_content
+0000000   C   L   O   U   D   _   I   N   I   T   |   1   5   3   9   9
+0000020   7   9   5   2   5   |   s   t   a   r   t   |   i   n   i   t
+0000040   -   l   o   c   a   l   /   c
+0000050
+--- Validating network from IMDS activation
+--- Before IMDS
+50-cloud-init.yaml
+90-hotplug-azure.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: 00:0d:3a:01:f4:30
+            set-name: eth0
+    version: 2
+Connection to 104.209.152.190 closed by remote host.
+# Host 104.209.152.190 found: line 146
+/root/.ssh/known_hosts updated.
+Original contents retained as /root/.ssh/known_hosts.old
+--- After IMDS
+The authenticity of host '104.209.152.190 (104.209.152.190)' can't be established.
+ECDSA key fingerprint is SHA256:s3Gg6l/qxc+CFKuevk470BrAsjmZJcC5AOOcVgjRV/8.
+Are you sure you want to continue connecting (yes/no)? yes
+Warning: Permanently added '104.209.152.190' (ECDSA) to the list of known hosts.
+Connection closed by 104.209.152.190 port 22
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: 00:0d:3a:01:f4:30
+            set-name: eth0
+    version: 2
+2018-10-19 20:52:55,985 - util.py[DEBUG]: Crawl of Azure Instance Metadata Service (IMDS) took 0.009 seconds
+2018-10-19 20:52:56,064 - DataSourceAzure.py[DEBUG]: Azure: generating network configuration from IMDS
+2018-10-19 20:54:57,146 - DataSourceAzure.py[DEBUG]: Azure: generating network configuration from IMDS
+
+--- After Nic Add IMDS
+50-cloud-init.yaml
+90-hotplug-azure.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    ethernets:
+        eth0:
+            dhcp4: true
+            match:
+                macaddress: 00:0d:3a:01:f4:30
+            set-name: eth0
+        eth1:
+            dhcp4: true
+            match:
+                macaddress: 00:0d:3a:0e:c8:c7
+            set-name: eth1
+    version: 2
+
+=== END SRU validation output ===
