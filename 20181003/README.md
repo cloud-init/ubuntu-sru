@@ -14,17 +14,16 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [# 1682064](http://pad.lv/1682064) | [verification output](../bugs/lp-1682064.txt) |
+
+| lxd module uses waitready | ✔ [verification output](../bugs/lp-test-lxd.txt) |
+| [# 1682064](http://pad.lv/1682064) | ✔  [verification output](../bugs/lp-1682064.txt) |
 | [# 1787459](http://pad.lv/1787459) | ✔ [verification output](../bugs/lp-1787459.txt) |
 | [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
 | [# 1792454](http://pad.lv/1792454) | ✔ [verification output](../bugs/lp-1792454.txt) |
 | [# 1792157](http://pad.lv/1792157) | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |
 | [# 1791781](http://pad.lv/1791781) | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
-| [# 1766538](http://pad.lv/1766538) | [verification output](../bugs/lp-1766538.txt) |
 | [# 1784699](http://pad.lv/1784699) | ✔ [verification output](../bugs/lp-1784699.txt) |
 | [# 1784713](http://pad.lv/1784713) | [verification output](../bugs/lp-1784713.txt) |
-| [# 1768547](http://pad.lv/1768547) | [verification output](../bugs/lp-1768547.txt) |
-| [# 1784685](http://pad.lv/1784685) | [verification output](../bugs/lp-1784685.txt) |
 | [# 1781229](http://pad.lv/1781229) | [verification output](../bugs/lp-1781229.txt) |
 | Manual gce test | [verification output](../manual/gce-sru-18.4.0.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |

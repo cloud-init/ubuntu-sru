@@ -1,0 +1,84 @@
+=== Begin SRU Template ===
+[Impact]
+Use lxd waitready to ensure we don't talk to lxd until it is completely installed.
+
+[Test Case]
+cat > lxd.yaml <<EOF
+#cloud-config
+lxd:
+  init:
+    storage_backend: dir
+EOF
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.user-data - < lxd.yaml;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep wait /var/log/cloud-init.log;
+   lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+done
+
+[Regression Potential]
+Minimal adds a simple lxd command on initialization.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=facb92c5
+
+=== End SRU Template ===
+
+
+=== BEGIN SRU Validation output ===
+for SERIES in xenial bionic; do
+>    echo '=== BEGIN ' $SERIES;
+>    ref=$SERIES-proposed;
+>    lxc delete test-$SERIES --force 2> /dev/null;
+>    lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$SERIES;
+>    lxc config set test-$SERIES user.user-data - < lxd.yaml;
+>    lxc start test-$SERIES;
+>    lxc exec test-$SERIES -- cloud-init status --wait --long;
+>    lxc exec test-$SERIES "grep wait /var/log/cloud-init.log";
+>    lxc exec test-$SERIES "grep Trace /var/log/cloud-init.log";
+> done
+=== BEGIN  xenial
+Creating xenial-proposed-149716842
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.4-0ubuntu1~16.04.2 [383 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~16.04.2_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~16.04.2) over (18.3-9-g2e62cb8a-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~16.04.2) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+.......................................................
+status: done
+time: Fri, 19 Oct 2018 18:59:39 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2018-10-19 18:59:35,183 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+
+=== BEGIN  bionic
+Creating bionic-proposed-173381839
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.4-0ubuntu1~18.04.1 [378 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~18.04.1) over (18.3-9-g2e62cb8a-0ubuntu1~18.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Creating test-bionic
+..........................................................
+status: done
+time: Fri, 19 Oct 2018 19:01:29 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2018-10-19 19:01:24,034 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+
+
+
+=== END SRU Validation output ===
