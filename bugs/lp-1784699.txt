@@ -3,13 +3,115 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1784699
 
 === Begin SRU Template ===
 [Impact]
+Bonds with mac addresses are not generated in resulting netplan config leaving
+configuration that doesn't match desired config.
 
 [Test Case]
+Supply a network config that has macs on bonds, ensure net-convert utility
+renders netplan with mac address on the bond.
+
+$ cat > bond-mac.yaml <<EOF
+network:
+  config:
+  - id: enp2s0
+    mac_address: 00:e0:81:d1:b1:48
+    mtu: 1500
+    name: enp2s0
+    subnets:
+    - type: manual
+    type: physical
+  - id: enp3s0
+    mac_address: 00:e0:81:d1:b1:47
+    mtu: 1500
+    name: enp3s0
+    subnets:
+    - type: manual
+    type: physical
+  - bond_interfaces:
+    - enp2s0
+    - enp3s0
+    id: bond0
+    mac_address: 00:e0:81:d1:b1:47
+    mtu: 1500
+    name: bond0
+    params:
+      bond-downdelay: 0
+      bond-miimon: 100
+      bond-mode: active-backup
+      bond-num-grat-arp: 1
+      bond-updelay: 0
+      bond-xmit-hash-policy: layer2
+    type: bond
+    subnets:
+    - address: 10.245.143.229/21
+      gateway: 10.245.136.1
+      type: static
+  version: 1
+EOF
+
+for SERIES in bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc file push bond-mac.yaml test-$SERIES/;
+   lxc exec test-$SERIES -- cloud-init devel net-convert --output-kind=netplan --directory /out.d --network-data=/bond-mac.yaml --kind=yaml -D ubuntu;
+   lxc exec test-$SERIES cat /etc/netplan/50-cloud-init.yaml;
+done
+
+
 
 [Regression Potential]
 
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=41f508da
 
 === End SRU Template ===
+
+
+=== BEGIN SRU Verification output ===
+=== BEGIN  bionic
+Read input format 'yaml' from '/bond-mac.yaml'.
+Wrote output format 'netplan' to '/out.d/'
+
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        enp2s0:
+            match:
+                macaddress: 00:e0:81:d1:b1:48
+            mtu: 1500
+            set-name: enp2s0
+        enp3s0:
+            match:
+                macaddress: 00:e0:81:d1:b1:47
+            mtu: 1500
+            set-name: enp3s0
+    bonds:
+        bond0:
+            addresses:
+            - 10.245.143.229/21
+            gateway4: 10.245.136.1
+            interfaces:
+            - enp2s0
+            - enp3s0
+            macaddress: 00:e0:81:d1:b1:47   # SUCCESS
+            mtu: 1500
+            parameters:
+                down-delay: 0
+                gratuitious-arp: 1
+                mii-monitor-interval: 100
+                mode: active-backup
+                transmit-hash-policy: layer2
+                up-delay: 0
+
+=== END SRU Verification output ===

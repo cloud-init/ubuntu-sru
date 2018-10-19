@@ -20,7 +20,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1792157](http://pad.lv/1792157) | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |
 | [# 1791781](http://pad.lv/1791781) | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | [# 1766538](http://pad.lv/1766538) | [verification output](../bugs/lp-1766538.txt) |
-| [# 1784699](http://pad.lv/1784699) | [verification output](../bugs/lp-1784699.txt) |
+| [# 1784699](http://pad.lv/1784699) | ✔ [verification output](../bugs/lp-1784699.txt) |
 | [# 1784713](http://pad.lv/1784713) | [verification output](../bugs/lp-1784713.txt) |
 | [# 1768547](http://pad.lv/1768547) | [verification output](../bugs/lp-1768547.txt) |
 | [# 1784685](http://pad.lv/1784685) | [verification output](../bugs/lp-1784685.txt) |
