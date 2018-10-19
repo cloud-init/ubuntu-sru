@@ -1,0 +1,98 @@
+http://pad.lv/1792454
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1792454
+
+=== Begin SRU Template ===
+[Impact]
+
+[Test Case]
+Validate net conversion for centos sysconfig works with ip/prefix eni format.
+
+cat > my-eni <<EOF
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet static
+    address 192.168.1.5/24
+    gateway 192.168.1.254
+
+auto eth1
+iface eth1 inet dhcp
+EOF
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc file push my-eni test-$SERIES/;
+   lxc exec test-$SERIES -- cloud-init devel net-convert --distro=centos --kind=eni --network-data=/my-eni --output-kind=sysconfig --directory=out.d;
+   lxc file pull -r test-$SERIES/root/out.d .;
+   cat out.d/etc/sysconfig/network-scripts/*;
+done
+
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=98d18c31
+
+=== End SRU Template ===
+
+=== BEGIN SRU Verification output ===
+=== BEGIN  xenial
+Read input format 'eni' from '/my-eni'.
+Wrote output format 'sysconfig' to 'out.d/'
+
+# Created by cloud-init on instance boot automatically, do not edit.
+#
+BOOTPROTO=none
+DEFROUTE=yes
+DEVICE=eth0
+GATEWAY=192.168.1.254
+IPADDR=192.168.1.5
+NETMASK=255.255.255.0  # SUCCESS
+NM_CONTROLLED=no
+ONBOOT=yes
+TYPE=Ethernet
+USERCTL=no
+# Created by cloud-init on instance boot automatically, do not edit.
+#
+BOOTPROTO=dhcp
+DEVICE=eth1
+NM_CONTROLLED=no
+ONBOOT=yes
+TYPE=Ethernet
+USERCTL=no
+=== BEGIN  bionic
+Read input format 'eni' from '/my-eni'.
+Wrote output format 'sysconfig' to 'out.d/'
+
+Error: mkdir out.d: file exists
+# Created by cloud-init on instance boot automatically, do not edit.
+#
+BOOTPROTO=none
+DEFROUTE=yes
+DEVICE=eth0
+GATEWAY=192.168.1.254
+IPADDR=192.168.1.5
+NETMASK=255.255.255.0   # SUCCESS
+NM_CONTROLLED=no
+ONBOOT=yes
+TYPE=Ethernet
+USERCTL=no
+# Created by cloud-init on instance boot automatically, do not edit.
+#
+BOOTPROTO=dhcp
+DEVICE=eth1
+NM_CONTROLLED=no
+ONBOOT=yes
+TYPE=Ethernet
+USERCTL=no
+
+=== END SRU Verification output ===

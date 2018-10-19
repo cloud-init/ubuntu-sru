@@ -15,8 +15,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Bug | Verification Script and Output |
 | -------- |  -------- |
 | [# 1682064](http://pad.lv/1682064) | [verification output](../bugs/lp-1682064.txt) |
-| [# 1792415](http://pad.lv/1787459) | ✔ [verification output](../bugs/lp-1787459.txt) |
+| [# 1787459](http://pad.lv/1787459) | ✔ [verification output](../bugs/lp-1787459.txt) |
 | [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
+| [# 1792454](http://pad.lv/1792454) | ✔ [verification output](../bugs/lp-1792454.txt) |
 | [# 1792157](http://pad.lv/1792157) | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |
 | [# 1791781](http://pad.lv/1791781) | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | [# 1766538](http://pad.lv/1766538) | [verification output](../bugs/lp-1766538.txt) |
