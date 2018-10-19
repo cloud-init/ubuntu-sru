@@ -5,11 +5,192 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1682064
 [Impact]
 
 [Test Case]
+Test that openstack network conversion includes mac address on bond if present
+in network.json.
+
+# Simple testcase, we expect to see net_convert show with a mac on the bond
+$ cat test-openstack-net-convert-mac.py 
+from cloudinit.sources.helpers import openstack
+import json
+
+net_json= {
+   "networks" : [
+      {
+         "type" : "ipv4_dhcp",
+         "network_id" : "a7ec6c35-4e17-4e97-aa2b-0d93e56bb6c7",
+         "link" : "tap2b7fcc9f-f5",
+         "id" : "network0"
+      }
+   ],
+   "services" : [],
+   "links" : [
+      {
+         "vif_id" : "2b7fcc9f-f57d-4e34-a350-ac734423c5d4",
+         "bond_links" : [
+            "f1778faf-213f-4216-a5c6-31d10dc669b5",
+            "e8477eaf-71b0-4855-af0c-475ccb041513",
+            "a4594b9d-8e27-4b0d-a5b0-c1682c5ee1bf",
+            "7094568a-9bdd-4bd9-ba20-327a7959f1a3"
+         ],
+         "id" : "tap2b7fcc9f-f5",
+         "bond_mode" : "802.3ad",
+         "mtu" : 8950,
+         "ethernet_mac_address" : "24:8a:07:9a:a6:1a",
+         "type" : "bond"
+      },
+      {
+         "ethernet_mac_address" : "24:8a:07:9a:a8:42",
+         "type" : "phy",
+         "id" : "f1778faf-213f-4216-a5c6-31d10dc669b5"
+      },
+      {
+         "id" : "e8477eaf-71b0-4855-af0c-475ccb041513",
+         "type" : "phy",
+         "ethernet_mac_address" : "24:8a:07:9a:a8:43"
+      },
+      {
+         "ethernet_mac_address" : "24:8a:07:9a:a6:1a",
+         "type" : "phy",
+         "id" : "a4594b9d-8e27-4b0d-a5b0-c1682c5ee1bf"
+      },
+      {
+         "type" : "phy",
+         "ethernet_mac_address" : "24:8a:07:9a:a6:1b",
+         "id" : "7094568a-9bdd-4bd9-ba20-327a7959f1a3"
+      }
+   ]
+}
+
+known_macs = {
+        '24:8a:07:9a:a8:42': 'bond1',
+        '24:8a:07:9a:a6:1a': 'eth1',
+        '24:8a:07:9a:a6:1b': 'eth2',
+        '24:8a:07:9a:a8:43': 'eth3'}
+print(json.dumps(openstack.convert_net_json(net_json, known_macs=known_macs)))
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc file push openstack-net-convert-mac.py test-$SERIES/;
+   lxc exec python3 test-$SERIES /openstack-net-convert-mac.py | json_pp;
+done
 
 [Regression Potential]
+Minimal, it adds an additional configuration option to the bond macs on openstack only. Should be a corner case that bonds are introduced anyway on openstack platforms.
 
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=c6cfed7f
 
 === End SRU Template ===
+
+=== BEGIN SRU Validation output ===
+
+=== BEGIN  xenial
+{
+   "config" : [
+      {
+         "subnets" : [
+            {
+               "type" : "dhcp4"
+            }
+         ],
+         "mtu" : 8950,
+         "params" : {
+            "bond_mode" : "802.3ad",
+            "mac_address" : "24:8a:07:9a:a6:1a"
+         },
+         "name" : "bond0",
+         "bond_interfaces" : [
+            "bond1",
+            "eth3",
+            "eth1",
+            "eth2"
+         ],
+         "type" : "bond"
+      },
+      {
+         "mac_address" : "24:8a:07:9a:a8:42",   # SUCCESS
+         "type" : "physical",
+         "name" : "bond1",
+         "subnets" : []
+      },
+      {
+         "type" : "physical",
+         "mac_address" : "24:8a:07:9a:a8:43",
+         "subnets" : [],
+         "name" : "eth3"
+      },
+      {
+         "name" : "eth1",
+         "subnets" : [],
+         "type" : "physical",
+         "mac_address" : "24:8a:07:9a:a6:1a"
+      },
+      {
+         "name" : "eth2",
+         "subnets" : [],
+         "mac_address" : "24:8a:07:9a:a6:1b",
+         "type" : "physical"
+      }
+   ],
+   "version" : 1
+}
+=== BEGIN  bionic
+{
+   "version" : 1,
+   "config" : [
+      {
+         "name" : "bond0",
+         "bond_interfaces" : [
+            "bond1",
+            "eth3",
+            "eth1",
+            "eth2"
+         ],
+         "type" : "bond",
+         "params" : {
+            "mac_address" : "24:8a:07:9a:a6:1a",
+            "bond_mode" : "802.3ad"
+         },
+         "mtu" : 8950,
+         "subnets" : [
+            {
+               "type" : "dhcp4"
+            }
+         ]
+      },
+      {
+         "subnets" : [],
+         "type" : "physical",
+         "name" : "bond1",
+         "mac_address" : "24:8a:07:9a:a8:42"   # SUCCESS
+      },
+      {
+         "subnets" : [],
+         "type" : "physical",
+         "name" : "eth3",
+         "mac_address" : "24:8a:07:9a:a8:43"
+      },
+      {
+         "subnets" : [],
+         "type" : "physical",
+         "name" : "eth1",
+         "mac_address" : "24:8a:07:9a:a6:1a"
+      },
+      {
+         "subnets" : [],
+         "type" : "physical",
+         "mac_address" : "24:8a:07:9a:a6:1b",
+         "name" : "eth2"
+      }
+   ]
+}
+
+=== END SRU Validation output ===
+
