@@ -1,0 +1,163 @@
+http://pad.lv/1787459
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1787459
+
+=== Begin SRU Template ===
+[Impact]
+On disk system configuration is lost across cloud-init stages when reloading
+pickled datasource. This prevents the datasource from referencing system
+configuration keys which affect datasource behavior across reboots/stages.
+
+[Test Case]
+# Show that datasource's sys_cfg keys don't change across stage transitions.
+
+
+cat > show-syscfg-keys <<EOF
+#!/usr/bin/python3
+from cloudinit.stages import _pkl_load;
+print(sorted(_pkl_load("/var/lib/cloud/instance/obj.pkl").sys_cfg.keys()))
+EOF
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc file push show-syscfg-keys test-$SERIES/;
+   echo '--- Show keys from --local stage';
+   lxc exec test-$SERIES python3 /show-syscfg-keys;
+   echo '--- Show keys from init stage should match';
+   lxc exec test-$SERIES cloud-init init;
+   lxc exec test-$SERIES python3 /show-syscfg-keys;
+done
+
+
+[Regression Potential]
+None, this change now persists a complete set of the config options on the
+datasource instead just of a subset.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=f0ff1940
+
+=== End SRU Template ===
+
+
+
+=== BEGIN SRU Validation abridged output ===
+csmith@downtown:~$ for SERIES in xenial bionic; do
+>    echo '=== BEGIN ' $SERIES;
+>    ref=$SERIES-proposed;
+>    lxc delete test-$SERIES --force 2> /dev/null;
+>    lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$SERIES;
+>    lxc start test-$SERIES;
+>    lxc exec test-$SERIES -- cloud-init status --wait --long;
+>    lxc file push show-syscfg-keys test-$SERIES/;
+>    echo '--- Show keys from --local stage';
+>    lxc exec test-$SERIES python3 /show-syscfg-keys;
+>    echo '--- Show keys from init stage should match';
+>    lxc exec test-$SERIES cloud-init init;
+>    lxc exec test-$SERIES python3 /show-syscfg-keys;
+> done
+=== BEGIN  xenial
+Creating xenial-proposed-645025048
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.4-0ubuntu1~16.04.2 [383 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~16.04.2_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~16.04.2) over (18.3-9-g2e62cb8a-0ubuntu1~16.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~16.04.2) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+......................................
+status: done
+time: Fri, 19 Oct 2018 17:06:40 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Show keys from --local stage
+['_log', 'cloud_config_modules', 'cloud_final_modules', 'cloud_init_modules', 'datasource_list', 'def_log_file', 'di_report', 'disable_root', 'log_cfgs', 'output', 'preserve_hostname', 'syslog_fix_perms', 'users', 'vendor_data']
+--- Show keys from init stage should match
+Cloud-init v. 18.4-0ubuntu1~16.04.2 running 'init' at Fri, 19 Oct 2018 17:06:42 +0000. Up 12.00 seconds.
+ci-info: +++++++++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |                  Address                  |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |               10.195.58.246               | 255.255.255.0 | global | 00:16:3e:c2:bf:93 |
+ci-info: |  eth0  | True | fd42:4af4:4d09:6f9d:216:3eff:fec2:bf93/64 |       .       | global | 00:16:3e:c2:bf:93 |
+ci-info: |  eth0  | True |        fe80::216:3eff:fec2:bf93/64        |       .       |  link  | 00:16:3e:c2:bf:93 |
+ci-info: |   lo   | True |                 127.0.0.1                 |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |                  ::1/128                  |       .       |  host  |         .         |
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+ci-info: | Route | Destination |   Gateway   |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.195.58.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   | 10.195.58.0 |   0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+-------------+---------------+-----------+-------+
+ci-info: ++++++++++++++++++++++++++++++++++Route IPv6 info+++++++++++++++++++++++++++++++++++
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+ci-info: | Route |       Destination        |          Gateway          | Interface | Flags |
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+ci-info: |   0   | fd42:4af4:4d09:6f9d::/64 |             ::            |    eth0   |   Ue  |
+ci-info: |   1   |        fe80::/64         |             ::            |    eth0   |   U   |
+ci-info: |   2   |           ::/0           | fe80::1048:33ff:fe5e:1bd9 |    eth0   |  UGe  |
+ci-info: |   4   |          local           |             ::            |    eth0   |   U   |
+ci-info: |   5   |          local           |             ::            |    eth0   |   U   |
+ci-info: |   6   |         ff00::/8         |             ::            |    eth0   |   U   |
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+['_log', 'cloud_config_modules', 'cloud_final_modules', 'cloud_init_modules', 'datasource_list', 'def_log_file', 'di_report', 'disable_root', 'log_cfgs', 'output', 'preserve_hostname', 'syslog_fix_perms', 'users', 'vendor_data']
+=== BEGIN  bionic
+Creating bionic-proposed-904232256
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.4-0ubuntu1~18.04.1 [378 kB]
+Preparing to unpack .../cloud-init_18.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.4-0ubuntu1~18.04.1) over (18.3-9-g2e62cb8a-0ubuntu1~18.04.2) ...
+Setting up cloud-init (18.4-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/bash_completion.d/cloud-init ...
+Creating test-bionic
+..........................................
+status: done
+time: Fri, 19 Oct 2018 17:08:28 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Show keys from --local stage
+['_log', 'cloud_config_modules', 'cloud_final_modules', 'cloud_init_modules', 'datasource_list', 'def_log_file', 'disable_root', 'log_cfgs', 'output', 'preserve_hostname', 'syslog_fix_perms', 'users', 'vendor_data']
+--- Show keys from init stage should match
+Cloud-init v. 18.4-0ubuntu1~18.04.1 running 'init' at Fri, 19 Oct 2018 17:08:30 +0000. Up 14.00 seconds.
+ci-info: +++++++++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |                  Address                  |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |                10.195.58.45               | 255.255.255.0 | global | 00:16:3e:ec:f5:47 |
+ci-info: |  eth0  | True | fd42:4af4:4d09:6f9d:216:3eff:feec:f547/64 |       .       | global | 00:16:3e:ec:f5:47 |
+ci-info: |  eth0  | True |        fe80::216:3eff:feec:f547/64        |       .       |  link  | 00:16:3e:ec:f5:47 |
+ci-info: |   lo   | True |                 127.0.0.1                 |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |                  ::1/128                  |       .       |  host  |         .         |
+ci-info: +--------+------+-------------------------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |   Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.195.58.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   | 10.195.58.0 |   0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   | 10.195.58.1 |   0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+-------------+-----------------+-----------+-------+
+ci-info: ++++++++++++++++++++++++++++++++++Route IPv6 info+++++++++++++++++++++++++++++++++++
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+ci-info: | Route |       Destination        |          Gateway          | Interface | Flags |
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+ci-info: |   0   | fd42:4af4:4d09:6f9d::/64 |             ::            |    eth0   |   U   |
+ci-info: |   1   |        fe80::/64         |             ::            |    eth0   |   U   |
+ci-info: |   2   |           ::/0           | fe80::1048:33ff:fe5e:1bd9 |    eth0   |   UG  |
+ci-info: |   4   |          local           |             ::            |    eth0   |   U   |
+ci-info: |   5   |          local           |             ::            |    eth0   |   U   |
+ci-info: |   6   |         ff00::/8         |             ::            |    eth0   |   U   |
+ci-info: +-------+--------------------------+---------------------------+-----------+-------+
+['_log', 'cloud_config_modules', 'cloud_final_modules', 'cloud_init_modules', 'datasource_list', 'def_log_file', 'disable_root', 'log_cfgs', 'output', 'preserve_hostname', 'syslog_fix_perms', 'users', 'vendor_data']
+
+
+=== END SRU Validation abridged output ===

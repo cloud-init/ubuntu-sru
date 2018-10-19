@@ -15,8 +15,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Bug | Verification Script and Output |
 | -------- |  -------- |
 | [# 1682064](http://pad.lv/1682064) | [verification output](../bugs/lp-1682064.txt) |
+| [# 1792415](http://pad.lv/1787459) | ✔ [verification output](../bugs/lp-1787459.txt) |
 | [# 1792415](http://pad.lv/1792415) | [verification output](../bugs/lp-1792415.txt) |
-| [# 1792157](http://pad.lv/1792157) | [verification output](../bugs/lp-1792157.txt) |
+| [# 1792157](http://pad.lv/1792157) | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |
 | [# 1791781](http://pad.lv/1791781) | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | [# 1766538](http://pad.lv/1766538) | [verification output](../bugs/lp-1766538.txt) |
 | [# 1784699](http://pad.lv/1784699) | [verification output](../bugs/lp-1784699.txt) |
@@ -27,7 +28,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual gce test | [verification output](../manual/gce-sru-18.4.0.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-18.4.0.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.4.0.txt) |
-| Manual openstack test | [verification output](../manual/openstack-sru-18.4.0.txt) |
+| Manual openstack test | ✔ [verification output](../manual/openstack-sru-18.4.0.txt) |
 | Manual oracle test | ✔ [verification output](../manual/oracle-sru-18.4.0.txt) |
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-18.4.0.txt) |
 | Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-18.4.0.txt) |
