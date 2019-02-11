@@ -1,0 +1,34 @@
+http://pad.lv/1798117
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1798117
+
+=== Begin SRU Template ===
+[Impact]
+Juju deploying lxc provides invalid top-level network key when disabling cloud-init's networking in the container. 
+
+[Test Case]
+# Cloud-init should now observe the invalid top-level network config key and properly disable networking
+
+cat > lxdnonet.yaml <<EOF
+network:
+  config: disabled
+EOF
+
+for SERIES in xenial bionic cosmic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.network-config - < lxdnonet.yaml;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES egrep 'Trace|WARN|Applying net' /var/log/cloud-init.log;
+done
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
