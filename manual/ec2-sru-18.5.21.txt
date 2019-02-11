@@ -1,0 +1,51 @@
+# Manual EC2 upgrade and clean install validation Xenial and Bionic 
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF 
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF 
+
+
+for SERIES in xenial bionic; do
+echo "### BEGIN $SERIES";
+EC2_INST=`launch-ec2 --series $SERIES -u sethostname.yaml | awk '/Found/{print $5}'`;
+ssh $EC2_INST -- cloud-init status --wait --long;
+ssh $EC2_INST -- cat /run/cloud-init/result.json;
+ssh $EC2_INST -- grep Trace /var/log/cloud-init.log;
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo systemd-analyze blame;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+ssh $EC2_INST -- "sudo grep Trace /var/log/cloud-init*";
+scp setup_proposed.sh $EC2_INST:.;
+ssh $EC2_INST sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+ssh $EC2_INST sudo hostname something-else;
+ssh $EC2_INST -- sudo cloud-init init;
+ssh $EC2_INST -- "grep Trace /var/log/cloud-init*";
+ssh $EC2_INST -- sudo cloud-init clean --logs --reboot;
+ssh-keygen -f /root/.ssh/known_hosts -R ${EC2_INST/ubuntu@}; sleep 5;
+date --utc +%s.%N; ssh $EC2_INST -- cloud-init status --wait --long; date --utc +%s.%N;
+ssh $EC2_INST -- hostname;
+ssh $EC2_INST -- "grep Trace /var/log/cloud-init*";
+ssh $EC2_INST -- sudo systemd-analyze;
+ssh $EC2_INST -- sudo cloud-init analyze show;
+if [ "$SERIES" == "xenial" ]; then
+   echo "--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep.";
+else:
+   echo "--- Expect success on bionic for jinja because deb DOES have jinja dep.";
+fi
+ssh $EC2_INST "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'";
+echo "### END $SERIES";
+
+
+done
+
+
