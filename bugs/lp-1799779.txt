@@ -1,0 +1,42 @@
+http://pad.lv/1799779
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1799779
+
+=== Begin SRU Template ===
+[Impact]
+cloud-config on Bionic containing lxd directives will fall over due to
+no zfs meta package. So #cloud-config will perform no lxd configuration and
+emit a Traceback reporting warnings 'failed ot install packages ['zfs']
+
+[Test Case]
+
+cat > lxd.yaml <<EOF
+#cloud-config
+lxd:
+  init:
+    trust_password: supersecret
+EOF
+
+for SERIES in xenial bionic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.user-data - < lxd.yaml;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+   echo 'expect no zfs warnings';
+   lxc exec test-$SERIES grep -i zfs /var/log/cloud-init.log;
+   echo 'expect trust_password is set, returning true';
+   lxc exec test-$SERIES lxc get core.trust_password;
+done
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+=== End SRU Template ===
