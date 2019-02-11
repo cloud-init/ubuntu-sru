@@ -16,7 +16,7 @@ The process we follow when creating a new SRU is the following:
   1. File SRU bug like [#1813346](https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1813346)
   1. determine the content which affects ubuntu releases for the git changelog
      by comparing the public version to the proposed SRU version
-     *  git log ubuntu/18.3-9-g2e62cb8a-0ubuntu1_18.04.2…ubuntu/18.4-0ubuntu1_18.04.1 | log2dch --hackmd
+     *  cd cloud-init; git checkout origin/ubuntu/xenial; sru-hackmd
   1. Create an SRU results directory in this repository with the bugs that affect this SRU
      * sru-create.py -b 1795953 -d 02/05/2019 -v 18.5.21 --bugs 1787459 1792454 1682064 ...
   1. Write sample verification scripts in bugs/lp-<bugnum>.txt to record verification results
