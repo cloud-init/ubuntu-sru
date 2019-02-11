@@ -19,11 +19,11 @@ The process we follow when creating a new SRU is the following:
      *  cd cloud-init; git checkout origin/ubuntu/xenial; sru-hackmd
   1. Create an SRU results directory in this repository with the bugs that affect this SRU
      * sru-create.py -b 1795953 -d 02/05/2019 -v 18.5.21 --bugs 1787459 1792454 1682064 ...
-  1. Write sample verification scripts in bugs/lp-<bugnum>.txt to record verification results
-  1. Run verification tests and attach ruesults to the specific bug.txt file
+  1. Write sample verification scripts in bugs/lp-*bugnum*.txt to record verification results
+  1. Run verification tests and attach results to the specific bug.txt file
   1. Mark done ✔  on each verification item when complete
   1. Attach manual test results for top clouds to SRU process bug
-  1. change verification-needed-<series> tag to verification-done-<series> on the SRU process bug when complete
+  1. change verification-needed-*series* tag to verification-done-*series* on the SRU process bug when complete
 
 
 
