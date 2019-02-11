@@ -1,0 +1,41 @@
+http://pad.lv/1811446
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1811446
+
+=== Begin SRU Template ===
+[Impact]
+chpasswd ignored hashes starting with 2y and wouldn't configure the user.
+
+
+[Test Case]
+
+cat > lxd.yaml <<EOF
+#cloud-config
+chpasswd:
+  expire: false
+  list: 'root:$2y$10$8BQjxjVByHA/Ee.O1bCXtO8S7Y5WojbXWqnqYpUW.BrPx/Dlew1Va'
+EOF
+
+for SERIES in xenial bionic, cosmic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.user-data - < lxd.yaml;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+   echo 'expect root user password updated';
+   lxc exec test-$SERIES grep 'setting hashed password' /var/log/cloud-init.log;
+done
+
+
+[Regression Potential]
+ minimal as it only fixed a gap in setting up hashed passwords that were formerly not working/ignored. Only a regex tweak with unit tests for each accepted
+hash string type.
+ 
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=ad170db9
+
+=== End SRU Template ===
