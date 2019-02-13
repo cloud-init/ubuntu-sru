@@ -1,4 +1,4 @@
-Ubuntu SRU xenial, artful: 02/05/2019
+Ubuntu SRU xenial, bionic, cosmic: 02/05/2019
 =====
 This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on 02/05/2019
 
@@ -15,7 +15,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 | [# 1799779](http://pad.lv/1799779) | [verification output](../bugs/lp-1799779.txt) |
 | [# 1811446](http://pad.lv/1811446) | [verification output](../bugs/lp-1811446.txt) |
-| [# 1794399](http://pad.lv/1794399) | [verification output](../bugs/lp-1794399.txt) |
+| [# 1794399](http://pad.lv/1794399) | [verification output](../manual/ec2-sru-18.5.21.txt) |
 | [# 1807466](http://pad.lv/1807466) | [verification output](../bugs/lp-1807466.txt) |
 | [# 1805871](http://pad.lv/1805871) | [verification output](../bugs/lp-1805871.txt) |
 | [# 1805854](http://pad.lv/1805854) | [verification output](../bugs/lp-1805854.txt) |
