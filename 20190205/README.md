@@ -29,5 +29,5 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual azure test | [verification output](../manual/azure-sru-18.5.21.txt) |
 | Manual ec2 test | [verification output](../manual/ec2-sru-18.5.21.txt) |
 | Manual openstack test | [verification output](../manual/openstack-sru-18.5.21.txt) |
-| Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-18.5.21.txt) |
-| Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-18.5.21.txt) |
+| Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-18.5.21.txt) |
+| Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-lxd-18.5.21.txt) |
