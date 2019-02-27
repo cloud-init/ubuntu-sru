@@ -1,0 +1,54 @@
+http://pad.lv/1796917
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1796917
+
+=== Begin SRU Template ===
+[Impact]
+Booting Ubuntu Minimal image with kernel modules 'sit' and 'ipip' loaded
+create devices with "short" MAC addrs which triggered cloud-inits duplicate
+MAC detection eroniously.
+
+
+[Test Case]
+#!/bin/bash -e
+SERIES="xenial bionic cosmic"
+if [ "$1" ]; then
+     SERIES="$1"
+fi
+
+if ! lxc remote list | grep -q ubuntu-minimal-daily; then
+    lxc remote add --protocol simplestreams \
+        ubuntu-minimal-daily https://cloud-images.ubuntu.com/minimal/daily/
+fi
+for series in $SERIES; do
+    echo '=== BEGIN ' $series;
+    ref=$series-minimal-proposed;
+    lxc image delete $ref --force 2>/dev/null
+    lxc stop test-$series 2>/dev/null
+    lxc delete test-$series --force 2> /dev/null;
+    lxc-proposed-snapshot --stream=ubuntu-minimal-daily \
+                          -p -P $series $ref | egrep 'Creating|cloud-init';
+    lxc init $ref test-$series
+    lxc config set test-$series linux.kernel_modules sit,ipip
+    lxc start test-$series;
+    lxc exec test-$series -- python3 -c 'from cloudinit import net; net.get_interfaces_by_mac()'
+    [ "$?" = "0" ] || {
+        echo "error in container"; exit 1;
+    }
+done
+
+for series in $SERIES; do
+    lxc stop test-$series 2>/dev/null
+    lxc delete test-$series --force 2> /dev/null;
+done
+
+exit 0
+
+[Regression Potential]
+ Low potential, excluding additional devices which have empty MAC values
+ which were not in use directly by cloud-init.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=00e36d3d
+
+=== End SRU Template ===
