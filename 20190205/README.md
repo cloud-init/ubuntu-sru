@@ -26,6 +26,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1796917](http://pad.lv/1796917) | [verification output](../bugs/lp-1796917.txt) |
 | [# 74747](http://pad.lv/74747) | [verification output](../bugs/lp-74747.txt) |
 | [# 1797480](http://pad.lv/1797480) | [verification output](../bugs/lp-1797480.txt) |
+| [# 1805854](http://pad.lv/1805854) | [verification output](../bugs/lp-1805854.txt) |
 | Manual gce test | [verification output](../manual/gce-sru-18.5.21.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-18.5.21.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.5.21.txt) |

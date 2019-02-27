@@ -1,0 +1,63 @@
+http://pad.lv/1805854
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1805854
+
+=== Begin SRU Template ===
+[Impact]
+
+Without this change, image-specific changes are required for Ubuntu instances
+running on Amazon EC2 ARM instances to find the in-cloud mirrors.
+
+[Test Case]
+
+```
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://ports.ubuntu.com/ubuntu-ports
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+for SERIES in xenial bionic cosmic; do
+    echo "### BEGIN $SERIES"
+    EC2_INST=$(launch-ec2 --series $SERIES -i $(sstream-query --json http://cloud-images.ubuntu.com/daily release=$SERIES content_id=com.ubuntu.cloud:daily:aws region=us-east-2 arch=arm64  | jq -r '.[].id') -r us-east-2 -t a1.medium | awk '/Found/{print $5}')
+    sleep 60
+    ssh "${sshopts[@]}" $EC2_INST -- cloud-init status --wait --long
+    scp "${sshopts[@]}" setup_proposed.sh $EC2_INST:
+    ssh "${sshopts[@]}" $EC2_INST -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+
+    # Remove image configuration to ensure we're testing cloud-init behaviour
+    ssh "${sshopts[@]}" $EC2_INST -- sudo rm /etc/cloud/cloud.cfg.d/95_mirrors.cfg
+
+    # Remove sources.list to ensure we're definitely generating a new one
+    ssh "${sshopts[@]}" $EC2_INST -- sudo rm /etc/apt/sources.list
+
+    # Run `cloud-init clean` so sources.list generation will be performed and
+    # reboot
+    ssh "${sshopts[@]}" $EC2_INST -- sudo cloud-init clean --logs --reboot || true
+
+    sleep 60
+    ssh "${sshopts[@]}" $EC2_INST -- cloud-init status --wait --long
+
+    echo "NEXT NUMBER SHOULD BE 7:"
+    ssh "${sshopts[@]}" $EC2_INST -- cat /etc/apt/sources.list | grep -c "deb http://us-east-2.ec2.ports.ubuntu.com/ubuntu-ports/ $SERIES"
+
+    echo "NEXT NUMBER SHOULD BE 3:"
+    ssh "${sshopts[@]}" $EC2_INST -- cat /etc/apt/sources.list | grep -c "deb http://ports.ubuntu.com/ubuntu-ports $SERIES-security"
+    echo "### END $SERIES"
+done
+```
+
+[Regression Potential]
+
+This adds new udev rules which are scoped to device IDs for the new VM
+generation.  Any regressions to the existing rules would be caught by the
+generic Azure test.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=3b332c93
+
+=== End SRU Template ===
