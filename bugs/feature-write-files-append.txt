@@ -1,0 +1,53 @@
+=== Begin SRU Template ===
+[Impact]
+Users can now append to files rather than clobber only
+
+
+[Test Case]
+#!/bin/bash -e
+SERIES="xenial bionic cosmic"
+if [ "$1" ]; then
+     SERIES="$1"
+fi
+
+UUID=48387803-1ef4-479b-9744-02665cf4dc01
+cat > lxd.yaml <<EOF
+#cloud-config
+write_files:
+ - content: |
+     # $UUID
+   path: /etc/fstab
+   append: true
+EOF
+
+errors=""
+for series in $SERIES; do
+   echo '=== BEGIN ' $series;
+   ref=$series-proposed;
+   lxc image delete $ref 2>/dev/null
+   lxc delete test-$series --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$series;
+   lxc config set test-$series user.user-data - < lxd.yaml;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+   count=$(lxc exec test-$series -- grep -c $UUID /etc/fstab)
+   [ "$count" == "1" ] || {
+        echo "Expected count=1, found $count in $series";
+        errors="$errors $series"
+   }
+done
+for series in xenial bionic cosmic; do
+   lxc stop test-$series;
+   lxc delete test-$series --force 2> /dev/null;
+done
+
+[Regression Potential]
+ minimal as config still defaults to clobber, only newer user-data will
+ have different behavior.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=a4007d06
+
+=== End SRU Template ===
