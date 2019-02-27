@@ -1,0 +1,38 @@
+http://pad.lv/74747
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/74747
+
+=== Begin SRU Template ===
+[Impact]
+
+This aligns cloud-init's behaviour with the sources.list shipped in Ubuntu
+images.  Without this, Ubuntu instances with/without cloud-init running end up
+with inconsistent sources.lists.
+
+[Test Case]
+
+for SERIES in xenial bionic cosmic; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc launch $ref test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep ^deb-src /etc/apt/sources.list || echo "SUCCESS"
+done
+
+
+[Regression Potential]
+
+Some users may be relying on the deb-src lines being enabled by default.  In
+general, any users who are doing something that relies on deb-src lines will
+know where to look for the issue and how to go about re-enabling them.
+
+Given the number of Ubuntu instances that this will improve performance for,
+and that this is aligning cloud-init with Ubuntu's intended default behaviour,
+we believe this to be an acceptable risk.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=d3e803ad
+
+=== End SRU Template ===

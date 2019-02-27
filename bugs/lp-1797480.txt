@@ -1,0 +1,56 @@
+http://pad.lv/1797480
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1797480
+
+=== Begin SRU Template ===
+[Impact]
+
+Without this change, Ubuntu users on Azure's new generation of instance types
+(including their secure computing environment) won't have the /dev/disk/cloud/*
+devices that are available in first generation Azure VMs.
+
+[Test Case]
+
+Note that xenial images aren't supported on the new generation, so this test is
+for bionic and cosmic only.
+
+```
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# Note that the location and size are chosen specifically to ensure that we end
+# up on Gen2 VMs
+az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu -l "East US" --size Standard_DC2s
+az vm create --name=my-c1 --image=Canonical:UbuntuServer:18.10-DAILY:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu -l "East US" --size Standard_DC2s
+
+for name in my-b1 my-c1; do
+    vm_ip=`az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}'`;
+    ssh $vm_ip -- cloud-init status --wait --long
+    echo "NUMBER OF AZURE DEVICES (SHOULD BE 1 BEFORE FIX):"
+    ssh $vm_ip -- find /dev/ -name "*azure*" | wc -l
+    scp setup_proposed.sh $vm_ip:.
+    ssh $vm_ip -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh $vm_ip -- sudo reboot
+    sleep 120
+    echo "NUMBER OF AZURE RESOURCE DEVICES (SHOULD BE >= 2 AFTER FIX):"
+    ssh $vm_ip -- find /dev/ -name "*azure_resource*" | wc -l
+    echo "NUMBER OF AZURE ROOT DEVICES (SHOULD BE >= 2 AFTER FIX):"
+    ssh $vm_ip -- find /dev/ -name "*azure_root*" | wc -l
+done
+```
+
+[Regression Potential]
+
+This adds new udev rules which are scoped to device IDs for the new VM
+generation.  Any regressions to the existing rules would be caught by the
+generic Azure test.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=3b332c93
+
+=== End SRU Template ===
