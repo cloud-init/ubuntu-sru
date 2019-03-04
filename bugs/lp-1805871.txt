@@ -1,0 +1,85 @@
+http://pad.lv/1805871
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1805871
+
+=== Begin SRU Template ===
+[Impact]
+netplan renderer did not include per-subnet route metric values.
+
+
+[Test Case]
+#!/bin/bash -e
+SERIES="xenial bionic cosmic"
+if [ "$1" ]; then
+     SERIES="$1"
+fi
+
+xenial_source="/etc/network/interfaces.d/50-cloud-init.cfg"
+xenial_count=2  # post-up/post-down
+bionic_source="/etc/netplan/50-cloud-init.yaml"
+bionic_count=1
+cosmic_source=$bionic_source
+cosmic_count=1
+
+cat > lxdnetconfig.yaml <<EOF
+version: 1
+config:
+    - type: physical
+      name: eth0
+      subnets:
+          - type: dhcp
+            control: auto
+          - type: static
+            address: 192.168.14.13
+            netmask: 255.255.255.0
+            routes:
+              - type: route
+                gateway: 192.168.14.254
+                destination: 192.168.4.0/24
+                metric: 10000
+EOF
+
+errors=""
+for series in $SERIES; do
+    echo '=== BEGIN ' $series;
+    ref=$series-proposed;
+    lxc image delete $ref --force 2>/dev/null
+    lxc stop test-$series 2>/dev/null
+    lxc delete test-$series --force 2> /dev/null;
+    lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+    lxc init $ref test-$series
+    lxc config set test-$series user.network-config - < lxdnetconfig.yaml;
+    lxc start test-$series;
+    lxc exec test-$series -- cloud-init status --wait --long;
+    source="${series}_source"
+    evalue="${series}_count"
+    sfile=${!source}
+    ecount=${!evalue}
+    echo "expect 1 count of metric in $sfile"
+    count=$(lxc exec test-$series -- grep -c metric $sfile)
+    [ "$count" == "$ecount" ] || {
+		echo "Expected metric count $ecount != found $count in $series ${!source}";
+        errors="$errors $series"
+    }
+done
+
+if [ -n "${errors}" ]; then
+   echo "Errors in releases $errors"
+   exit 1
+else
+    for series in $SERIES; do
+        lxc stop test-$series 2>/dev/null
+        lxc delete test-$series --force 2> /dev/null;
+    done
+fi
+exit 0
+
+[Regression Potential]
+ minimal as existing images are missing this route metric, the fix adds the
+ value where it was gone.
+
+ 
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=6aef6c7d
+
+=== End SRU Template ===

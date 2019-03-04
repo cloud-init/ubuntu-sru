@@ -24,6 +24,8 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1805201](http://pad.lv/1805201) | [verification output](../bugs/lp-1805201.txt) |
 | [# 1798189](http://pad.lv/1798189) | [verification output](../bugs/lp-1798189.txt) |
 | [# 1796917](http://pad.lv/1796917) | [verification output](../bugs/lp-1796917.txt) |
+| [# 1805871](http://pad.lv/1805871) | [verification output](../bugs/lp-1805871.txt) |
+| [# 1796917](http://pad.lv/1796917) | [verification output](../bugs/lp-1796917.txt) |
 | [# 74747](http://pad.lv/74747) | [verification output](../bugs/lp-74747.txt) |
 | [# 1797480](http://pad.lv/1797480) | [verification output](../bugs/lp-1797480.txt) |
 | [# 1805854](http://pad.lv/1805854) | [verification output](../bugs/lp-1805854.txt) |
@@ -35,3 +37,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-18.5.21.txt) |
 | Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-lxd-18.5.21.txt) |
 | Manual VMWare test | ✔ [verification output](../manual/vmware-18.5.21.txt) |
+| Manual write-files-append test | ✔ [verification output](../bugs/feature-write-files-append.txt) |
