@@ -37,3 +37,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-18.5.21.txt) |
 | Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-lxd-18.5.21.txt) |
 | Manual VMWare test | ✔ [verification output](../manual/vmware-18.5.21.txt) |
+| Manual write-files-append test | ✔ [verification output](../bugs/feature-write-files-append.txt) |
