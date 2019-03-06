@@ -1,17 +1,9 @@
-==== GCE Xenial upgrade and fresh install test 17.1.46 -> 17.2.35 ====
-# General test flow is as follows on xenial and artful
-# part 1 Show current installed cloud-init with user-data and check performance
-#   via tracebacks and cloud-init/systemd analyze
-# part 2 upgrade cloud-init on a live system cloud-init init checking for
-#   failures
-# part 3 clean reboot and check performance (tracebacks and analyze)
-# part 4 check specific bug fix behavior:
+# Manual GCE upgrade and clean install validation Xenial, Bionic, Cosmic
 
-# Deployed via gcloud CLI with userdata
 cat > sethostname.yaml << EOF
 ## template: jinja
 #cloud-config
-ssh_import_id : [chad.smith]
+ssh_import_id : [daniel-thewatkins]
 hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
@@ -19,39 +11,63 @@ cat > setup_proposed.sh <<EOF
 #/bin/bash
 mirror=http://archive.ubuntu.com/ubuntu
 echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
-apt-get update -q;
-apt-get install -qy cloud-init;
+apt-get update -q
+apt-get install -qy cloud-init
 EOF
 
-# Xenial instance with user-data
-IMAGE_VERSION=`image-status gce xenial | grep us-central | awk '{print $2}'`;
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-# part 1 deploy with user-data
-gcloud compute instances create xenial-sru-test --zone=us-central1-b --image daily-ubuntu-1604-xenial-v$IMAGE_VERSION --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
 
-GCE_VM=`gcloud compute instances list | grep xenial-sru | awk '{printf "ubuntu@%s", $5}'`
-ssh $GCE_VM -- dpkg-query --show cloud-init;
-ssh $GCE_VM sudo cat /run/cloud-init/result.json;
-ssh $GCE_VM cloud-init status --long;
-ssh $GCE_VM grep Trace /var/log/cloud-init.log;
-ssh $GCE_VM systemd-analyze;
-ssh $GCE_VM systemd-analyze blame;
-ssh $GCE_VM cloud-init analyze show;
-ssh $GCE_VM cloud-init analyze blame;
-# part 2 upgrade cloud-init on live system
-scp setup_proposed.sh $GCE_VM:.;
-ssh $GCE_VM sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
-ssh $GCE_VM -- dpkg-query --show cloud-init;
-ssh $GCE_VM sudo cloud-init init;
-# part 3 clean boot cloud-init
-ssh $GCE_VM sudo hostname SRU-didnt-work;
-ssh $GCE_VM sudo cloud-init clean --logs --reboot;
-ssh-keygen -f /root/.ssh/known_hosts -R ${GCE_VM/ubuntu@}; sleep 5;
-ssh $GCE_VM cloud-init status --wait --long;
-ssh $GCE_VM grep Trace /var/log/cloud-init*;
-ssh $GCE_VM sudo cat /run/cloud-init/result.json;
-ssh $GCE_VM sudo sytemd-analyze blame;
-ssh $GCE_VM cloud-init analyze show;
-ssh $GCE_VM cloud-init analyze blame;
-ssh $GCE_VM -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
-# part 4 custom validation of specific fixed bug behavior for this SRU
+for release in xenial bionic cosmic; do
+  echo "### BEGIN $release"
+
+  case $release in
+      xenial) family=ubuntu-1604-lts;;
+      bionic) family=ubuntu-1804-lts;;
+      cosmic) family=ubuntu-1810;;
+      *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+  esac
+
+  gcloud compute instances create $release-sru-test --image-family $family --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml;
+  VM_IP=$(gcloud compute instances list | grep $release-sru | awk '{printf "%s", $5}')
+
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  # Capture current state
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+
+  # Upgrade to -proposed cloud-init and reboot
+  scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+  ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
+
+  sleep 10  # Wait for the instance to actually go down
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- hostname
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+  echo "Get cloud-id"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP cloud-id
+done
+
+for release in xenial bionic cosmic; do
+  gcloud compute instances delete --quiet $release-sru-test
+done
