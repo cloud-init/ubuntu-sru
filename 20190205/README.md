@@ -30,7 +30,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1797480](http://pad.lv/1797480) | [verification output](../bugs/lp-1797480.txt) |
 | [# 1805854](http://pad.lv/1805854) | [verification output](../bugs/lp-1805854.txt) |
 | [58476e71](https://git.launchpad.net/cloud-init/commit/?id=58476e71) | [verification output](../bugs/git-58476e71.txt) |
-| Manual gce test | [verification output](../manual/gce-sru-18.5.21.txt) |
+| Manual gce test | ✔ [verification output](../manual/gce-sru-18.5.21.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-18.5.21.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-18.5.21.txt) |
 | Manual openstack test | ✔ [verification output](../manual/openstack-sru-18.5.21.txt) |
