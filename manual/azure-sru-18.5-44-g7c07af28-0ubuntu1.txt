@@ -1,0 +1,51 @@
+# Manually deploy xenial and artful on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [chad.smith]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# Xenial
+az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+# Bionic
+az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+# Cosmic
+az vm create --name=my-c1 --image=Canonical:UbuntuServer:18.10-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+
+for name in my-x1 my-b1; do
+    vm_ip=`az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}'`;
+
+    echo $vm_ip;
+    ssh $vm_ip 'dpkg-query --show cloud-init';
+    ssh $vm_ip grep CODE /etc/os-release;
+    ssh $vm_ip -- cloud-init status --wait --long
+    ssh $vm_ip 'grep Traceback /var/log/cloud-init*log';
+    scp setup_proposed.sh $vm_ip:.;
+    ssh $vm_ip sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
+    ssh $vm_ip -- sudo cloud-init init;
+    ssh $vm_ip -- sudo cloud-init status --long;
+    ssh $vm_ip -- grep Trace /var/log/cloud-init*;
+    ssh $vm_ip -- cloud-init status --long;
+    ssh $vm_ip 'sudo cloud-init clean --logs --reboot';
+    ssh-keygen -f /root/.ssh/known_hosts -R ${vm_ip/ubuntu@}; sleep 5;
+    ssh $vm_ip -- cloud-init status --wait --long;
+    echo 'Verify jinja template #cloud-config rendered hostname';
+    ssh $vm_ip -- hostname;
+    ssh $vm_ip 'grep Trace /var/log/cloud-init*';
+    ssh $vm_ip -- dpkg-query --show cloud-init;
+    ssh $vm_ip -- sudo cat /run/cloud-init/instance-data.json;
+    ssh $vm_ip -- sudo systemd-analyze;
+    ssh $vm_ip -- sudo cloud-init analyze show;
+    ssh $vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+done
