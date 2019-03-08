@@ -4,12 +4,39 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1817082
 === Begin SRU Template ===
 [Impact]
 
+Users on older Ubuntu releases can't use cloud-init to configure
+encrypted_data_bag_secret in their chef configuration.
+
 [Test Case]
+
+```
+cat > lp-1817082.yaml << EOF
+#cloud-config
+chef:
+   install_type: "packages"
+   server_url: "http://chef.example.com/"
+   validation_name: "validation_name"
+   encrypted_data_bag_secret: "/etc/chef/test_location"
+EOF
+
+for SERIES in xenial bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   lxc delete test-$SERIES --force 2> /dev/null
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init'
+   lxc launch $ref test-$SERIES -c user.user-data="$(cat lp-1817082.yaml)"
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- grep "encrypted_data_bag_secret \"/etc/chef/test_location\"" /etc/chef/client.rb && echo "SUCCESS" || echo "FAILURE"
+done
+```
 
 [Regression Potential]
 
+The change is to the configuration file generated for Chef; the above test
+demonstrates that a config file is still successfully generated.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=8cfcc28d
 
 === End SRU Template ===
