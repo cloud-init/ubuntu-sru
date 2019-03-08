@@ -4,12 +4,42 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1794982
 === Begin SRU Template ===
 [Impact]
 
+Pipelining can provide a significant improvement in apt download speeds.  apt
+pipelining was disabled due to Canonical-deployed mirrors using S3, which had a
+broken server-side implementation of pipelining.  Those mirrors are no longer
+deployed, so we can change the default behaviour to no longer disable
+pipelining.
+
 [Test Case]
+
+```
+for SERIES in xenial bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc launch $ref test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES -- rm -f /etc/apt/apt.conf.d/90cloud-init-pipelining
+   lxc exec test-$SERIES -- cloud-init clean --reboot
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES -- test -e /etc/apt/apt.conf.d/90cloud-init-pipelining && echo "FAILURE" || echo "SUCCESS"
+done
+```
 
 [Regression Potential]
 
+It's possible, albeit unlikely, that there are other mirrors deployed using
+broken HTTP servers which require pipelining to be disabled.  This change will
+not be applied to already-deployed instances, so only new instances using
+images containing the new version of cloud-init might run in to issues.
+
+These users, if they exist, should detect the issue during deployment, as apt
+won't run successfully.  The workaround is to either (a) switch to well-managed
+mirrors, or (b) use cloud-config to re-disable apt pipelining.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=f2f530e5960ce8afd33e7f62a9b5d8898a6d0d79
 
 === End SRU Template ===
