@@ -4,12 +4,27 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1813667
 === Begin SRU Template ===
 [Impact]
 
+cloud-init doesn't accurately express its dependencies.
+
 [Test Case]
+
+```
+# Only affects releases with netplan; i.e. bionic and later
+for SERIES in bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   lxc delete test-$SERIES --force 2> /dev/null
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init'
+   lxc launch $ref test-$SERIES
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- apt-cache show cloud-init | grep nplan && echo FAILURE || echo SUCCESS
+   lxc exec test-$SERIES -- dpkg -s ifupdown > /dev/null && echo FAILURE || echo SUCCESS
+done
+```
 
 [Regression Potential]
 
-[Other Info]
-Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+cloud-init could end up pulling in ifupdown if the new dependency is expressed
+incorrectly, which would be caught by the above test case.
 
 === End SRU Template ===
