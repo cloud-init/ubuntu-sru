@@ -4,12 +4,35 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1795508
 === Begin SRU Template ===
 [Impact]
 
+If a user runs `cloud-init clean` in `/var/lib/cloud/instance`, they encounter
+a traceback, and the `clean` operation doesn't happen.
+
 [Test Case]
+
+```
+for SERIES in xenial bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   lxc delete test-$SERIES --force 2> /dev/null
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init'
+   lxc launch $ref test-$SERIES
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- /bin/bash -c 'cd /var/lib/cloud/instance && cloud-init clean --logs' && echo "SUCCESS" || echo "FAILURE: clean failed"
+   lxc exec test-$SERIES -- test -e /var/lib/cloud/seed && echo "SUCCESS" || echo "FAILURE: seed dir gone"
+done
+```
 
 [Regression Potential]
 
+This modifies the clean code path, which is primarily used for cloud-init
+development and/or bug triage.  The potential for impact on production uses is
+minimal.
+
+(One regression was detected before cloud-init was even uploaded to the
+development release: https://bugs.launchpad.net/bugs/1818571)
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=48955354
 
 === End SRU Template ===
