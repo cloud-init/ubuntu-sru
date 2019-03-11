@@ -4,12 +4,90 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1815051
 === Begin SRU Template ===
 [Impact]
 
+cloud-init will render invalid netplan YAML for (some) valid network
+configurations, rendering it incapable of configuring some networking setups.
+
 [Test Case]
+
+```
+cat > lp-1815051.yaml << EOF
+version: 1
+config:
+    - type: physical
+      name: eth0
+      subnets:
+          - type: dhcp
+            control: auto
+    - type: physical
+      name: eth1
+      subnets:
+          - type: dhcp
+            control: auto
+    - type: physical
+      name: eth2
+      subnets:
+          - type: dhcp
+            control: auto
+    - type: bond
+      name: bond1
+      bond_interfaces: [eth0]
+      params:
+          bond-mode: active-backup
+      subnets:
+        - type: static
+          address: 172.20.80.4/25
+    - type: bond
+      name: bond2
+      bond_interfaces: [eth1]
+      params:
+          bond-mode: active-backup
+      subnets:
+        - type: static
+          address: 172.20.90.4/25
+    - type: vlan
+      name: bond1.3502
+      vlan_id: 3502
+      vlan_link: bond1
+      subnets:
+        - type: static
+          address: 172.20.40.4/25
+    - type: vlan
+      name: bond1.3500
+      vlan_id: 3500
+      vlan_link: bond1
+      subnets:
+        - type: static
+          address: 172.20.50.4/25
+    - type: nameserver
+      address: [8.8.8.8]
+      search: [maas]
+EOF
+
+# Only affects releases with netplan; i.e. bionic and later
+for SERIES in bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   lxc delete test-$SERIES --force 2> /dev/null
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init'
+   lxc launch $ref test-$SERIES -c "user.network-config=$(cat lp-1815051.yaml)"
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- netplan --debug apply && echo SUCCESS || echo FAILURE
+done
+```
 
 [Regression Potential]
 
+This change modifies the output netplan YAML to exclude YAML anchors; netplan
+doesn't use these, so the only regression potential with the modified behaviour
+is if some other tool is parsing the netplan configuration.  This seems
+unlikely.
+
+The behaviour modifies the YAML generation path for all network configuration,
+so it's possible that this could be regressed; the above test case and the
+manual tests should combine to confirm that this regression has not occurred.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=cf308366
 
 === End SRU Template ===
