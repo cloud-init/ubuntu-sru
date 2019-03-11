@@ -1,0 +1,115 @@
+# Part 0: Set Up Cloud-Config and Scripts
+
+```
+cat > sethostname.yaml << EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+```
+
+# Part 1: Import Images in to vSphere
+
+Set PASSWORD to the vSphere admin's password before running the following
+commands.
+
+## xenial
+
+```
+wget http://cloud-images.ubuntu.com/releases/xenial/release/ubuntu-16.04-server-cloudimg-amd64.ova
+ovftool \
+    --name=cloud-init-sru-xenial-$(date +%s) \
+    --datastore=SpindleDisks1 \
+    --prop:user-data="$(base64 --wrap 0 sethostname.yaml)" \
+    --powerOn \
+    ubuntu-16.04-server-cloudimg-amd64.ova \
+    "vi://administrator@vsphere.local:${PASSWORD}@10.245.200.22/Datacenter1/host/Autopilot/"
+```
+
+## bionic
+
+```
+wget http://cloud-images.ubuntu.com/releases/bionic/release/ubuntu-18.04-server-cloudimg-amd64.ova
+ovftool \
+    --name=cloud-init-sru-bionic-$(date +%s) \
+    --datastore=SpindleDisks1 \
+    --prop:user-data="$(base64 --wrap 0 sethostname.yaml)" \
+    --powerOn \
+    ubuntu-18.04-server-cloudimg-amd64.ova \
+    "vi://administrator@vsphere.local:${PASSWORD}@10.245.200.22/Datacenter1/host/Autopilot/"
+```
+
+## cosmic
+
+```
+wget http://cloud-images.ubuntu.com/releases/cosmic/release/ubuntu-18.10-server-cloudimg-amd64.ova
+ovftool \
+    --name=cloud-init-sru-cosmic-$(date +%s) \
+    --datastore=SpindleDisks1 \
+    --prop:user-data="$(base64 --wrap 0 sethostname.yaml)" \
+    --powerOn \
+    ubuntu-18.10-server-cloudimg-amd64.ova \
+    "vi://administrator@vsphere.local:${PASSWORD}@10.245.200.22/Datacenter1/host/Autopilot/"
+```
+
+# Part 2: Get IP Address
+
+Log in to the web interface and find the VMs we created above.  Each
+one should be displaying an IP address.  Make a note of these.
+
+(If one isn't yet displayed; wait a couple of minutes.)
+
+# Part 3: Capture Data
+
+Perform the following snippets for each release.  Before doing so for each
+release, set IP in the environment to `ubuntu@<IP>` where `<IP>` is the IP
+address retrieved in Part 2.
+
+## Part 3a: Capture Current Status
+
+```
+ssh $IP cloud-init status --wait --long
+ssh $IP -- dpkg-query --show cloud-init
+ssh $IP -- sudo cat /run/cloud-init/result.json
+ssh $IP -- grep Trace /var/log/cloud-init.log
+ssh $IP -- systemd-analyze
+ssh $IP -- systemd-analyze blame
+ssh $IP -- cloud-init analyze show
+ssh $IP -- cloud-init analyze blame
+```
+
+## Part 3b: Upgrade to -proposed cloud-init and Reboot
+
+```
+scp setup_proposed.sh $IP:.
+ssh $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+ssh $IP -- dpkg-query --show cloud-init
+ssh $IP sudo hostname SRU-didnt-work
+ssh $IP sudo cloud-init clean --logs --reboot
+
+ssh-keygen -f $HOME/.ssh/known_hosts -R ${IP/ubuntu@}
+sleep 60
+```
+
+## Part 3c: Capture New Status
+
+```
+ssh $IP cloud-init status --wait --long
+ssh $IP grep Trace /var/log/cloud-init\*
+ssh $IP sudo cat /run/cloud-init/result.json
+ssh $IP sudo systemd-analyze blame
+ssh $IP cloud-init analyze show
+ssh $IP cloud-init analyze blame
+ssh $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+echo 'Get cloud-id'
+ssh $IP -- cloud-id
+```
