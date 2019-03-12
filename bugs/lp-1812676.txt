@@ -4,12 +4,42 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1812676
 === Begin SRU Template ===
 [Impact]
 
+Using cloud-init-per with a dashed name will result in the specified command
+being run more often than expected.
+
 [Test Case]
+
+```
+cat > lp-1812676.yaml << EOF
+#cloud-config
+bootcmd:
+- cloud-init-per instance mycmd-bootcmd touch /root/lp-1812676
+EOF
+
+for SERIES in xenial bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   lxc delete test-$SERIES --force 2> /dev/null
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init'
+   lxc launch $ref test-$SERIES -c user.user-data="$(cat lp-1812676.yaml)"
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- rm /root/lp-1812676 || echo "FAILURE: file didn't exist on first boot"
+   lxc exec test-$SERIES -- reboot
+   lxc exec test-$SERIES -- cloud-init status --wait --long
+   lxc exec test-$SERIES -- test -e /root/lp-1812676 && echo "FAILURE" || echo "SUCCESS"
+   lxc exec test-$SERIES -- cloud-init-per instance mycmd-bootcmd touch /root/lp-1812676
+   lxc exec test-$SERIES -- test -e /root/lp-1812676 && echo "FAILURE" || echo "SUCCESS"
+done
+```
 
 [Regression Potential]
 
+It's possible that people may be unknowingly relying on the broken behaviour,
+and commands that are currently running (incorrectly) will stop running; this
+can easily be fixed by modifying their invocation of cloud-init-per.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=9cf9d8cdd3a8fd7d4d425f7051122d0ac8af2bbd
 
 === End SRU Template ===
