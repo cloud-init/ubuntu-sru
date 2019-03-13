@@ -1,0 +1,73 @@
+=== Begin SRU Template ===
+[Impact]
+
+Without this fix, additional public keys intended for use by Azure's services
+only will be incorrectly added to user's authorized_keys.  Whilst the private
+keys are only available within Azure's infrastructure, this is nonetheless a
+potential security issue.
+
+[Test Case]
+
+```
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# Note --assign-identity is necessary for this test
+az vm create --name=my-x1-34f54360 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-b1-34f54360 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-c1-34f54360 --image=Canonical:UbuntuServer:18.10-DAILY:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-d1-34f54360 --image=Canonical:UbuntuServer:19.04-DAILY:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+
+for name in my-x1-34f54360 my-b1-34f54360 my-c1-34f54360 my-d1-34f54360; do
+   echo '=== BEGIN ' $name
+    vm_ip=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+    ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+
+    # Undo image workaround to confirm we've configured the instance correctly
+    # to reproduce
+    case $name in
+        my-d1-34f54360)
+            # The disco image doesn't contain the workaround
+            ;;
+        *)
+            ssh "${sshopts[@]}" "$vm_ip" -- sudo rm /etc/cloud/cloud.cfg.d/90-azure.cfg
+            ssh "${sshopts[@]}" "$vm_ip" -- sudo cloud-init clean --reboot
+            sleep 60
+            ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+            ;;
+    esac
+    echo "WE SHOULD HAVE 2 KEYS:"
+    ssh "${sshopts[@]}" "$vm_ip" -- wc -l /home/ubuntu/.ssh/authorized_keys
+
+    # Install cloud-init from -proposed
+    scp "${sshopts[@]}" setup_proposed.sh "$vm_ip":
+    ssh "${sshopts[@]}" "$vm_ip" -- sudo bash ./setup_proposed.sh 2>&1 | grep 'cloud-init'
+
+    # We do this in one SSH call, because we're deleting our authorized_keys so
+    # won't be able to access the instance until cloud-init runs again
+    ssh "${sshopts[@]}" "$vm_ip" -- bash -c "\"rm /home/ubuntu/.ssh/authorized_keys; sudo cloud-init clean --reboot"\"
+    sleep 60
+    ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+    echo "WE SHOULD HAVE 1 KEY:"
+    ssh "${sshopts[@]}" "$vm_ip" -- wc -l /home/ubuntu/.ssh/authorized_keys | grep "^1 " && echo SUCCESS || echo FAILURE
+done
+```
+
+[Regression Potential]
+
+This change modifies SSH key determination on Azure only, so regression is
+limited to those cases.  The above test case and the manual run should cover
+this.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=34f54360
+
+=== End SRU Template ===
