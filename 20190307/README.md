@@ -27,7 +27,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1817082](http://pad.lv/1817082) | [verification output](../bugs/lp-1817082.txt) |
 | [# 1812676](http://pad.lv/1812676) | ✔ [verification output](../bugs/lp-1812676.txt) |
 | [# 1802073](http://pad.lv/1802073) | [verification output](../bugs/lp-1802073.txt) |
-| [# 1815051](http://pad.lv/1815051) | [verification output](../bugs/lp-1815051.txt) |
+| [# 1815051](http://pad.lv/1815051) | ✔ [verification output](../bugs/lp-1815051.txt) |
 | [# 1795508](http://pad.lv/1795508) | ✔ [verification output](../bugs/lp-1795508.txt) |
 | [# 1813667](http://pad.lv/1813667) | ✔ [verification output](../bugs/lp-1813667.txt) |
 | [34f54360](https://git.launchpad.net/cloud-init/commit/?id=34f54360) | ✔ [verification output](../bugs/git-34f54360.txt) |
