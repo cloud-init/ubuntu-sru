@@ -1,0 +1,236 @@
+=== Begin SRU Template ===
+[Impact]
+
+Without this fix, additional public keys intended for use by Azure's services
+only will be incorrectly added to user's authorized_keys.  Whilst the private
+keys are only available within Azure's infrastructure, this is nonetheless a
+potential security issue.
+
+[Test Case]
+
+```
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# Note --assign-identity is necessary for this test
+az vm create --name=my-x1-34f54360 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-b1-34f54360 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-c1-34f54360 --image=Canonical:UbuntuServer:18.10-DAILY:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+az vm create --name=my-d1-34f54360 --image=Canonical:UbuntuServer:19.04-DAILY:latest --admin-username=root -g xx16resourcegroup --admin-username=ubuntu --assign-identity
+
+for name in my-x1-34f54360 my-b1-34f54360 my-c1-34f54360 my-d1-34f54360; do
+   echo '=== BEGIN ' $name
+    vm_ip=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+    ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+
+    # Undo image workaround to confirm we've configured the instance correctly
+    # to reproduce
+    case $name in
+        my-d1-34f54360)
+            # The disco image doesn't contain the workaround
+            ;;
+        *)
+            ssh "${sshopts[@]}" "$vm_ip" -- sudo rm /etc/cloud/cloud.cfg.d/90-azure.cfg
+            ssh "${sshopts[@]}" "$vm_ip" -- sudo cloud-init clean --reboot
+            sleep 60
+            ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+            ;;
+    esac
+    echo "WE SHOULD HAVE 2 KEYS:"
+    ssh "${sshopts[@]}" "$vm_ip" -- wc -l /home/ubuntu/.ssh/authorized_keys
+
+    # Install cloud-init from -proposed
+    scp "${sshopts[@]}" setup_proposed.sh "$vm_ip":
+    ssh "${sshopts[@]}" "$vm_ip" -- sudo bash ./setup_proposed.sh 2>&1 | grep 'cloud-init'
+
+    # We do this in one SSH call, because we're deleting our authorized_keys so
+    # won't be able to access the instance until cloud-init runs again
+    ssh "${sshopts[@]}" "$vm_ip" -- bash -c "\"rm /home/ubuntu/.ssh/authorized_keys; sudo cloud-init clean --reboot"\"
+    sleep 60
+    ssh "${sshopts[@]}" "$vm_ip" -- cloud-init status --wait --long
+    echo "WE SHOULD HAVE 1 KEY:"
+    ssh "${sshopts[@]}" "$vm_ip" -- wc -l /home/ubuntu/.ssh/authorized_keys | grep "^1 " && echo SUCCESS || echo FAILURE
+done
+```
+
+[Regression Potential]
+
+This change modifies SSH key determination on Azure only, so regression is
+limited to those cases.  The above test case and the manual run should cover
+this.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=34f54360
+
+=== End SRU Template ===
+
+=== Verification Output ===
+
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/my-x1-34f54360",
+  "identity": {
+    "systemAssignedIdentity": "d706753e-bcb3-437c-9f29-0d7e60977854",
+    "userAssignedIdentities": {}
+  },
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-BA-4B-78",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.16",
+  "publicIpAddress": "13.69.142.209",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/my-b1-34f54360",
+  "identity": {
+    "systemAssignedIdentity": "9b053927-6286-41d8-b9a2-92083069706e",
+    "userAssignedIdentities": {}
+  },
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-B1-65-82",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.17",
+  "publicIpAddress": "40.127.128.25",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/my-c1-34f54360",
+  "identity": {
+    "systemAssignedIdentity": "6213d85e-3b67-4fca-822b-8eb458c357ca",
+    "userAssignedIdentities": {}
+  },
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-BA-D7-10",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.18",
+  "publicIpAddress": "40.127.141.93",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/my-d1-34f54360",
+  "identity": {
+    "systemAssignedIdentity": "33659e3a-63d1-4327-ac0f-136304d104a6",
+    "userAssignedIdentities": {}
+  },
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-B3-3E-78",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.14",
+  "publicIpAddress": "40.127.100.222",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+=== BEGIN xenial
+
+status: done
+time: Tue, 12 Mar 2019 22:01:03 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+
+status: done
+time: Tue, 12 Mar 2019 22:15:34 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 2 KEYS:
+1 /home/ubuntu/.ssh/authorized_keys
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 18.5-45-g3554ffe8-0ubuntu1~16.04.1 [394 kB]
+Preparing to unpack .../cloud-init_18.5-45-g3554ffe8-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (18.5-45-g3554ffe8-0ubuntu1~16.04.1) over (18.5-21-g8ee294d5-0ubuntu1~16.04.1) ...
+Setting up cloud-init (18.5-45-g3554ffe8-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+
+status: done
+time: Tue, 12 Mar 2019 22:17:16 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 1 KEY:
+1 /home/ubuntu/.ssh/authorized_keys
+SUCCESS
+=== BEGIN bionic
+
+status: done
+time: Tue, 12 Mar 2019 22:02:50 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+
+status: done
+time: Tue, 12 Mar 2019 22:18:29 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 2 KEYS:
+2 /home/ubuntu/.ssh/authorized_keys
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 18.5-45-g3554ffe8-0ubuntu1~18.04.1 [390 kB]
+Preparing to unpack .../cloud-init_18.5-45-g3554ffe8-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (18.5-45-g3554ffe8-0ubuntu1~18.04.1) over (18.5-21-g8ee294d5-0ubuntu1~18.04.1) ...
+Setting up cloud-init (18.5-45-g3554ffe8-0ubuntu1~18.04.1) ...
+
+status: done
+time: Tue, 12 Mar 2019 22:20:08 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 1 KEY:
+1 /home/ubuntu/.ssh/authorized_keys
+SUCCESS
+=== BEGIN cosmic
+
+status: done
+time: Tue, 12 Mar 2019 22:12:41 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+
+status: done
+time: Tue, 12 Mar 2019 22:21:21 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 2 KEYS:
+2 /home/ubuntu/.ssh/authorized_keys
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu cosmic-proposed/main amd64 cloud-init all 18.5-45-g3554ffe8-0ubuntu1~18.10.1 [386 kB]
+Preparing to unpack .../cloud-init_18.5-45-g3554ffe8-0ubuntu1~18.10.1_all.deb ...
+Unpacking cloud-init (18.5-45-g3554ffe8-0ubuntu1~18.10.1) over (18.5-21-g8ee294d5-0ubuntu1~18.10.1) ...
+Setting up cloud-init (18.5-45-g3554ffe8-0ubuntu1~18.10.1) ...
+......
+status: done
+time: Tue, 12 Mar 2019 22:23:08 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 1 KEY:
+1 /home/ubuntu/.ssh/authorized_keys
+SUCCESS
+=== BEGIN disco
+
+status: done
+time: Tue, 12 Mar 2019 22:15:14 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+WE SHOULD HAVE 2 KEYS:
+2 /home/ubuntu/.ssh/authorized_keys
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 18.5-45-g3554ffe8-0ubuntu1 [386 kB]
+Preparing to unpack .../cloud-init_18.5-45-g3554ffe8-0ubuntu1_all.deb ...
+Unpacking cloud-init (18.5-45-g3554ffe8-0ubuntu1) over (18.5-21-g8ee294d5-0ubuntu1) ...
+Setting up cloud-init (18.5-45-g3554ffe8-0ubuntu1) ...
+....
+status: done
+time: Tue, 12 Mar 2019 22:24:53 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+WE SHOULD HAVE 1 KEY:
+1 /home/ubuntu/.ssh/authorized_keys
+SUCCESS

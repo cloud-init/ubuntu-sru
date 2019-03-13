@@ -1,4 +1,4 @@
-Ubuntu SRU xenial, artful: %SRU_START_DATE%
+Ubuntu SRU xenial, bionic, cosmic, disco (post-freeze): %SRU_START_DATE%
 =====
 This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on %SRU_START_DATE%
 
