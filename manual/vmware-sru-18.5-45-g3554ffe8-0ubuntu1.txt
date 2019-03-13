@@ -1,22 +1,3 @@
-# Part 0: Set Up Cloud-Config and Scripts
-
-```
-cat > sethostname.yaml << EOF
-## template: jinja
-#cloud-config
-ssh_import_id : [daniel-thewatkins]
-hostname: SRU-worked-{{v1.cloud_name}}
-EOF
-
-cat > setup_proposed.sh <<EOF
-#/bin/bash
-mirror=http://archive.ubuntu.com/ubuntu
-echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
-apt-get update -q;
-apt-get install -qy cloud-init;
-EOF
-```
-
 # Part 1: Import Images in to vSphere
 
 Set PASSWORD to the vSphere admin's password before running the following
@@ -70,38 +51,63 @@ one should be displaying an IP address.  Make a note of these.
 
 # Part 3: Capture Data
 
-Perform the following snippets for each release.  Before doing so for each
-release, set IP in the environment to `ubuntu@<IP>` where `<IP>` is the IP
-address retrieved in Part 2.
-
-## Part 3a: Capture Current Status
+In the below script, update the case statement with the IP addresses you found
+in Part 2 before you run it.
 
 ```
-ssh $IP cloud-init status --wait --long
-ssh $IP -- dpkg-query --show cloud-init
-ssh $IP -- sudo cat /run/cloud-init/result.json
-ssh $IP -- grep Trace /var/log/cloud-init.log
-ssh $IP -- systemd-analyze
-ssh $IP -- systemd-analyze blame
-ssh $IP -- cloud-init analyze show
-ssh $IP -- cloud-init analyze blame
-```
+cat > sethostname.yaml << EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
 
-## Part 3b: Upgrade to -proposed cloud-init and Reboot
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
 
-```
-scp setup_proposed.sh $IP:.
-ssh $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
-ssh $IP -- dpkg-query --show cloud-init
-ssh $IP sudo hostname SRU-didnt-work
-ssh $IP sudo cloud-init clean --logs --reboot
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-ssh-keygen -f $HOME/.ssh/known_hosts -R ${IP/ubuntu@}
-sleep 60
-```
+for SERIES in xenial bionic cosmic; do
+    echo '=== BEGIN ' $SERIES
+    case $SERIES in
+        xenial) IP="ubuntu@10.245.201.135" ;;
+        bionic) IP="ubuntu@10.245.201.136" ;;
+        cosmic) IP="ubuntu@10.245.201.137" ;;
+    esac
 
-## Part 3c: Capture New Status
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
+    ssh "${sshopts[@]}" $IP -- systemd-analyze
+    ssh "${sshopts[@]}" $IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
 
+    scp "${sshopts[@]}" setup_proposed.sh $IP:.
+    ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
+
+    ssh-keygen -f $HOME/.ssh/known_hosts -R ${IP/ubuntu@}
+    sleep 60
+
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+    echo 'Get cloud-id'
+    ssh "${sshopts[@]}" $IP -- cloud-id
+done
 ```
 ssh $IP cloud-init status --wait --long
 ssh $IP grep Trace /var/log/cloud-init\*
