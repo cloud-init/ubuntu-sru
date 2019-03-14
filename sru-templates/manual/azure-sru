@@ -12,8 +12,8 @@ cat > setup_proposed.sh <<EOF
 #/bin/bash
 mirror=http://archive.ubuntu.com/ubuntu
 echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
-apt-get update -q;
-apt-get install -qy cloud-init;
+apt-get update -q
+apt-get install -qy cloud-init
 EOF
 
 # Xenial
@@ -21,31 +21,38 @@ az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest 
 # Bionic
 az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
 # Cosmic
-az vm create --name=my-c1 --image=Canonical:UbuntuServer:18.10-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+az vm create --name=my-c1 --image=Canonical:UbuntuServer:18.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
 for name in my-x1 my-b1; do
-    vm_ip=`az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}'`;
+    IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
-    echo $vm_ip;
-    ssh $vm_ip 'dpkg-query --show cloud-init';
-    ssh $vm_ip grep CODE /etc/os-release;
-    ssh $vm_ip -- cloud-init status --wait --long
-    ssh $vm_ip 'grep Traceback /var/log/cloud-init*log';
-    scp setup_proposed.sh $vm_ip:.;
-    ssh $vm_ip sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init';
-    ssh $vm_ip -- sudo cloud-init init;
-    ssh $vm_ip -- sudo cloud-init status --long;
-    ssh $vm_ip -- grep Trace /var/log/cloud-init*;
-    ssh $vm_ip -- cloud-init status --long;
-    ssh $vm_ip 'sudo cloud-init clean --logs --reboot';
-    ssh-keygen -f /root/.ssh/known_hosts -R ${vm_ip/ubuntu@}; sleep 5;
-    ssh $vm_ip -- cloud-init status --wait --long;
-    echo 'Verify jinja template #cloud-config rendered hostname';
-    ssh $vm_ip -- hostname;
-    ssh $vm_ip 'grep Trace /var/log/cloud-init*';
-    ssh $vm_ip -- dpkg-query --show cloud-init;
-    ssh $vm_ip -- sudo cat /run/cloud-init/instance-data.json;
-    ssh $vm_ip -- sudo systemd-analyze;
-    ssh $vm_ip -- sudo cloud-init analyze show;
-    ssh $vm_ip -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
+    ssh "${sshopts[@]}" $IP -- systemd-analyze
+    ssh "${sshopts[@]}" $IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+
+    scp "${sshopts[@]}" setup_proposed.sh $IP:.
+    ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
+
+    sleep 60
+
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+    echo 'Get cloud-id'
+    ssh "${sshopts[@]}" $IP -- cloud-id
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
 done
