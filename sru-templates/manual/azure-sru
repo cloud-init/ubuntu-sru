@@ -1,6 +1,10 @@
 # Manually deploy on Azure using Azure CLI client.
 # Validate upgrade to proposed version of cloud-init
 # Check Tracebacks or error conditions on clean boot
+ 
+# To be adapted to the SRU to test
+sru_series="%SRU_SERIES%"
+
 cat > sethostname.yaml <<EOF
 ## template: jinja
 #cloud-config
@@ -16,16 +20,22 @@ apt-get update -q
 apt-get install -qy cloud-init
 EOF
 
-# Xenial
-az vm create --name=my-x1 --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
-# Bionic
-az vm create --name=my-b1 --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
-# Cosmic
-az vm create --name=my-c1 --image=Canonical:UbuntuServer:18.10-DAILY:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+
+
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-for name in my-x1 my-b1; do
+for RELEASE in $sru_series; do
+    echo "### BEGIN $RELEASE"
+    case $RELEASE in
+        xenial) image_version=16.04-DAILY-LTS;;
+        bionic) image_version=18.04-DAILY-LTS;;
+        cosmic) image_version=18.10-DAILY;;
+        disco) image_version=19.04-DAILY;;
+        *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+    esac
+    name=test-sru-$series
+    az vm create --name=$name --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
     IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
     ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
@@ -55,4 +65,5 @@ for name in my-x1 my-b1; do
     echo 'Get cloud-id'
     ssh "${sshopts[@]}" $IP -- cloud-id
     ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+    echo "### END $RELEASE"
 done

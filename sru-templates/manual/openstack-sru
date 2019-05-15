@@ -1,5 +1,7 @@
 # Manual OpenStack upgrade and clean install validation Xenial, Bionic, Cosmic
 
+sru_series="%SRU_SERIES%"
+
 cat > sethostname.yaml << EOF
 ## template: jinja
 #cloud-config
@@ -20,16 +22,16 @@ openstack image list --property architecture=x86_64 -f json > images.json
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-for release in xenial bionic cosmic; do
-  echo "### BEGIN $release"
+for RELEASE in $sru_series; do
+  echo "### BEGIN $RELEASE"
 
   VM_IP=`openstack floating ip create ext_net -f json | jq '.floating_ip_address' -r`
 
   # Determine image, launch instance and attach IP address
-  image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$release'"))) | .ID' | tail -n 1)
-  openstack server create --flavor m1.small --image $image --key-name canonical --nic net-id=$ADMIN_NET_ID --user-data sethostname.yaml test-$release --wait
+  image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$RELEASE'"))) | .ID' | tail -n 1)
+  openstack server create --flavor m1.small --image $image --key-name canonical --nic net-id=$ADMIN_NET_ID --user-data sethostname.yaml test-$RELEASE --wait
   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
-  openstack server add floating ip test-$release $VM_IP
+  openstack server add floating ip test-$RELEASE $VM_IP
 
   sleep 10  # Wait for the instance to actually go down
   while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
@@ -69,7 +71,7 @@ for release in xenial bionic cosmic; do
   ssh "${sshopts[@]}" ubuntu@$VM_IP cloud-id
 done
 
-for release in xenial bionic cosmic; do
-  openstack server delete test-$release
+for RELEASE in $sru_series; do
+  openstack server delete test-$RELEASE
 done
 

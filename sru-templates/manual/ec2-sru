@@ -2,8 +2,7 @@
 
 set -e
 
-# To be adapted to the SRU to test
-sru_series="xenial bionic cosmic"
+sru_series="%SRU_SERIES%"
 
 # Manual EC2 upgrade and clean install validation
 cat > sethostname.yaml <<EOF
@@ -27,9 +26,9 @@ set -x
 
 sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
-for SERIES in $sru_series; do
-    echo "### BEGIN $SERIES"
-    EC2_INST=`launch-ec2 --series $SERIES -u sethostname.yaml | awk '/Found/{print $5}'`
+for RELEASE in $sru_series; do
+    echo "### BEGIN $RELEASE"
+    EC2_INST=`launch-ec2 --series $RELEASE -u sethostname.yaml | awk '/Found/{print $5}'`
     sleep 60
     ssh $sshopts $EC2_INST -- cloud-init status --wait --long
     ssh $sshopts $EC2_INST -- cat /run/cloud-init/result.json
@@ -51,7 +50,7 @@ for SERIES in $sru_series; do
     ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init*"
     ssh $sshopts $EC2_INST -- sudo systemd-analyze
     ssh $sshopts $EC2_INST -- sudo cloud-init analyze show
-    if [ "$SERIES" = "xenial" ]; then
+    if [ "$RELEASE" = "xenial" ]; then
        echo "--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep."
     else
        echo "--- Expect success on bionic for jinja because deb DOES have jinja dep."
@@ -63,5 +62,5 @@ for SERIES in $sru_series; do
     
     echo 'Get cloud-id'
     ssh $sshopts $EC2_INST cloud-id
-    echo "### END $SERIES"
+    echo "### END $RELEASE"
 done
