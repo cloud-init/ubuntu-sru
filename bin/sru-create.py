@@ -8,7 +8,7 @@ import sys
 
 BUG_VERIFY_TMPL = "| [# {bugid}](http://pad.lv/{bugid}) | [verification output](../bugs/lp-{bugid}.txt) |"
 MANUAL_VERIFY_TMPL = "| {title} | [verification output](../manual/{versioned_file}) |"
-
+DEFAULT_SRU_SERIES='xenial,bionic,cosmic,disco'
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -22,13 +22,18 @@ def get_parser():
         "-v", "--sru-version", type=str, required=True, dest='sruVersion',
         help="The major.minor.rev of cloud-init to SRU")
     parser.add_argument(
+        '-s', '--series', default=DEFAULT_SRU_SERIES, type=str, 
+        dest='sruSeries',
+        help=('Comma delimited list of ubuntu series for SRU. Default %s' %
+              DEFAULT_SRU_SERIES))
+    parser.add_argument(
         '--bugs', default=[],  type=int, nargs='*',
-        help=('Space separated list of bug-ids fixed by the SRU.'
+        help=('Comma-delimited list of bug-ids fixed by the SRU.'
               ' E.g. --bugs 123 124'))
     return parser
 
 
-def create_sru_docs(sruDate, sruVersion, sruBug, bugs):
+def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries):
     (month, day, year) = sruDate.split('/')
     root_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)))
     sruDir = os.path.join(
@@ -57,6 +62,7 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs):
     readme = readme.replace('%BUG_VERIFICATION%', '\n'.join(bug_lines))
 
     manual_lines = []  # Manual verification doc lines
+    sruSeries = sruSeries.replace(',', ' ')
     for manual_tmpl in glob.glob(os.path.join(tmpl_dir, 'manual/*')):
        tmpl_basename = os.path.basename(manual_tmpl)
        platform = tmpl_basename.replace('-sru', '')
@@ -68,9 +74,11 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs):
        manual_lines.append(
            MANUAL_VERIFY_TMPL.format(title=title,
                                      versioned_file=versioned_file))
-       shutil.copy(
-           manual_tmpl,
-           os.path.join(os.path.join(root_dir, 'manual', versioned_file)))
+       with open(manual_tmpl, 'rt') as fin:
+           manual_out = os.path.join(root_dir, 'manual', versioned_file)
+           with open(manual_out, 'wt') as fout:
+               for line in fin:
+                   fout.write(line.replace('%SRU_SERIES%', sruSeries))
 
     readme = readme.replace('%MANUAL_VERIFICATION%', '\n'.join(manual_lines))
     with open(os.path.join(sruDir, 'README.md'), 'w') as stream:
@@ -85,7 +93,8 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs):
 def main():
     parser = get_parser()
     args = parser.parse_args()
-    create_sru_docs(args.sruDate, args.sruVersion, args.sruBug, args.bugs)
+    create_sru_docs(
+        args.sruDate, args.sruVersion, args.sruBug, args.bugs, args.sruSeries)
     return 0
 
 if __name__ == '__main__':
