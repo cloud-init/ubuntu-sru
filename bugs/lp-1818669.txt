@@ -1,0 +1,150 @@
+http://pad.lv/1818669
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1818669
+
+=== Begin SRU Template ===
+[Impact]
+IPV6 configuration not rendered properly
+
+[Test Case]
+Validate net conversion for eni works for IPV6.
+
+sru_series='xenial bionic cosmic disco'
+
+cat > ipv6-net.yaml <<EOF
+network:
+  config:
+    - mac_address: aa:12:bc:34:ee:ac
+      name: eno3
+      subnets:
+      - address: fd00::12/64
+        dns_nameservers: ['fd00:2::15']
+        gateway: fd00::1
+        ipv6: true
+        routes:
+        - netmask: '32'
+          network: 'fd00:12::'
+          gateway: fd00::2
+        type: static
+      type: physical
+  version: 1
+EOF
+
+for series in $sru_series; do
+   echo '=== BEGIN ' $series;
+   lxc delete test-$series --force 2> /dev/null;
+   ref=$series-proposed;
+   lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$series;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+   lxc file push ipv6-net.yaml test-$series/;
+   lxc exec test-$series -- cloud-init devel net-convert --output-kind=eni --directory /out.d --network-data=/ipv6-net.yaml --kind=yaml -D ubuntu;
+   lxc exec test-$series -- grep route  /out.d/etc/network/interfaces.d/50-cloud-init.cfg;
+   echo '=== END ' $series;
+done
+
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=22e33293
+
+
+
+=== End SRU Template ===
+
+=== Begin Verification output ===
+for series in $sru_series; do
+>    echo '=== BEGIN ' $series;
+>    lxc delete test-$series --force 2> /dev/null;
+>    ref=$series-proposed;
+>    lxc-proposed-snapshot -p -P $series $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$series;
+>    lxc start test-$series;
+>    lxc exec test-$series -- cloud-init status --wait --long;
+>    lxc file push ipv6-net.yaml test-$series/;
+>    lxc exec test-$series -- cloud-init devel net-convert --output-kind=eni --directory /out.d --network-data=/ipv6-net.yaml --kind=yaml -D ubuntu;
+>    lxc exec test-$series -- grep route  /out.d/etc/network/interfaces.d/50-cloud-init.cfg;
+>    echo '=== END ' $series;
+> done
+=== BEGIN  xenial
+Creating xenial-proposed-212014742
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~16.04.1 [397 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~16.04.1) over (18.5-45-g3554ffe8-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+..............................................
+status: done
+time: Fri, 17 May 2019 21:12:10 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+                                                                                Read input format 'yaml' from '/ipv6-net.yaml'.
+Wrote output format 'eni' to '/out.d/'
+    post-up route add -A inet6 fd00:12::/32 gw fd00::2 || true
+    pre-down route del -A inet6 fd00:12::/32 gw fd00::2 || true
+
+=== END  xenial
+=== BEGIN  bionic
+Creating bionic-proposed-2886720871
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~18.04.1 [393 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~18.04.1) over (18.5-45-g3554ffe8-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Creating test-bionic
+.....................................
+status: done
+time: Fri, 17 May 2019 21:13:35 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+                                                                                Read input format 'yaml' from '/ipv6-net.yaml'.
+Wrote output format 'eni' to '/out.d/'
+    post-up route add -A inet6 fd00:12::/32 gw fd00::2 || true
+    pre-down route del -A inet6 fd00:12::/32 gw fd00::2 || true
+
+=== END  bionic
+=== BEGIN  cosmic
+Creating cosmic-proposed-190364598
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu cosmic-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~18.10.1 [389 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~18.10.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~18.10.1) over (18.5-45-g3554ffe8-0ubuntu1~18.10.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~18.10.1) ...
+Creating test-cosmic
+...................................................................................
+status: done
+time: Fri, 17 May 2019 21:15:58 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+                                                                                Read input format 'yaml' from '/ipv6-net.yaml'.
+Wrote output format 'eni' to '/out.d/'
+    post-up route add -A inet6 fd00:12::/32 gw fd00::2 || true
+    pre-down route del -A inet6 fd00:12::/32 gw fd00::2 || true
+
+=== END  cosmic
+=== BEGIN  disco
+Creating disco-proposed-22305525
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~19.04.1 [389 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~19.04.1) over (18.5-62-g6322c2dd-0ubuntu1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Creating test-disco
+.....................................................................................
+status: done
+time: Fri, 17 May 2019 21:18:27 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+                                                                                Read input format 'yaml' from '/ipv6-net.yaml'.
+Wrote output format 'eni' to '/out.d/'
+    post-up route add -A inet6 fd00:12::/32 gw fd00::2 || true
+    pre-down route del -A inet6 fd00:12::/32 gw fd00::2 || true
+
+=== END  disco
+
+
+=== End Verification output ===
