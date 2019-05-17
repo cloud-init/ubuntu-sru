@@ -2,7 +2,7 @@
 
 set -e
 
-sru_series="%SRU_SERIES%"
+SRU_SERIES="%SRU_SERIES%"
 
 # Manual EC2 upgrade and clean install validation
 cat > sethostname.yaml <<EOF
@@ -26,7 +26,7 @@ set -x
 
 sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
-for RELEASE in $sru_series; do
+for RELEASE in $SRU_SERIES; do
     echo "### BEGIN $RELEASE"
     EC2_INST=`launch-ec2 --series $RELEASE -u sethostname.yaml | awk '/Found/{print $5}'`
     sleep 60
@@ -59,8 +59,14 @@ for RELEASE in $sru_series; do
     
     echo 'Per LP:1794399 expect we do not see a lot of killing dhclient logs'
     ssh $sshopts $EC2_INST "grep dhclient /var/log/cloud-init.log"
-    
+
     echo 'Get cloud-id'
     ssh $sshopts $EC2_INST cloud-id
+
+    echo 'Validating whether metadata is being updated per boot LP:1819913'
+    ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh $sshopts $EC2_INST sudo reboot || true
+    echo 'After reboot'
+    ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
     echo "### END $RELEASE"
 done

@@ -4,7 +4,7 @@ Set PASSWORD to the vSphere admin's password before running the following
 commands.
 
 # To be adapted to the SRU to test
-sru_series="%SRU_SERIES%"
+SRU_SERIES="%SRU_SERIES%"
 
 ## xenial
 
@@ -75,7 +75,7 @@ EOF
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-for RELEASE in sru_series; do
+for RELEASE in $SRU_SERIES; do
     echo '=== BEGIN ' $RELEASE
     case $RELEASE in
         xenial) IP="ubuntu@FIXME" ;;
@@ -110,5 +110,10 @@ for RELEASE in sru_series; do
     ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
     echo 'Get cloud-id'
     ssh "${sshopts[@]}" $IP -- cloud-id
+    echo 'Validating whether metadata is being updated per boot LP:1819913'
+    ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh "${sshopts[@]}" $IP -- sudo reboot || true
+    echo 'After reboot'
+    ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
 done
 ```
