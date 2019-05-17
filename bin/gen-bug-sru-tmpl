@@ -2,6 +2,8 @@
 
 pkg="cloud-init"
 bug=$1
+sru_series='xenial bionic cosmic disco'
+
 if [ $# -eq 1 ]; then
   out="lp-$bug.txt"
 else
@@ -25,6 +27,26 @@ https://bugs.launchpad.net/ubuntu/+source/$pkg/+bug/$bug
 [Other Info]
 Upstream commit at
   https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+
+cat > some.yaml <<EOF
+#cloud-config
+hostname: sru-test
+EOF
+
+# Perform individual bug tests using lxd for speed where possible
+for series in $sru_series; do
+   echo '=== BEGIN ' $series;
+   ref=$series-proposed;
+   lxc delete test-$series --force 2> /dev/null;
+   lxc init $ref test-$series;
+   lxc config set test-$series user.user-data - < some.yaml;
+   lxc start test-$series;
+   lxc exec test-$series -- cloud-init status --wait --long;
+
+   # Add specific tests
+   echo '=== END ' $series;
+done
+
 
 === End SRU Template ===
 EOF
