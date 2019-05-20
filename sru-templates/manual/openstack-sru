@@ -1,6 +1,6 @@
 # Manual OpenStack upgrade and clean install validation Xenial, Bionic, Cosmic
 
-sru_series="%SRU_SERIES%"
+SRU_SERIES="%SRU_SERIES%"
 
 cat > sethostname.yaml << EOF
 ## template: jinja
@@ -22,7 +22,7 @@ openstack image list --property architecture=x86_64 -f json > images.json
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-for RELEASE in $sru_series; do
+for RELEASE in $SRU_SERIES; do
   echo "### BEGIN $RELEASE"
 
   VM_IP=`openstack floating ip create ext_net -f json | jq '.floating_ip_address' -r`
@@ -68,10 +68,15 @@ for RELEASE in $sru_series; do
   ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
   ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
   echo "Get cloud-id"
-  ssh "${sshopts[@]}" ubuntu@$VM_IP cloud-id
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-id
+  echo 'Validating whether metadata is being updated per boot LP:1819913'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo reboot || true
+  echo 'After reboot'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
 done
 
-for RELEASE in $sru_series; do
+for RELEASE in $SRU_SERIES; do
   openstack server delete test-$RELEASE
 done
 
