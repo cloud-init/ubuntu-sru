@@ -22,16 +22,16 @@ openstack image list --property architecture=x86_64 -f json > images.json
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
-for RELEASE in $SRU_SERIES; do
-  echo "### BEGIN $RELEASE"
+for series in $SRU_SERIES; do
+  echo "### BEGIN $series"
 
   VM_IP=`openstack floating ip create ext_net -f json | jq '.floating_ip_address' -r`
 
   # Determine image, launch instance and attach IP address
-  image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$RELEASE'"))) | .ID' | tail -n 1)
-  openstack server create --flavor m1.small --image $image --key-name canonical --nic net-id=$ADMIN_NET_ID --user-data sethostname.yaml test-$RELEASE --wait
+  image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$series'"))) | .ID' | tail -n 1)
+  openstack server create --flavor m1.small --image $image --key-name canonical --nic net-id=$ADMIN_NET_ID --user-data sethostname.yaml test-$series --wait
   ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
-  openstack server add floating ip test-$RELEASE $VM_IP
+  openstack server add floating ip test-$series $VM_IP
 
   sleep 10  # Wait for the instance to actually go down
   while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
@@ -76,7 +76,7 @@ for RELEASE in $SRU_SERIES; do
   ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
 done
 
-for RELEASE in $SRU_SERIES; do
-  openstack server delete test-$RELEASE
+for series in $SRU_SERIES; do
+  openstack server delete test-$series
 done
 
