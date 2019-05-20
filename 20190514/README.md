@@ -20,7 +20,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1823084](http://pad.lv/1823084) | ✔ [verification output](../manual/azure-sru-19.1.1.txt) |
 | [# 1818669](http://pad.lv/1818669) | ✔ [verification output](../bugs/lp-1818669.txt) |
 | [# 1819913](http://pad.lv/1819913) | ✔ [verification output](../manual/ec2-sru-19.1.1.txt) |
-| Manual openstack test | [verification output](../manual/openstack-sru-19.1.1.txt) |
+| Manual openstack test | ✔ [verification output](../manual/openstack-sru-19.1.1.txt) |
 | Manual gce test | ✔ [verification output](../manual/gce-sru-19.1.1.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-19.1.1.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-19.1.1.txt) |
