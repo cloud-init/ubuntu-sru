@@ -1,0 +1,270 @@
+http://pad.lv/1828641
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1828641
+
+=== Begin SRU Template ===
+[Impact]
+Ubuntu-advantage-tools package version 19 introduced a new command line client that is backwards incompatible with previous ubuntu-advantage-tools releases.
+
+Changes in cloud-init 19.1 support only the new ubuntu-advantage-tools CLI.
+
+To avoid breaking the cc_ubuntu_advantage cloud-config module, we need to revert changes in cloud-init tip to avoid tracebacks for customers in Xenial, Bionic and Cosmic using ubuntu-advantage: declarating in their cloud-config.
+
+Once ubuntu-advantage-tools >= 19 is SRU'd to Xenial, Bionic and Cosmic. This debian patch can be dropped.
+
+[Test Case]
+Use old ubuntu-advantage cloud-config syntax to enable livepatch on a kvm instance to enable livepatch
+
+Note: there are a number of expected failures on xenial, cosmic and disco for known issues
+ * Xenial: Bug: #1830154 snap not in $PATH
+ * Cosmic: livepatch is not supported on Cosmic
+ * Disco: Bug: #1829788  KeyError traceback
+
+[Test Case]
+cat > pre-disco-ua.yaml <<EOF
+#cloud-config
+hostname: sru-test
+ubuntu-advantage:
+  commands:
+    00: ubuntu-advantage enable-livepatch <REDACTED_LIVEPATCH_CREDS>
+EOF
+
+cat > disco-ua.yaml <<EOF
+#cloud-config
+hostname: sru-test
+ubuntu_advantage:
+  token: <REDACTED_CONTRACT_TOKEN>
+  enable: [livepatch]
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+
+#!/bin/bash
+
+set -e
+
+# Perform individual bug tests using lxd for speed where possible
+for series in xenial bionic cosmic disco; do
+   echo "=== BEGIN $series";
+   if [ $series = disco ]; then
+       multipass launch daily:$series -n test-$series --cloud-init disco-ua.yaml;
+   else
+       multipass launch daily:$series -n test-$series --cloud-init pre-disco-ua.yaml;
+   fi
+   multipass exec test-$series -- cloud-init status --wait;
+   if [ $series = bionic ]; then
+       echo "Disabling livepatch on $series";
+       multipass exec test-$series sudo ubuntu-advantage disable-livepatch;
+       multipass exec test-$series sudo snap remove canonical-livepatch;
+   elif [ $series = disco ]; then
+       echo "Detaching ubuntu-advantage on $series";
+       multipass exec test-$series sudo ubuntu-advantage detach;
+   elif [ $series = cosmic -o $series = xenial ]; then
+       multipass exec test-$series sudo snap remove canonical-livepatch;
+   fi
+   echo "Rebooting into clean system";
+   multipass exec test-$series -- sudo cloud-init clean --logs --reboot;
+   if [ $series = disco ]; then
+       echo "Expect error [$series] per known LP: #1829788 KeyError traceback from ubuntu-advantage-tools";
+   elif [ $series = bionic ]; then
+           echo "Ensure no errors [$series] from cloud-init status";
+   elif [ $series = cosmic ]; then
+           echo "Expect [$series] error that livepatch does not support $series";
+   else
+           echo "Expect error [$series] about snap not in PATH LP: #1830154";
+   fi
+   sleep 10;
+   while ! multipass exec test-$series -- pwd; do
+      sleep 5
+   done
+   multipass exec test-$series -- cloud-init status --wait --long;
+   multipass exec test-$series -- grep Trace /var/log/cloud-init.log;
+   echo "Checking ubuntu-advantage status";
+   multipass exec test-$series -- ubuntu-advantage status;
+   echo "=== END $series";
+done
+
+[Regression Potential]
+Changeset only affects systems deployed using the ubuntu-advantage module. In Xenial, Bionic and Cosmic. Existing behavior is retained because of a full revert of the upstream patch. 
+
+This ubuntu-advantage config module is not widely used and the underlying ubuntu-advantage-tools will undergo a major SRU shortly where this revert will be unnecessary.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=41f56e197
+
+=== End SRU Template ===
+
+=== Begin SRU Verification output ===
+# TLDR xenial, cosmic disco behave with known/expected errors due to bugs or lack of platform support for livepatch. Bionic passes as expected.
+
+$ for series in xenial bionic cosmic disco; do
+>    echo "=== BEGIN $series";
+>    if [ $series = disco ]; then
+>        multipass launch daily:$series -n test-$series --cloud-init disco-ua.yaml;
+>    else
+>        multipass launch daily:$series -n test-$series --cloud-init pre-disco-ua.yaml;
+>    fi
+>    multipass exec test-$series -- cloud-init status --wait;
+>    if [ $series = bionic ]; then
+>        echo "Disabling livepatch on $series";
+>        multipass exec test-$series sudo ubuntu-advantage disable-livepatch;
+>        multipass exec test-$series sudo snap remove canonical-livepatch;
+>    elif [ $series = disco ]; then
+>        echo "Detaching ubuntu-advantage on $series";
+>        multipass exec test-$series sudo ubuntu-advantage detach;
+>    elif [ $series = cosmic -o $series = xenial ]; then
+>        multipass exec test-$series sudo snap remove canonical-livepatch;
+>    fi
+>    echo "Rebooting into clean system";
+>    multipass exec test-$series -- sudo cloud-init clean --logs --reboot;
+>    if [ $series = disco ]; then
+>        echo "Expect error [$series] per known LP: #1829788 KeyError traceback from ubuntu-advantage-tools";
+>    elif [ $series = bionic ]; then
+>            echo "Ensure no errors [$series] from cloud-init status";
+>    elif [ $series = cosmic ]; then
+>            echo "Expect [$series] error that livepatch does not support $series";
+>    else
+>            echo "Expect error [$series] about snap not in PATH LP: #1830154";
+>    fi
+>    sleep 10;
+>    while ! multipass exec test-$series -- pwd; do
+>       sleep 5
+>    done
+>    multipass exec test-$series -- cloud-init status --wait --long;
+>    multipass exec test-$series -- grep Trace /var/log/cloud-init.log;
+>    echo "Checking ubuntu-advantage status";
+>    multipass exec test-$series -- ubuntu-advantage status;
+>    echo "=== END $series";
+> done
+=== BEGIN xenial
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         Launched: test-xenial
+                                                                               .....................................................................................................................
+status: error
+canonical-livepatch removed
+Rebooting into clean system
+Expect error [xenial] about snap not in PATH LP: #1830154
+exec failed: instance "test-xenial" is not running
+/home/multipass
+..................
+status: error
+time: Thu, 23 May 2019 20:59:32 +0000
+detail:
+('ubuntu-advantage', RuntimeError('Failures running ubuntu-advantage commands:\n["Unexpected error while running command.\\nCommand: ubuntu-advantage enable-livepatch 7ce82fe124134c93951f9c95aefea6b2\\nExit code: 127\\nReason: -\\nStdout: Installing the canonical-livepatch snap.\\n        This may take a few minutes depending on your bandwidth.\\n        canonical-livepatch 9.3.0 from Canonical* installed\\n        Enabling Livepatch with the given token, stand by...\\nStderr: Warning: /snap/bin was not found in your $PATH. If you\'ve not restarted your\\n                 session since you installed snapd, try doing that. Please see\\n                 https://forum.snapcraft.io/t/9469 for more details.\\n        \\n        /usr/bin/ubuntu-advantage: 102: /usr/bin/ubuntu-advantage: canonical-livepatch: not found"]',))
+Traceback (most recent call last):
+Checking ubuntu-advantage status
+livepatch: disabled
+
+esm: disabled (not available)
+
+fips: disabled
+=== END xenial
+=== BEGIN bionic
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         Launched: test-bionic
+                                                                               ..........................................................................................................................
+status: done
+Disabling livepatch on bionic
+Disabling Livepatch...
+Successfully disabled device. Removed machine-token: 4387a4975a6949fd80d5a60adc12cba7
+Note: the canonical-livepatch snap is still installed.
+To remove it, run sudo snap remove canonical-livepatch
+canonical-livepatch removed
+Rebooting into clean system
+Ensure no errors [bionic] from cloud-init status
+exec failed: instance "test-bionic" is not running
+exec failed: instance "test-bionic" is not running
+exec failed: instance "test-bionic" is not running
+exec failed: instance "test-bionic" is not running
+/home/multipass
+..............
+status: done
+time: Thu, 23 May 2019 21:01:18 +0000
+detail:
+DataSourceNoCloud [seed=/dev/sr0][dsmode=net]
+Checking ubuntu-advantage status
+esm: disabled (not available)
+fips: disabled (not available)
+livepatch: enabled
+  client-version: 9.3.0
+  architecture: x86_64
+  cpu-model: Intel(R) Core(TM) i7-3770 CPU @ 3.40GHz
+  last-check: 2019-05-23T15:01:17-06:00
+  boot-time: 2019-05-23T15:00:57-06:00
+  uptime: 24s
+  status:
+  - kernel: 4.15.0-50.54-generic
+    running: true
+    livepatch:
+      checkState: checked
+      patchState: nothing-to-apply
+      version: ""
+      fixes: ""
+  
+=== END bionic
+=== BEGIN cosmic
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         Launched: test-cosmic
+                                                                               ..................................................
+status: error
+snap "canonical-livepatch" is not installed
+Rebooting into clean system
+Expect [cosmic] error that livepatch does not support cosmic
+exec failed: ssh connection failed: 'Connection refused'
+exec failed: ssh connection failed: 'Connection refused'
+exec failed: ssh connection failed: 'Connection refused'
+exec failed: ssh connection failed: 'Connection refused'
+exec failed: instance "test-cosmic" is not running
+exec failed: instance "test-cosmic" is not running
+/home/multipass
+
+status: error
+time: Thu, 23 May 2019 21:02:38 +0000
+detail:
+('ubuntu-advantage', RuntimeError("Failures running ubuntu-advantage commands:\n['Unexpected error while running command.\\nCommand: ubuntu-advantage enable-livepatch 7ce82fe124134c93951f9c95aefea6b2\\nExit code: 4\\nReason: -\\nStdout: \\nStderr: Sorry, but Canonical Livepatch is not supported on cosmic']",))
+Traceback (most recent call last):
+Checking ubuntu-advantage status
+esm: disabled (not available)
+fips: disabled (not available)
+livepatch: disabled (not available)
+=== END cosmic
+=== BEGIN disco
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         Launched: test-disco
+                                                                               ...........................................................................
+status: error
+Detaching ubuntu-advantage on disco
+[INFO]: Removing authenticated apt repo: https://esm.ubuntu.com
+This machine is now detached
+Rebooting into clean system
+Expect error [disco] per known LP: #1829788 KeyError traceback from ubuntu-advantage-tools
+exec failed: instance "test-disco" is not running
+/home/multipass
+.............
+status: error
+time: Thu, 23 May 2019 21:03:38 +0000
+detail:
+('ubuntu-advantage', RuntimeError('Failure attaching Ubuntu Advantage:\nUnexpected error while running command.\nCommand: [\'ua\', \'attach\', \'C13nyXWJe17k7GkSQBLE12j3nMLH7C\']\nExit code: 1\nReason: -\nStdout: This machine is now attached to \'chad.smith@canonical.com\'.\nStderr: Traceback (most recent call last):\n          File "/usr/bin/ua", line 11, in <module>\n            load_entry_point(\'ubuntu-advantage-tools==19.2\', \'console_scripts\', \'ubuntu-advantage\')()\n          File "/usr/lib/python3/dist-packages/uaclient/cli.py", line 371, in main\n            return args.action(args, cfg)\n          File "/usr/lib/python3/dist-packages/uaclient/cli.py", line 241, in action_attach\n            action_status(args=None, cfg=cfg)\n          File "/usr/lib/python3/dist-packages/uaclient/cli.py", line 295, in action_status\n            contractInfo[\'effectiveTo\'], \'%Y-%m-%dT%H:%M:%SZ\')\n        KeyError: \'effectiveTo\''))
+Stderr: Traceback (most recent call last):
+Stderr: Traceback (most recent call last):
+Traceback (most recent call last):
+Stderr: Traceback (most recent call last):
+Traceback (most recent call last):
+Stderr: Traceback (most recent call last):
+Traceback (most recent call last):
+Stderr: Traceback (most recent call last):
+Checking ubuntu-advantage status
+Traceback (most recent call last):
+  File "/usr/bin/ubuntu-advantage", line 11, in <module>
+    load_entry_point('ubuntu-advantage-tools==19.2', 'console_scripts', 'ubuntu-advantage')()
+  File "/usr/lib/python3/dist-packages/uaclient/cli.py", line 371, in main
+    return args.action(args, cfg)
+  File "/usr/lib/python3/dist-packages/uaclient/cli.py", line 295, in action_status
+    contractInfo['effectiveTo'], '%Y-%m-%dT%H:%M:%SZ')
+KeyError: 'effectiveTo'
+=== END disco
+
+=== End SRU Verification output ===

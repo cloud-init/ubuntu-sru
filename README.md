@@ -23,6 +23,8 @@ The process we follow when creating a new SRU is the following:
   1. Run verification tests and attach results to the specific bug.txt file
   1. Mark done ✔  on each verification item when complete
   1. Attach manual test results for top clouds to SRU process bug
+     * sru-get-jenkins-logs 19.1.1   # grabs lxd and nocloud
+     * lp-attach-file 1828637 manual/azure-sru-19.1.1.txt ...
   1. change verification-needed-*series* tag to verification-done-*series* on the SRU process bug when complete
 
 

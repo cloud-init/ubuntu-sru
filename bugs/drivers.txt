@@ -1,0 +1,136 @@
+=== Begin SRU Template ===
+[Impact]
+Add new drivers cloud-config module to auto accept nvidia license and install drivers.
+
+[Test Case]
+cat > drivers.yaml <<EOF
+#cloud-config
+drivers:
+  nvidia:
+    license-accepted: true
+EOF
+
+for SERIES in xenial bionic cosmic disco; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.user-data - < drivers.yaml;
+   lxc start test-$SERIES;
+   if [ $SERIES = disco ]; then
+      echo "Expect no errors from ubuntu-drivers enablement";
+   else
+      echo "Expect error due to ubuntu-drivers version being too old";
+   fi
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+   lxc exec test-$SERIES -- dpkg -l | egrep 'ubuntu-drivers|nvidia';
+   echo '=== END ' $SERIES;
+done
+
+[Regression Potential]
+Minimal, adds a new cloud-config module with new config keys previously unpublished.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=5e5894d68
+
+=== End SRU Template ===
+
+=== Begin SRU Verification ===
+$ for SERIES in xenial bionic cosmic disco; do
+>    echo '=== BEGIN ' $SERIES;
+>    ref=$SERIES-proposed;
+>    lxc delete test-$SERIES --force 2> /dev/null;
+>    lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$SERIES;
+>    lxc config set test-$SERIES user.user-data - < drivers.yaml;
+>    lxc start test-$SERIES;
+>    if [ $SERIES = disco ]; then
+>       echo "Expect no errors from ubuntu-drivers enablement";
+>    else
+>       echo "Expect error due to ubuntu-drivers version being too old";
+>    fi
+>    lxc exec test-$SERIES -- cloud-init status --wait --long;
+>    lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+>    lxc exec test-$SERIES -- dpkg -l | egrep 'ubuntu-drivers|nvidia';
+>    echo '=== END ' $SERIES;
+> done
+=== BEGIN  xenial
+Creating xenial-proposed-3041112585
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~16.04.1 [397 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~16.04.1) over (18.5-45-g3554ffe8-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+Expect error due to ubuntu-drivers version being too old
+.............................................................................................
+status: error
+time: Thu, 23 May 2019 22:10:16 +0000
+detail:
+('ubuntu-drivers', ProcessExecutionError("Unexpected error while running command.\nCommand: ['ubuntu-drivers', 'install', '--gpgpu', 'nvidia']\nExit code: 2\nReason: -\nStdout: \nStderr: usage: ubuntu-drivers [-h] [--package-list PATH] <command>\n        ubuntu-drivers: error: argument <command>: invalid choice: 'install' (choose from 'list', 'debug', 'autoinstall', 'devices')",))
+Traceback (most recent call last):
+ii  ubuntu-drivers-common            1:0.4.17.7                                 amd64        Detect and install additional Ubuntu driver packages
+=== END  xenial
+=== BEGIN  bionic
+Creating bionic-proposed-227545351
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~18.04.1 [393 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~18.04.1) over (18.5-45-g3554ffe8-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Creating test-bionic
+Expect error due to ubuntu-drivers version being too old
+...........................................................................................................................................................
+status: done
+time: Thu, 23 May 2019 22:12:11 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+ii  libnvidia-compute-390:amd64    390.116-0ubuntu0.18.04.1          amd64        NVIDIA libcompute package
+ii  nvidia-compute-utils-390       390.116-0ubuntu0.18.04.1          amd64        NVIDIA compute utilities
+ii  nvidia-headless-no-dkms-390    390.116-0ubuntu0.18.04.1          amd64        NVIDIA headless metapackage - no DKMS
+ii  nvidia-kernel-source-390       390.116-0ubuntu0.18.04.1          amd64        NVIDIA kernel source package
+ii  ubuntu-drivers-common          1:0.5.2.3                         amd64        Detect and install additional Ubuntu driver packages
+=== END  bionic
+=== BEGIN  cosmic
+Creating cosmic-proposed-795719533
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu cosmic-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~18.10.1 [389 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~18.10.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~18.10.1) over (18.5-45-g3554ffe8-0ubuntu1~18.10.1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~18.10.1) ...
+Creating test-cosmic
+Expect error due to ubuntu-drivers version being too old
+...........................................................................................................................
+status: error
+time: Thu, 23 May 2019 22:14:04 +0000
+detail:
+('ubuntu-drivers', ProcessExecutionError("Unexpected error while running command.\nCommand: ['ubuntu-drivers', 'install', '--gpgpu', 'nvidia']\nExit code: 2\nReason: -\nStdout: \nStderr: usage: ubuntu-drivers [-h] [--package-list PATH] <command>\n        ubuntu-drivers: error: argument <command>: invalid choice: 'install' (choose from 'list', 'devices', 'autoinstall', 'debug')",))
+Traceback (most recent call last):
+ii  ubuntu-drivers-common          1:0.5.5                           amd64        Detect and install additional Ubuntu driver packages
+=== END  cosmic
+=== BEGIN  disco
+Creating disco-proposed-906721036
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.1-1-gbaa47854-0ubuntu1~19.04.1 [389 kB]
+Preparing to unpack .../cloud-init_19.1-1-gbaa47854-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.1-1-gbaa47854-0ubuntu1~19.04.1) over (18.5-62-g6322c2dd-0ubuntu1) ...
+Setting up cloud-init (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Creating test-disco
+Expect no errors from ubuntu-drivers enablement
+..............................................................................................................................................................................................................
+status: done
+time: Thu, 23 May 2019 22:16:22 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+ii  libnvidia-compute-390:amd64    390.116-0ubuntu1                  amd64        NVIDIA libcompute package
+ii  nvidia-compute-utils-390       390.116-0ubuntu1                  amd64        NVIDIA compute utilities
+ii  nvidia-headless-no-dkms-390    390.116-0ubuntu1                  amd64        NVIDIA headless metapackage - no DKMS
+ii  nvidia-kernel-source-390       390.116-0ubuntu1                  amd64        NVIDIA kernel source package
+ii  ubuntu-drivers-common          1:0.6.3                           amd64        Detect and install additional Ubuntu driver packages
+=== END  disco
+
+=== End SRU Verification ===

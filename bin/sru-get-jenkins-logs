@@ -1,0 +1,24 @@
+#!/bin/bash
+if [ $# -lt 1 ]; then
+  script_name=`basename $0`
+  echo "usage: $script_name <sru_version>"
+  exit 1
+fi
+SRU_VERSION=$1
+echo "Grabbing all jenkins logs for SRU verification for version: $1"
+rm -rf jenkins;
+for platform in lxd kvm; do
+  manuallog=manual/nocloud-$platform-sru-$SRU_VERSION.txt
+  rm -f $manuallog;
+  for series in x b c d; do
+    jenkins-get-job cloud-init-integration-proposed-$series-$platform -v;
+  done
+  for log in `find jenkins/ -name '*console.log' | grep $platform`; do
+    series=`echo $log | awk -F '-' '{print $5}'`
+    echo "=== Begin series $series ===" >> $manuallog;
+    cat $log >> $manuallog;
+    echo "=== End series $series ===" >> $manuallog;
+  done
+  echo "Wrote $manuallog. Upload with lp-attach-file <SRU_BUG_NUM> $manuallog"
+done
+
