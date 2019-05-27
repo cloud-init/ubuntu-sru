@@ -13,7 +13,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [# 1825596](http://pad.lv/1825596) | ✔ [verification output](../manual/azure-sry-19.1.1.txt) |
+| [# 1825596](http://pad.lv/1825596) | ✔ [verification output](../manual/azure-sru-19.1.1.txt) |
 | ubuntu-drivers | ✔ [verification output](../bugs/drivers.txt) |
 | [# 1828641](http://pad.lv/1828641) | ✔ [verification output](../bugs/lp-1828641.txt) |
 | [# 1819994](http://pad.lv/1819994) | ✔ [verification output](../bugs/lp-1819994.txt) |
