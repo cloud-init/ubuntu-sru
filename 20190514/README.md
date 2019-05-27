@@ -26,7 +26,6 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual gce test | ✔ [verification output](../manual/gce-sru-19.1.1.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-19.1.1.txt) |
 | Manual ec2 test | ✔ [verification output](../manual/ec2-sru-19.1.1.txt) |
-| Manual vmware test | [verification output](../manual/vmware-sru-19.1.1.txt) |
 | Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-sru-19.1.1.txt) |
 | Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-lxd-sru-19.1.1.txt) |
 | Manual vmware test | ✔ [verification output](../manual/vmware-sru-19.1.1.txt) |
