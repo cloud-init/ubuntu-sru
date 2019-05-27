@@ -30,3 +30,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual nocloud-kvm test | ✔ [verification output](../manual/nocloud-kvm-sru-19.1.1.txt) |
 | Manual nocloud-lxd test | ✔ [verification output](../manual/nocloud-lxd-sru-19.1.1.txt) |
 | Manual vmware test | ✔ [verification output](../manual/vmware-sru-19.1.1.txt) |
+| Manual softlayer test | ✔ [verification output](../manual/softlayer-sru-19.1.1.txt) |
