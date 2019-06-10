@@ -3,6 +3,13 @@
 Use lxd waitready to ensure we don't talk to lxd until it is completely installed.
 
 [Test Case]
+cat > md <<EOF
+instance-id: mytest
+local-hostname: mytest
+public-keys:
+- <some ssh pubkey to represent from cloud metadata>
+EOF
+
 cat > lxd.yaml <<EOF
 #cloud-config
 lxd:
@@ -16,7 +23,7 @@ for SERIES in xenial bionic; do
    lxc delete test-$SERIES --force 2> /dev/null;
    lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
    lxc init $ref test-$SERIES;
-   lxc config set test-$SERIES user.user-data - < lxd.yaml;
+   lxc config set test-$SERIES -c "user.user-data=$(cat lxd.yaml)" -c "user.meta-data=$(cat md)";
    lxc start test-$SERIES;
    lxc exec test-$SERIES -- cloud-init status --wait --long;
    lxc exec test-$SERIES grep wait /var/log/cloud-init.log;
