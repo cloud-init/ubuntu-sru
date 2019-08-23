@@ -1,0 +1,74 @@
+# Manually deploy on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+ 
+# To be adapted to the SRU to test
+SRU_SERIES="xenial bionic disco"
+
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+
+
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+for RELEASE in $SRU_SERIES; do
+    echo "### BEGIN $RELEASE"
+    case $RELEASE in
+        xenial) image_version=16.04-DAILY-LTS;;
+        bionic) image_version=18.04-DAILY-LTS;;
+        cosmic) image_version=18.10-DAILY;;
+        disco) image_version=19.04-DAILY;;
+        *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+    esac
+    name=test-sru-$series
+    az vm create --name=$name --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+    IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
+    ssh "${sshopts[@]}" $IP -- systemd-analyze
+    ssh "${sshopts[@]}" $IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+
+    scp "${sshopts[@]}" setup_proposed.sh $IP:.
+    ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
+
+    sleep 60
+
+    ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
+    ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+    echo 'Get cloud-id'
+    ssh "${sshopts[@]}" $IP -- cloud-id
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+    echo 'Validating whether metadata is being updated per boot LP:1819913'
+    ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh "${sshopts[@]}" $IP -- sudo reboot || true
+    echo 'After reboot'
+    ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    echo "### END $RELEASE"
+done

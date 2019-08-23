@@ -8,7 +8,7 @@ import sys
 
 BUG_VERIFY_TMPL = "| [# {bugid}](http://pad.lv/{bugid}) | [verification output](../bugs/lp-{bugid}.txt) |"
 MANUAL_VERIFY_TMPL = "| {title} | [verification output](../manual/{versioned_file}) |"
-DEFAULT_SRU_SERIES='xenial,bionic,cosmic,disco'
+DEFAULT_SRU_SERIES='xenial,bionic,disco'
 
 def get_parser():
     parser = argparse.ArgumentParser()

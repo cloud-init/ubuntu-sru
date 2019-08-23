@@ -1,0 +1,73 @@
+#!/bin/sh
+
+set -e
+
+SRU_SERIES="xenial bionic disco"
+
+# Manual EC2 upgrade and clean install validation
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id: [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+# set -x outputs each commant to standard error, so an easy way to keen an eye
+# what's going on while saving a clean log file (stdout only) is using tee(1).
+set -x
+
+sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+for RELEASE in $SRU_SERIES; do
+    echo "### BEGIN $RELEASE"
+    EC2_INST=`launch-ec2 --series $RELEASE -u sethostname.yaml | awk '/Found/{print $5}'`
+    sleep 60
+    ssh $sshopts $EC2_INST -- cloud-init status --wait --long
+    ssh $sshopts $EC2_INST -- cat /run/cloud-init/result.json
+    ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init.*"
+    ssh $sshopts $EC2_INST -- sudo systemd-analyze
+    ssh $sshopts $EC2_INST -- sudo systemd-analyze blame
+    ssh $sshopts $EC2_INST -- sudo cloud-init analyze show
+    ssh $sshopts $EC2_INST -- ! sudo grep Trace "/var/log/cloud-init*"
+    scp $sshopts setup_proposed.sh $EC2_INST:
+    ssh $sshopts $EC2_INST sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh $sshopts $EC2_INST sudo hostname something-else
+    ssh $sshopts $EC2_INST -- sudo cloud-init init
+    ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init*"
+    ssh $sshopts $EC2_INST -- sudo cloud-init clean --logs --reboot || true
+    sleep 60
+    date --utc +%s.%N
+    ssh $sshopts $EC2_INST -- cloud-init status --wait --long; date --utc +%s.%N
+    ssh $sshopts $EC2_INST -- hostname
+    ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init*"
+    ssh $sshopts $EC2_INST -- sudo systemd-analyze
+    ssh $sshopts $EC2_INST -- sudo cloud-init analyze show
+    if [ "$RELEASE" = "xenial" ]; then
+       echo "--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep."
+    else
+       echo "--- Expect success on bionic for jinja because deb DOES have jinja dep."
+    fi
+    ssh $sshopts $EC2_INST "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
+    
+    echo 'Per LP:1794399 expect we do not see a lot of killing dhclient logs'
+    ssh $sshopts $EC2_INST "grep dhclient /var/log/cloud-init.log"
+
+    echo 'Get cloud-id'
+    ssh $sshopts $EC2_INST cloud-id
+
+    echo 'Validating whether metadata is being updated per boot LP:1819913'
+    ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh $sshopts $EC2_INST sudo reboot || true
+    sleep 60
+    echo 'After reboot'
+    ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+    echo "### END $RELEASE"
+done
