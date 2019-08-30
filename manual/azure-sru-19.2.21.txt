@@ -1,14 +1,22 @@
+#!/bin/bash
 # Manually deploy on Azure using Azure CLI client.
 # Validate upgrade to proposed version of cloud-init
 # Check Tracebacks or error conditions on clean boot
- 
+
 # To be adapted to the SRU to test
 SRU_SERIES="xenial bionic disco"
+
+# local values
+RESOURCE_GROUP="cloud-init-sru"
+BOOT_DIAG="cibootdiagstor"
+SSH_KEY="$HOME/.ssh/id_rsa.pub"
+LP_USER="raharper"
+
 
 cat > sethostname.yaml <<EOF
 ## template: jinja
 #cloud-config
-ssh_import_id : [daniel-thewatkins]
+ssh_import_id : [$LP_USER]
 hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
@@ -20,22 +28,25 @@ apt-get update -q
 apt-get install -qy cloud-init
 EOF
 
-
-
-
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
-
-for RELEASE in $SRU_SERIES; do
-    echo "### BEGIN $RELEASE"
-    case $RELEASE in
-        xenial) image_version=16.04-DAILY-LTS;;
+netcfg=/etc/netplan/50-cloud-init.yaml
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    case $series in
+        xenial) image_version=16.04-DAILY-LTS;
+                netcfg=/etc/network/interfaces.d/50-cloud-init.cfg;;
         bionic) image_version=18.04-DAILY-LTS;;
         cosmic) image_version=18.10-DAILY;;
         disco) image_version=19.04-DAILY;;
         *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
     esac
     name=test-sru-$series
-    az vm create --name=$name --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+    az vm create --name=$name \
+        --image=Canonical:UbuntuServer:$image_version:latest \
+        --admin-username=root --admin-username=ubuntu \
+        -g $RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+        --boot-diagnostics-storage $BOOT_DIAG \
+        --custom-data sethostname.yaml
     IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
     ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
@@ -46,11 +57,14 @@ for RELEASE in $SRU_SERIES; do
     ssh "${sshopts[@]}" $IP -- systemd-analyze blame
     ssh "${sshopts[@]}" $IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    echo 'Networking config'
+    ssh "${sshopts[@]}" $IP -- cat $netcfg
 
     scp "${sshopts[@]}" setup_proposed.sh $IP:.
     ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
     ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
     ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $IP -- sudo rm -f $netcfg
     ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
 
     sleep 60
@@ -61,6 +75,8 @@ for RELEASE in $SRU_SERIES; do
     ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
     ssh "${sshopts[@]}" $IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    echo 'After upgrade networking config'
+    ssh "${sshopts[@]}" $IP -- cat $netcfg
     ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
     echo 'Get cloud-id'
     ssh "${sshopts[@]}" $IP -- cloud-id
@@ -68,7 +84,1983 @@ for RELEASE in $SRU_SERIES; do
     echo 'Validating whether metadata is being updated per boot LP:1819913'
     ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
     ssh "${sshopts[@]}" $IP -- sudo reboot || true
+    sleep 30
     echo 'After reboot'
     ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
-    echo "### END $RELEASE"
+    echo "### END $series"
 done
++ SRU_SERIES='xenial bionic disco'
++ RESOURCE_GROUP=cloud-init-sru
++ BOOT_DIAG=cibootdiagstor
++ SSH_KEY=/home/ubuntu/.ssh/id_rsa.pub
++ LP_USER=raharper
++ cat
++ cat
++ sshopts=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
++ netcfg=/etc/netplan/50-cloud-init.yaml
++ for series in $SRU_SERIES
++ echo '### BEGIN xenial'
+### BEGIN xenial
++ case $series in
++ image_version=16.04-DAILY-LTS
++ netcfg=/etc/network/interfaces.d/50-cloud-init.cfg
++ name=test-sru-xenial
++ az vm create --name=test-sru-xenial --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root --admin-username=ubuntu -g cloud-init-sru --ssh-key-value /home/ubuntu/.ssh/id_rsa.pub --boot-diagnostics-storage cibootdiagstor --custom-data sethostname.yaml
+{
+  "fqdns": "",
+  "id": "/subscriptions/371684ae-3628-4ff2-a946-034d8f2e30f9/resourceGroups/cloud-init-sru/providers/Microsoft.Compute/virtualMachines/test-sru-xenial",
+  "location": "eastus",
+  "macAddress": "00-0D-3A-56-BC-C4",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.1.16",
+  "publicIpAddress": "40.114.50.227",
+  "resourceGroup": "cloud-init-sru",
+  "zones": ""
+}
+++ az vm list-ip-addresses --name test-sru-xenial
+++ jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'
+++ awk '{printf "ubuntu@%s", $1}'
++ IP=ubuntu@40.114.50.227
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init status --wait --long
+..................
+status: done
+time: Fri, 30 Aug 2019 16:46:11 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo cat /run/cloud-init/result.json
+sudo: unable to resolve host SRU-worked-azure
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- grep Trace /var/log/cloud-init.log
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- systemd-analyze
+Startup finished in 5.658s (kernel) + 34.471s (userspace) = 40.130s
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- systemd-analyze blame
+         11.955s snapd.seeded.service
+          7.900s cloud-init.service
+          5.155s cloud-config.service
+          3.968s cloud-init-local.service
+          2.280s dev-sda1.device
+          2.012s apparmor.service
+          1.986s snapd.service
+          1.913s pollinate.service
+          1.845s lxd-containers.service
+           938ms cloud-final.service
+           834ms accounts-daemon.service
+           658ms networking.service
+           457ms iscsid.service
+           426ms lvm2-monitor.service
+           403ms grub-common.service
+           389ms mdadm.service
+           372ms systemd-modules-load.service
+           341ms systemd-logind.service
+           327ms open-iscsi.service
+           314ms polkitd.service
+           291ms console-setup.service
+           249ms irqbalance.service
+           239ms systemd-tmpfiles-setup-dev.service
+           226ms systemd-journald.service
+           220ms keyboard-setup.service
+           201ms rsyslog.service
+           169ms resolvconf.service
+           165ms systemd-udevd.service
+           160ms ondemand.service
+           160ms systemd-journal-flush.service
+           142ms systemd-udev-trigger.service
+           121ms ssh.service
+           118ms apport.service
+           112ms ufw.service
+            71ms systemd-tmpfiles-setup.service
+            67ms systemd-machine-id-commit.service
+            66ms dev-mqueue.mount
+            66ms systemd-timesyncd.service
+            66ms sys-kernel-debug.mount
+            63ms kmod-static-nodes.service
+            61ms rc-local.service
+            58ms lxd.socket
+            56ms plymouth-read-write.service
+            55ms systemd-remount-fs.service
+            52ms systemd-user-sessions.service
+            50ms systemd-sysctl.service
+            49ms snapd.socket
+            47ms dev-hugepages.mount
+            47ms systemd-random-seed.service
+            40ms setvtrgb.service
+            35ms systemd-update-utmp.service
+            32ms plymouth-quit.service
+            30ms sys-fs-fuse-connections.mount
+            27ms systemd-update-utmp-runlevel.service
+            27ms ephemeral-disk-warning.service
+            24ms user@1000.service
+            17ms plymouth-quit-wait.service
+            14ms sys-kernel-config.mount
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00600s +00.00000s
+|`->no local data found from DataSourceNoCloud @00.20100s +00.05500s
+|`->no local data found from DataSourceConfigDrive @00.25600s +00.01800s
+|`->no local data found from DataSourceOpenNebula @00.27500s +00.00700s
+|`->no local data found from DataSourceDigitalOcean @00.28200s +00.00800s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.29100s +00.00700s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.29900s +00.00500s
+|`->load_azure_ds_dir @00.30400s +00.00000s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.42300s +00.00000s
+|`->_extract_preprovisioned_vm_setting @00.42300s +00.00100s
+Finished stage: (azure-ds/read_azure_ovf) 00.01100 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.01500 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->_get_metadata_from_imds @00.67500s +00.01400s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.25300 seconds
+
+|`->_get_random_seed @00.70800s +00.00000s
+Finished stage: (azure-ds/crawl_metadata) 00.41700 seconds
+
+|`->write_files @00.71600s +00.00200s
+Finished stage: (azure-ds/_get_data) 00.42700 seconds
+
+Finished stage: (init-local/search-Azure) 00.43000 seconds
+
+|`->network config from fallback @00.79600s +00.01800s
+Finished stage: (init-local) 00.83700 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/dev/sr0] @01.93300s +00.02300s
+|`->network config from fallback @02.01600s +00.01900s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/get_metadata_from_agent
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @02.04600s +00.00100s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00300 seconds
+
+|`->invoke_agent @02.04900s +00.17500s
+|`->wait for agents to retrieve ssh keys @02.22500s +01.00200s
+Starting stage: azure-ds/pubkeys_from_crt_files
+|`->crtfile_to_pubkey @03.22800s +00.03700s
+Finished stage: (azure-ds/pubkeys_from_crt_files) 00.03900 seconds
+
+Finished stage: (azure-ds/get_metadata_from_agent) 01.22000 seconds
+
+Finished stage: (azure-ds/_negotiate) 01.22100 seconds
+
+Finished stage: (azure-ds/setup) 01.22100 seconds
+
+Finished stage: (init-network/setup-datasource) 01.22100 seconds
+
+|`->reading and applying user-data @03.27400s +00.00800s
+|`->reading and applying vendor-data @03.28200s +00.00000s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @03.31500s +00.00000s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @03.31600s +00.04100s
+Starting stage: azure-ds/mount-ntfs-and-count
+|`->count_files @03.41900s +00.00500s
+Finished stage: (azure-ds/mount-ntfs-and-count) 00.07400 seconds
+
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.11600 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.11600 seconds
+
+Finished stage: (azure-ds/activate) 00.11700 seconds
+
+Finished stage: (init-network/activate-datasource) 00.11900 seconds
+
+|`->config-migrator ran successfully @03.50500s +00.00100s
+|`->config-seed_random ran successfully @03.50700s +00.00100s
+|`->config-bootcmd ran successfully @03.50900s +00.00000s
+|`->config-write-files ran successfully @03.50900s +00.00100s
+|`->config-growpart ran successfully @03.51100s +00.42400s
+|`->config-resizefs ran successfully @03.93600s +00.23600s
+|`->config-disk_setup ran successfully @04.17200s +04.45200s
+|`->config-mounts ran successfully @08.62500s +00.11900s
+|`->config-set_hostname ran successfully @08.74500s +00.00600s
+|`->config-update_hostname ran successfully @08.75200s +00.00100s
+|`->config-update_etc_hosts ran successfully @08.75400s +00.00000s
+|`->config-ca-certs ran successfully @08.75500s +00.00100s
+|`->config-rsyslog ran successfully @08.75600s +00.00100s
+|`->config-users-groups ran successfully @08.75800s +00.29200s
+|`->config-ssh ran successfully @09.05100s +00.33600s
+Finished stage: (init-network) 07.47400 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @24.40500s +00.00100s
+|`->config-snap ran successfully @24.40600s +00.00100s
+|`->config-snap_config ran successfully @24.40800s +00.00100s
+|`->config-ssh-import-id ran successfully @24.41000s +01.33800s
+|`->config-locale ran successfully @25.74900s +01.93500s
+|`->config-set-passwords ran successfully @27.68500s +00.00200s
+|`->config-grub-dpkg ran successfully @27.68700s +01.12700s
+|`->config-apt-pipelining ran successfully @28.81700s +00.00100s
+|`->config-apt-configure ran successfully @28.81900s +00.14900s
+|`->config-ubuntu-advantage ran successfully @28.96900s +00.00100s
+|`->config-ntp ran successfully @28.97100s +00.00100s
+|`->config-timezone ran successfully @28.97600s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @28.97800s +00.00000s
+|`->config-runcmd ran successfully @28.97900s +00.00100s
+|`->config-byobu ran successfully @28.98100s +00.00600s
+Finished stage: (modules-config) 04.65000 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @29.64800s +00.00300s
+|`->config-package-update-upgrade-install ran successfully @29.65200s +00.00200s
+|`->config-fan ran successfully @29.65500s +00.00100s
+|`->config-landscape ran successfully @29.65600s +00.00100s
+|`->config-lxd ran successfully @29.66000s +00.00100s
+|`->config-ubuntu-drivers ran successfully @29.66100s +00.00100s
+|`->config-puppet ran successfully @29.66300s +00.00100s
+|`->config-chef ran successfully @29.66400s +00.00100s
+|`->config-mcollective ran successfully @29.66500s +00.00100s
+|`->config-salt-minion ran successfully @29.66700s +00.00200s
+|`->config-rightscale_userdata ran successfully @29.66900s +00.00200s
+|`->config-scripts-vendor ran successfully @29.67100s +00.00100s
+|`->config-scripts-per-once ran successfully @29.67300s +00.00100s
+|`->config-scripts-per-boot ran successfully @29.67500s +00.00100s
+|`->config-scripts-per-instance ran successfully @29.67600s +00.00100s
+|`->config-scripts-user ran successfully @29.67800s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @29.67900s +00.04800s
+|`->config-keys-to-console ran successfully @29.72700s +00.16300s
+|`->config-phone-home ran successfully @29.89100s +00.00600s
+|`->config-final-message ran successfully @29.89700s +00.00900s
+|`->config-power-state-change ran successfully @29.90600s +00.00100s
+Finished stage: (modules-final) 00.32900 seconds
+
+Total Time: 20.31000 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init analyze blame
+-- Boot Record 01 --
+     04.45200s (init-network/config-disk_setup)
+     01.93500s (modules-config/config-locale)
+     01.33800s (modules-config/config-ssh-import-id)
+     01.12700s (modules-config/config-grub-dpkg)
+     01.00200s (azure-ds/waiting-for-ssh-public-key)
+     00.42400s (init-network/config-growpart)
+     00.33600s (init-network/config-ssh)
+     00.29200s (init-network/config-users-groups)
+     00.23600s (init-network/config-resizefs)
+     00.17500s (azure-ds/invoke_agent)
+     00.16300s (modules-final/config-keys-to-console)
+     00.14900s (modules-config/config-apt-configure)
+     00.11900s (init-network/config-mounts)
+     00.05500s (init-local/search-NoCloud)
+     00.04800s (modules-final/config-ssh-authkey-fingerprints)
+     00.04100s (azure-ds/_has_ntfs_filesystem)
+     00.03700s (azure-ds/crtfile_to_pubkey)
+     00.02300s (init-network/check-cache)
+     00.01900s (azure-ds/parse_network_config)
+     00.01800s (init-local/search-ConfigDrive)
+     00.01800s (azure-ds/parse_network_config)
+     00.01400s (azure-ds/_get_metadata_from_imds)
+     00.00900s (modules-final/config-final-message)
+     00.00800s (init-network/consume-user-data)
+     00.00800s (init-local/search-DigitalOcean)
+     00.00700s (init-local/search-OpenNebula)
+     00.00700s (azure-ds/check-platform-viability)
+     00.00600s (modules-final/config-phone-home)
+     00.00600s (modules-config/config-byobu)
+     00.00600s (init-network/config-set_hostname)
+     00.00500s (azure-ds/list_possible_azure_ds_devs)
+     00.00500s (azure-ds/count_files)
+     00.00300s (modules-final/config-snappy)
+     00.00200s (modules-final/config-salt-minion)
+     00.00200s (modules-final/config-rightscale_userdata)
+     00.00200s (modules-final/config-package-update-upgrade-install)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (azure-ds/write_files)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (azure-ds/temporary_hostname)
+     00.00100s (azure-ds/_extract_preprovisioned_vm_setting)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+     00.00000s (azure-ds/wait-for-ephemeral-disk)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/load_azure_ds_dir)
+     00.00000s (azure-ds/_get_random_seed)
+
+1 boot records analyzed
++ echo 'Networking config'
+Networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@40.114.50.227:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo bash ./setup_proposed.sh
++ egrep cloud-init
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~16.04.1 [406 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) over (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo hostname SRU-didnt-work
+sudo: unable to resolve host SRU-worked-azure
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo rm -f /etc/network/interfaces.d/50-cloud-init.cfg
+sudo: unable to resolve host SRU-didnt-work
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo cloud-init clean --logs --reboot
+sudo: unable to resolve host SRU-didnt-work
+Connection to 40.114.50.227 closed by remote host.
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init status --wait --long
+
+status: done
+time: Fri, 30 Aug 2019 16:47:19 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- grep Trace '/var/log/cloud-init*'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo cat /run/cloud-init/result.json
+sudo: unable to resolve host SRU-worked-azure
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo systemd-analyze blame
+sudo: unable to resolve host SRU-worked-azure
+          6.975s cloud-config.service
+          2.840s cloud-init-local.service
+          2.325s cloud-init.service
+          1.674s dev-sda1.device
+          1.061s snapd.service
+           950ms lxd-containers.service
+           683ms grub-common.service
+           661ms cloud-final.service
+           626ms accounts-daemon.service
+           601ms lvm2-monitor.service
+           565ms networking.service
+           534ms apparmor.service
+           492ms mdadm.service
+           403ms iscsid.service
+           332ms polkitd.service
+           326ms systemd-logind.service
+           324ms open-iscsi.service
+           306ms console-setup.service
+           232ms keyboard-setup.service
+           228ms dev-hugepages.mount
+           217ms systemd-modules-load.service
+           207ms resolvconf.service
+           191ms irqbalance.service
+           190ms apport.service
+           190ms ssh.service
+           173ms sys-kernel-debug.mount
+           164ms systemd-remount-fs.service
+           162ms kmod-static-nodes.service
+           162ms systemd-udev-trigger.service
+           161ms rsyslog.service
+           118ms dev-mqueue.mount
+           115ms rc-local.service
+           106ms ufw.service
+           100ms systemd-journal-flush.service
+            96ms ondemand.service
+            89ms systemd-tmpfiles-setup-dev.service
+            84ms systemd-journald.service
+            82ms lxd.socket
+            64ms systemd-random-seed.service
+            59ms systemd-sysctl.service
+            57ms systemd-tmpfiles-setup.service
+            56ms systemd-timesyncd.service
+            56ms systemd-fsck@dev-disk-cloud-azure_resource\x2dpart1.service
+            51ms setvtrgb.service
+            51ms snapd.socket
+            49ms plymouth-quit-wait.service
+            41ms systemd-udevd.service
+            39ms snapd.seeded.service
+            38ms sys-kernel-config.mount
+            29ms systemd-update-utmp.service
+            29ms plymouth-quit.service
+            24ms sys-fs-fuse-connections.mount
+            23ms user@1000.service
+            22ms systemd-user-sessions.service
+            20ms plymouth-read-write.service
+            16ms ephemeral-disk-warning.service
+            15ms systemd-update-utmp-runlevel.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00100s
+|`->no local data found from DataSourceNoCloud @00.07000s +00.38400s
+|`->no local data found from DataSourceConfigDrive @00.45400s +00.35300s
+|`->no local data found from DataSourceOpenNebula @00.80800s +00.20400s
+|`->no local data found from DataSourceDigitalOcean @01.01200s +00.00900s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @01.02200s +00.00700s
+|`->get_boot_telemetry @01.03000s +00.00900s
+|`->get_system_info @01.03900s +00.00200s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @01.04200s +00.14500s
+|`->load_azure_ds_dir @01.18700s +00.00000s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @01.19100s +00.00000s
+|`->_extract_preprovisioned_vm_setting @01.19100s +00.00100s
+Finished stage: (azure-ds/read_azure_ovf) 00.00400 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.00500 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->obtain dhcp lease @01.21000s +00.09800s
+|`->_get_metadata_from_imds @01.30900s +00.01300s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.13400 seconds
+
+|`->_get_random_seed @01.34500s +00.00100s
+Finished stage: (azure-ds/crawl_metadata) 00.31200 seconds
+
+|`->write_files @01.35400s +00.00300s
+Finished stage: (azure-ds/_get_data) 00.33500 seconds
+
+Finished stage: (init-local/search-Azure) 00.33800 seconds
+
+|`->network config from fallback @01.43600s +00.01800s
+Finished stage: (init-local) 01.47100 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @02.47300s +00.02400s
+|`->network config from fallback @02.55900s +00.01800s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/get_metadata_from_agent
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @02.58700s +00.00100s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00400 seconds
+
+|`->invoke_agent @02.59100s +00.16900s
+|`->wait for agents to retrieve ssh keys @02.76000s +00.00200s
+Starting stage: azure-ds/pubkeys_from_crt_files
+|`->crtfile_to_pubkey @02.76200s +00.02900s
+Finished stage: (azure-ds/pubkeys_from_crt_files) 00.02900 seconds
+
+Finished stage: (azure-ds/get_metadata_from_agent) 00.20500 seconds
+
+Finished stage: (azure-ds/_negotiate) 00.21000 seconds
+
+Finished stage: (azure-ds/setup) 00.21000 seconds
+
+Finished stage: (init-network/setup-datasource) 00.21000 seconds
+
+|`->reading and applying user-data @02.81200s +00.01600s
+|`->reading and applying vendor-data @02.82800s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @02.90100s +00.00000s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @02.90200s +00.06900s
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.07000 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.07500 seconds
+
+Finished stage: (azure-ds/activate) 00.07600 seconds
+
+Finished stage: (init-network/activate-datasource) 00.07900 seconds
+
+|`->config-migrator ran successfully @03.00400s +00.00200s
+|`->config-seed_random ran successfully @03.00700s +00.00500s
+|`->config-bootcmd ran successfully @03.01300s +00.00000s
+|`->config-write-files ran successfully @03.01300s +00.00200s
+|`->config-growpart ran successfully @03.01700s +00.10100s
+|`->config-resizefs ran successfully @03.11900s +00.03300s
+|`->config-disk_setup ran successfully @03.15600s +00.19300s
+|`->config-mounts ran successfully @03.34900s +00.18000s
+|`->config-set_hostname ran successfully @03.53000s +00.01400s
+|`->config-update_hostname ran successfully @03.54500s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.54800s +00.00100s
+|`->config-ca-certs ran successfully @03.54900s +00.00400s
+|`->config-rsyslog ran successfully @03.55300s +00.00100s
+|`->config-users-groups ran successfully @03.55500s +00.20900s
+|`->config-ssh ran successfully @03.76500s +00.56800s
+Finished stage: (init-network) 01.87300 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.42500s +00.00100s
+|`->config-snap ran successfully @06.42600s +00.00100s
+|`->config-snap_config ran successfully @06.42800s +00.00100s
+|`->config-ssh-import-id ran successfully @06.43000s +06.03400s
+|`->config-locale ran successfully @12.46500s +00.00500s
+|`->config-set-passwords ran successfully @12.47100s +00.00700s
+|`->config-grub-dpkg ran successfully @12.47900s +00.30300s
+|`->config-apt-pipelining ran successfully @12.78300s +00.00100s
+|`->config-apt-configure ran successfully @12.78500s +00.11300s
+|`->config-ubuntu-advantage ran successfully @12.89800s +00.00200s
+|`->config-ntp ran successfully @12.90000s +00.00100s
+|`->config-timezone ran successfully @12.90200s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @12.90300s +00.00100s
+|`->config-runcmd ran successfully @12.90400s +00.00100s
+|`->config-byobu ran successfully @12.90600s +00.00000s
+Finished stage: (modules-config) 06.49900 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @13.42000s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @13.42200s +00.00100s
+|`->config-fan ran successfully @13.42300s +00.00100s
+|`->config-landscape ran successfully @13.42500s +00.00100s
+|`->config-lxd ran successfully @13.42600s +00.00100s
+|`->config-ubuntu-drivers ran successfully @13.42800s +00.00100s
+|`->config-puppet ran successfully @13.42900s +00.00100s
+|`->config-chef ran successfully @13.43000s +00.00100s
+|`->config-mcollective ran successfully @13.43200s +00.00100s
+|`->config-salt-minion ran successfully @13.43400s +00.00100s
+|`->config-rightscale_userdata ran successfully @13.43500s +00.00100s
+|`->config-scripts-vendor ran successfully @13.43700s +00.00100s
+|`->config-scripts-per-once ran successfully @13.43900s +00.00200s
+|`->config-scripts-per-boot ran successfully @13.44200s +00.00000s
+|`->config-scripts-per-instance ran successfully @13.44300s +00.00100s
+|`->config-scripts-user ran successfully @13.44400s +00.00200s
+|`->config-ssh-authkey-fingerprints ran successfully @13.44700s +00.04600s
+|`->config-keys-to-console ran successfully @13.49400s +00.07500s
+|`->config-phone-home ran successfully @13.57000s +00.00100s
+|`->config-final-message ran successfully @13.57200s +00.00400s
+|`->config-power-state-change ran successfully @13.57700s +00.00100s
+Finished stage: (modules-final) 00.18400 seconds
+
+Total Time: 12.32300 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init analyze blame
+-- Boot Record 01 --
+     06.03400s (modules-config/config-ssh-import-id)
+     00.56800s (init-network/config-ssh)
+     00.38400s (init-local/search-NoCloud)
+     00.35300s (init-local/search-ConfigDrive)
+     00.30300s (modules-config/config-grub-dpkg)
+     00.20900s (init-network/config-users-groups)
+     00.20400s (init-local/search-OpenNebula)
+     00.19300s (init-network/config-disk_setup)
+     00.18000s (init-network/config-mounts)
+     00.16900s (azure-ds/invoke_agent)
+     00.14500s (azure-ds/list_possible_azure_ds_devs)
+     00.11300s (modules-config/config-apt-configure)
+     00.10100s (init-network/config-growpart)
+     00.09800s (azure-ds/obtain-dhcp-lease)
+     00.07500s (modules-final/config-keys-to-console)
+     00.06900s (azure-ds/_has_ntfs_filesystem)
+     00.04600s (modules-final/config-ssh-authkey-fingerprints)
+     00.03300s (init-network/config-resizefs)
+     00.02900s (azure-ds/crtfile_to_pubkey)
+     00.02400s (init-network/check-cache)
+     00.01800s (azure-ds/parse_network_config)
+     00.01800s (azure-ds/parse_network_config)
+     00.01600s (init-network/consume-user-data)
+     00.01400s (init-network/config-set_hostname)
+     00.01300s (azure-ds/_get_metadata_from_imds)
+     00.00900s (init-local/search-DigitalOcean)
+     00.00900s (azure-ds/get_boot_telemetry)
+     00.00700s (modules-config/config-set-passwords)
+     00.00700s (azure-ds/check-platform-viability)
+     00.00500s (modules-config/config-locale)
+     00.00500s (init-network/config-seed_random)
+     00.00400s (modules-final/config-final-message)
+     00.00400s (init-network/config-ca-certs)
+     00.00300s (azure-ds/write_files)
+     00.00200s (modules-final/config-scripts-user)
+     00.00200s (modules-final/config-scripts-per-once)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (init-network/config-write-files)
+     00.00200s (init-network/config-migrator)
+     00.00200s (azure-ds/waiting-for-ssh-public-key)
+     00.00200s (azure-ds/get_system_info)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-snappy)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-disable-ec2-metadata)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-local/check-cache)
+     00.00100s (azure-ds/temporary_hostname)
+     00.00100s (azure-ds/_get_random_seed)
+     00.00100s (azure-ds/_extract_preprovisioned_vm_setting)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (azure-ds/wait-for-ephemeral-disk)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/load_azure_ds_dir)
+
+1 boot records analyzed
++ echo 'After upgrade networking config'
+After upgrade networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region:
++ echo 'Get cloud-id'
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-id
+azure
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+cloud-region:
++ echo 'Validating whether metadata is being updated per boot LP:1819913'
+Validating whether metadata is being updated per boot LP:1819913
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-08-30 16:47:05,553 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:05,937 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,291 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,495 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,505 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- sudo reboot
+sudo: unable to resolve host SRU-worked-azure
+Connection to 40.114.50.227 closed by remote host.
++ true
++ sleep 30
++ echo 'After reboot'
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@40.114.50.227 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-08-30 16:47:05,553 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:05,937 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,291 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,495 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:47:06,505 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:15,220 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:15,603 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:15,970 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:16,186 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:16,194 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-08-30 16:48:16,628 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: System boot
++ echo '### END xenial'
+### END xenial
++ for series in $SRU_SERIES
++ echo '### BEGIN bionic'
+### BEGIN bionic
++ case $series in
++ image_version=18.04-DAILY-LTS
++ name=test-sru-bionic
++ az vm create --name=test-sru-bionic --image=Canonical:UbuntuServer:18.04-DAILY-LTS:latest --admin-username=root --admin-username=ubuntu -g cloud-init-sru --ssh-key-value /home/ubuntu/.ssh/id_rsa.pub --boot-diagnostics-storage cibootdiagstor --custom-data sethostname.yaml
+{
+  "fqdns": "",
+  "id": "/subscriptions/371684ae-3628-4ff2-a946-034d8f2e30f9/resourceGroups/cloud-init-sru/providers/Microsoft.Compute/virtualMachines/test-sru-bionic",
+  "location": "eastus",
+  "macAddress": "00-0D-3A-16-AB-FD",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.1.17",
+  "publicIpAddress": "52.179.121.103",
+  "resourceGroup": "cloud-init-sru",
+  "zones": ""
+}
+++ az vm list-ip-addresses --name test-sru-bionic
+++ jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'
+++ awk '{printf "ubuntu@%s", $1}'
++ IP=ubuntu@52.179.121.103
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init status --wait --long
+
+status: done
+time: Fri, 30 Aug 2019 16:50:57 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~18.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- grep Trace /var/log/cloud-init.log
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- systemd-analyze
+Startup finished in 6.794s (kernel) + 35.120s (userspace) = 41.914s
+graphical.target reached after 34.155s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- systemd-analyze blame
+         13.275s cloud-init.service
+          4.873s cloud-init-local.service
+          3.102s snapd.seeded.service
+          2.632s cloud-config.service
+          2.516s keyboard-setup.service
+          2.438s snapd.service
+          2.409s pollinate.service
+          2.387s lxd-containers.service
+          2.326s dev-sda1.device
+          1.582s systemd-networkd-wait-online.service
+          1.440s apparmor.service
+          1.089s networkd-dispatcher.service
+           955ms cloud-final.service
+           947ms accounts-daemon.service
+           781ms apport.service
+           622ms rsyslog.service
+           527ms systemd-user-sessions.service
+           473ms systemd-timesyncd.service
+           441ms grub-common.service
+           410ms lvm2-monitor.service
+           330ms systemd-modules-load.service
+           303ms ebtables.service
+           272ms systemd-remount-fs.service
+           270ms ufw.service
+           267ms systemd-journal-flush.service
+           266ms kmod-static-nodes.service
+           253ms systemd-udev-trigger.service
+           250ms systemd-logind.service
+           235ms user@1000.service
+           234ms polkit.service
+           205ms dev-hugepages.mount
+           203ms systemd-tmpfiles-setup-dev.service
+           181ms systemd-journald.service
+           177ms ssh.service
+           173ms systemd-udevd.service
+           172ms sys-kernel-debug.mount
+           170ms systemd-networkd.service
+           157ms blk-availability.service
+           148ms dev-mqueue.mount
+           144ms lxd.socket
+           134ms systemd-sysctl.service
+           116ms snapd.socket
+           113ms systemd-machine-id-commit.service
+           105ms systemd-resolved.service
+            86ms plymouth-read-write.service
+            77ms systemd-tmpfiles-setup.service
+            74ms systemd-random-seed.service
+            73ms console-setup.service
+            71ms systemd-update-utmp.service
+            34ms sys-fs-fuse-connections.mount
+            32ms sys-kernel-config.mount
+            29ms boot-efi.mount
+            22ms plymouth-quit.service
+            22ms setvtrgb.service
+            21ms plymouth-quit-wait.service
+            19ms ephemeral-disk-warning.service
+            12ms systemd-update-utmp-runlevel.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00000s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.12200s +00.00900s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.13200s +00.05300s
+|`->load_azure_ds_dir @00.18500s +00.00000s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.31600s +00.00000s
+|`->_extract_preprovisioned_vm_setting @00.31700s +00.00000s
+Finished stage: (azure-ds/read_azure_ovf) 00.01000 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.01400 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->_get_metadata_from_imds @00.73200s +00.02000s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.42500 seconds
+
+|`->_get_random_seed @00.77100s +00.00000s
+Finished stage: (azure-ds/crawl_metadata) 00.64900 seconds
+
+|`->maybe_remove_ubuntu_network_config_scripts @00.78000s +00.00000s
+|`->write_files @00.78100s +00.00200s
+Finished stage: (azure-ds/_get_data) 00.66100 seconds
+
+Finished stage: (init-local/search-Azure) 00.66400 seconds
+
+|`->network config from imds @00.85600s +00.00100s
+Finished stage: (init-local) 01.06800 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/dev/sr0] @03.41900s +00.03400s
+|`->network config from imds @03.50700s +00.00000s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @03.52000s +00.00000s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00300 seconds
+
+Starting stage: azure-ds/get_metadata_from_fabric
+Starting stage: azure-ds/register_with_azure_and_fetch_data
+|`->generate_certificate @03.52300s +00.09600s
+Starting stage: azure-ds/find_endpoint
+|`->_networkd_get_value_from_leases @03.62000s +00.00100s
+Finished stage: (azure-ds/find_endpoint) 00.00100 seconds
+
+Starting stage: azure-ds/parse_certificates
+|`->_decrypt_certs_from_xml @03.64300s +00.01100s
+Starting stage: azure-ds/_get_ssh_key_from_cert
+|`->_run_x509_action @03.65500s +00.00600s
+Finished stage: (azure-ds/_get_ssh_key_from_cert) 00.16300 seconds
+
+Starting stage: azure-ds/_get_fingerprint_from_cert
+|`->_run_x509_action @03.81900s +00.00700s
+Finished stage: (azure-ds/_get_fingerprint_from_cert) 00.00700 seconds
+
+Finished stage: (azure-ds/parse_certificates) 00.18300 seconds
+
+|`->_report_ready @03.82600s +06.01600s
+Finished stage: (azure-ds/register_with_azure_and_fetch_data) 06.31900 seconds
+
+Finished stage: (azure-ds/get_metadata_from_fabric) 06.32000 seconds
+
+Finished stage: (azure-ds/_negotiate) 06.32400 seconds
+
+Finished stage: (azure-ds/setup) 06.32500 seconds
+
+Finished stage: (init-network/setup-datasource) 06.32600 seconds
+
+|`->reading and applying user-data @09.85200s +00.01000s
+|`->reading and applying vendor-data @09.86200s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @09.90200s +00.00000s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @09.90200s +00.16500s
+Starting stage: azure-ds/mount-ntfs-and-count
+|`->count_files @10.15800s +00.00700s
+Finished stage: (azure-ds/mount-ntfs-and-count) 00.10500 seconds
+
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.27000 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.27100 seconds
+
+Finished stage: (azure-ds/activate) 00.27100 seconds
+
+Finished stage: (init-network/activate-datasource) 00.27300 seconds
+
+|`->config-migrator ran successfully @10.23900s +00.00100s
+|`->config-seed_random ran successfully @10.24000s +00.00100s
+|`->config-bootcmd ran successfully @10.24200s +00.00000s
+|`->config-write-files ran successfully @10.24200s +00.00200s
+|`->config-growpart ran successfully @10.24400s +00.64000s
+|`->config-resizefs ran successfully @10.88500s +01.62300s
+|`->config-disk_setup ran successfully @12.50800s +02.50100s
+|`->config-mounts ran successfully @15.01300s +00.19500s
+|`->config-set_hostname ran successfully @15.20900s +00.00700s
+|`->config-update_hostname ran successfully @15.21700s +00.00100s
+|`->config-update_etc_hosts ran successfully @15.21800s +00.00000s
+|`->config-ca-certs ran successfully @15.21900s +00.00100s
+|`->config-rsyslog ran successfully @15.22000s +00.00100s
+|`->config-users-groups ran successfully @15.22100s +00.63300s
+|`->config-ssh ran successfully @15.85500s +00.25100s
+Finished stage: (init-network) 12.70400 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @22.98700s +00.00100s
+|`->config-snap ran successfully @22.98800s +00.00100s
+|`->config-snap_config ran successfully @22.98900s +00.00100s
+|`->config-ssh-import-id ran successfully @22.99100s +00.78700s
+|`->config-locale ran successfully @23.78100s +00.00100s
+|`->config-set-passwords ran successfully @23.78200s +00.00200s
+|`->config-grub-dpkg ran successfully @23.78400s +01.02700s
+|`->config-apt-pipelining ran successfully @24.81200s +00.00200s
+|`->config-apt-configure ran successfully @24.81400s +00.13000s
+|`->config-ubuntu-advantage ran successfully @24.94400s +00.00100s
+|`->config-ntp ran successfully @24.94600s +00.00100s
+|`->config-timezone ran successfully @24.94700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @24.94800s +00.00100s
+|`->config-runcmd ran successfully @24.94900s +00.00100s
+|`->config-byobu ran successfully @24.95000s +00.00100s
+Finished stage: (modules-config) 02.03500 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @25.73000s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @25.73200s +00.00100s
+|`->config-fan ran successfully @25.73300s +00.00100s
+|`->config-landscape ran successfully @25.73500s +00.00100s
+|`->config-lxd ran successfully @25.73600s +00.00100s
+|`->config-ubuntu-drivers ran successfully @25.73700s +00.00100s
+|`->config-puppet ran successfully @25.73900s +00.00100s
+|`->config-chef ran successfully @25.74000s +00.00100s
+|`->config-mcollective ran successfully @25.74100s +00.00100s
+|`->config-salt-minion ran successfully @25.74300s +00.00000s
+|`->config-rightscale_userdata ran successfully @25.74400s +00.00100s
+|`->config-scripts-vendor ran successfully @25.74500s +00.00100s
+|`->config-scripts-per-once ran successfully @25.74600s +00.00100s
+|`->config-scripts-per-boot ran successfully @25.74800s +00.00000s
+|`->config-scripts-per-instance ran successfully @25.74800s +00.00100s
+|`->config-scripts-user ran successfully @25.75000s +00.00000s
+|`->config-ssh-authkey-fingerprints ran successfully @25.75100s +00.01200s
+|`->config-keys-to-console ran successfully @25.76400s +00.07500s
+|`->config-phone-home ran successfully @25.90600s +00.00200s
+|`->config-final-message ran successfully @25.90800s +00.00600s
+|`->config-power-state-change ran successfully @25.91500s +00.00100s
+Finished stage: (modules-final) 00.32700 seconds
+
+Total Time: 51.71800 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init analyze blame
+-- Boot Record 01 --
+     06.01600s (azure-ds/_report_ready)
+     02.50100s (init-network/config-disk_setup)
+     01.62300s (init-network/config-resizefs)
+     01.02700s (modules-config/config-grub-dpkg)
+     00.78700s (modules-config/config-ssh-import-id)
+     00.64000s (init-network/config-growpart)
+     00.63300s (init-network/config-users-groups)
+     00.25100s (init-network/config-ssh)
+     00.19500s (init-network/config-mounts)
+     00.16500s (azure-ds/_has_ntfs_filesystem)
+     00.13000s (modules-config/config-apt-configure)
+     00.09600s (azure-ds/generate_certificate)
+     00.07500s (modules-final/config-keys-to-console)
+     00.05300s (azure-ds/list_possible_azure_ds_devs)
+     00.03400s (init-network/check-cache)
+     00.02000s (azure-ds/_get_metadata_from_imds)
+     00.01200s (modules-final/config-ssh-authkey-fingerprints)
+     00.01100s (azure-ds/_decrypt_certs_from_xml)
+     00.01000s (init-network/consume-user-data)
+     00.00900s (azure-ds/check-platform-viability)
+     00.00700s (init-network/config-set_hostname)
+     00.00700s (azure-ds/count_files)
+     00.00700s (azure-ds/_run_x509_action)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (azure-ds/_run_x509_action)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/config-write-files)
+     00.00200s (azure-ds/write_files)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-disable-ec2-metadata)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (azure-ds/parse_network_config)
+     00.00100s (azure-ds/_networkd_get_value_from_leases)
+     00.00000s (modules-final/config-scripts-user)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+     00.00000s (azure-ds/wait-for-ephemeral-disk)
+     00.00000s (azure-ds/temporary_hostname)
+     00.00000s (azure-ds/parse_network_config)
+     00.00000s (azure-ds/maybe_remove_ubuntu_network_config_scripts)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/load_azure_ds_dir)
+     00.00000s (azure-ds/_get_random_seed)
+     00.00000s (azure-ds/_extract_preprovisioned_vm_setting)
+
+1 boot records analyzed
++ echo 'Networking config'
+Networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+cat: /etc/network/interfaces.d/50-cloud-init.cfg: No such file or directory
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@52.179.121.103:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~18.04.1 [404 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~18.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo hostname SRU-didnt-work
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo rm -f /etc/network/interfaces.d/50-cloud-init.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo cloud-init clean --logs --reboot
+Connection to 52.179.121.103 closed by remote host.
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init status --wait --long
+
+status: done
+time: Fri, 30 Aug 2019 16:52:47 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- grep Trace '/var/log/cloud-init*'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo systemd-analyze blame
+          2.886s cloud-config.service
+          2.419s keyboard-setup.service
+          2.300s dev-sda1.device
+          2.125s cloud-init.service
+          1.721s cloud-init-local.service
+          1.303s systemd-networkd-wait-online.service
+          1.264s snapd.service
+          1.250s lxd-containers.service
+           960ms networkd-dispatcher.service
+           843ms cloud-final.service
+           596ms apparmor.service
+           552ms grub-common.service
+           508ms systemd-udev-trigger.service
+           493ms systemd-timesyncd.service
+           408ms accounts-daemon.service
+           318ms systemd-modules-load.service
+           308ms lvm2-monitor.service
+           293ms systemd-logind.service
+           278ms systemd-journal-flush.service
+           262ms dev-mqueue.mount
+           259ms ufw.service
+           258ms dev-hugepages.mount
+           254ms kmod-static-nodes.service
+           253ms blk-availability.service
+           252ms sys-kernel-debug.mount
+           245ms polkit.service
+           238ms apport.service
+           230ms ssh.service
+           203ms systemd-journald.service
+           174ms rsyslog.service
+           172ms systemd-user-sessions.service
+           135ms systemd-udevd.service
+           128ms ebtables.service
+           113ms systemd-remount-fs.service
+           107ms setvtrgb.service
+            81ms systemd-resolved.service
+            77ms systemd-tmpfiles-setup.service
+            77ms lxd.socket
+            75ms snapd.socket
+            75ms console-setup.service
+            68ms systemd-sysctl.service
+            59ms systemd-tmpfiles-setup-dev.service
+            58ms snapd.seeded.service
+            55ms systemd-random-seed.service
+            51ms systemd-networkd.service
+            47ms systemd-fsck@dev-disk-cloud-azure_resource\x2dpart1.service
+            35ms user@1000.service
+            33ms systemd-update-utmp-runlevel.service
+            32ms plymouth-quit-wait.service
+            29ms systemd-update-utmp.service
+            29ms plymouth-quit.service
+            28ms sys-kernel-config.mount
+            27ms boot-efi.mount
+            21ms plymouth-read-write.service
+            20ms sys-fs-fuse-connections.mount
+            16ms ephemeral-disk-warning.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00100s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.04800s +00.00900s
+|`->get_boot_telemetry @00.05700s +00.01300s
+|`->get_system_info @00.07100s +00.00000s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.07200s +00.18400s
+|`->load_azure_ds_dir @00.25600s +00.00100s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.26000s +00.00000s
+|`->_extract_preprovisioned_vm_setting @00.26000s +00.00100s
+Finished stage: (azure-ds/read_azure_ovf) 00.00400 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.00400 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->obtain dhcp lease @00.28200s +00.11200s
+|`->_get_metadata_from_imds @00.39400s +00.01400s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.15100 seconds
+
+|`->_get_random_seed @00.43300s +00.00000s
+Finished stage: (azure-ds/crawl_metadata) 00.37000 seconds
+
+|`->maybe_remove_ubuntu_network_config_scripts @00.44200s +00.00100s
+|`->write_files @00.44300s +00.00300s
+Finished stage: (azure-ds/_get_data) 00.39800 seconds
+
+Finished stage: (init-local/search-Azure) 00.40000 seconds
+
+|`->network config from imds @00.50700s +00.00100s
+Finished stage: (init-local) 00.64700 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @02.62300s +00.03200s
+|`->network config from imds @02.70600s +00.00000s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @02.71700s +00.00000s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00300 seconds
+
+Starting stage: azure-ds/get_metadata_from_fabric
+Starting stage: azure-ds/register_with_azure_and_fetch_data
+|`->generate_certificate @02.72100s +00.13700s
+Starting stage: azure-ds/find_endpoint
+|`->_networkd_get_value_from_leases @02.85900s +00.00000s
+Finished stage: (azure-ds/find_endpoint) 00.00200 seconds
+
+Starting stage: azure-ds/parse_certificates
+|`->_decrypt_certs_from_xml @02.89700s +00.01200s
+Starting stage: azure-ds/_get_ssh_key_from_cert
+|`->_run_x509_action @02.91000s +00.00600s
+Finished stage: (azure-ds/_get_ssh_key_from_cert) 00.03400 seconds
+
+Starting stage: azure-ds/_get_fingerprint_from_cert
+|`->_run_x509_action @02.94400s +00.00700s
+Finished stage: (azure-ds/_get_fingerprint_from_cert) 00.00700 seconds
+
+Finished stage: (azure-ds/parse_certificates) 00.05400 seconds
+
+|`->_report_ready @02.95100s +00.00700s
+Finished stage: (azure-ds/register_with_azure_and_fetch_data) 00.23800 seconds
+
+Finished stage: (azure-ds/get_metadata_from_fabric) 00.23900 seconds
+
+Finished stage: (azure-ds/_negotiate) 00.24200 seconds
+
+Finished stage: (azure-ds/setup) 00.24300 seconds
+
+Finished stage: (init-network/setup-datasource) 00.24300 seconds
+
+|`->reading and applying user-data @02.96700s +00.00900s
+|`->reading and applying vendor-data @02.97600s +00.00000s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @03.01000s +00.00000s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @03.01000s +00.14100s
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.14200 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.14200 seconds
+
+Finished stage: (azure-ds/activate) 00.14300 seconds
+
+Finished stage: (init-network/activate-datasource) 00.14500 seconds
+
+|`->config-migrator ran successfully @03.20300s +00.00100s
+|`->config-seed_random ran successfully @03.20500s +00.00100s
+|`->config-bootcmd ran successfully @03.20800s +00.00600s
+|`->config-write-files ran successfully @03.21500s +00.00100s
+|`->config-growpart ran successfully @03.21600s +00.13000s
+|`->config-resizefs ran successfully @03.34600s +00.02700s
+|`->config-disk_setup ran successfully @03.37300s +00.16900s
+|`->config-mounts ran successfully @03.55000s +00.18300s
+|`->config-set_hostname ran successfully @03.73400s +00.00700s
+|`->config-update_hostname ran successfully @03.74200s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.74300s +00.00100s
+|`->config-ca-certs ran successfully @03.74400s +00.00100s
+|`->config-rsyslog ran successfully @03.74600s +00.00100s
+|`->config-users-groups ran successfully @03.74700s +00.20600s
+|`->config-ssh ran successfully @03.95400s +00.17000s
+Finished stage: (init-network) 01.51600 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @07.38300s +00.00000s
+|`->config-snap ran successfully @07.38700s +00.00100s
+|`->config-snap_config ran successfully @07.38900s +00.00100s
+|`->config-ssh-import-id ran successfully @07.39100s +00.90500s
+|`->config-locale ran successfully @08.29600s +00.00200s
+|`->config-set-passwords ran successfully @08.29800s +00.00300s
+|`->config-grub-dpkg ran successfully @08.30600s +00.54400s
+|`->config-apt-pipelining ran successfully @08.85100s +00.00100s
+|`->config-apt-configure ran successfully @08.85200s +00.21200s
+|`->config-ubuntu-advantage ran successfully @09.06500s +00.00100s
+|`->config-ntp ran successfully @09.06600s +00.00100s
+|`->config-timezone ran successfully @09.06800s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @09.06900s +00.00000s
+|`->config-runcmd ran successfully @09.07000s +00.00100s
+|`->config-byobu ran successfully @09.07100s +00.00100s
+Finished stage: (modules-config) 01.71600 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @09.79300s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @09.79500s +00.00100s
+|`->config-fan ran successfully @09.79700s +00.00100s
+|`->config-landscape ran successfully @09.79800s +00.00100s
+|`->config-lxd ran successfully @09.80000s +00.00100s
+|`->config-ubuntu-drivers ran successfully @09.80100s +00.00100s
+|`->config-puppet ran successfully @09.80300s +00.00000s
+|`->config-chef ran successfully @09.80400s +00.00100s
+|`->config-mcollective ran successfully @09.80500s +00.00100s
+|`->config-salt-minion ran successfully @09.80700s +00.00100s
+|`->config-rightscale_userdata ran successfully @09.80800s +00.00100s
+|`->config-scripts-vendor ran successfully @09.81000s +00.00000s
+|`->config-scripts-per-once ran successfully @09.81100s +00.00100s
+|`->config-scripts-per-boot ran successfully @09.81200s +00.00100s
+|`->config-scripts-per-instance ran successfully @09.81300s +00.00100s
+|`->config-scripts-user ran successfully @09.81500s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @09.81600s +00.05100s
+|`->config-keys-to-console ran successfully @09.86700s +00.10700s
+|`->config-phone-home ran successfully @09.97500s +00.00200s
+|`->config-final-message ran successfully @09.97700s +00.00600s
+|`->config-power-state-change ran successfully @09.98300s +00.00100s
+Finished stage: (modules-final) 00.21200 seconds
+
+Total Time: 7.29500 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.90500s (modules-config/config-ssh-import-id)
+     00.54400s (modules-config/config-grub-dpkg)
+     00.21200s (modules-config/config-apt-configure)
+     00.20600s (init-network/config-users-groups)
+     00.18400s (azure-ds/list_possible_azure_ds_devs)
+     00.18300s (init-network/config-mounts)
+     00.17000s (init-network/config-ssh)
+     00.16900s (init-network/config-disk_setup)
+     00.14100s (azure-ds/_has_ntfs_filesystem)
+     00.13700s (azure-ds/generate_certificate)
+     00.13000s (init-network/config-growpart)
+     00.11200s (azure-ds/obtain-dhcp-lease)
+     00.10700s (modules-final/config-keys-to-console)
+     00.05100s (modules-final/config-ssh-authkey-fingerprints)
+     00.03200s (init-network/check-cache)
+     00.02700s (init-network/config-resizefs)
+     00.01400s (azure-ds/_get_metadata_from_imds)
+     00.01300s (azure-ds/get_boot_telemetry)
+     00.01200s (azure-ds/_decrypt_certs_from_xml)
+     00.00900s (init-network/consume-user-data)
+     00.00900s (azure-ds/check-platform-viability)
+     00.00700s (init-network/config-set_hostname)
+     00.00700s (azure-ds/_run_x509_action)
+     00.00700s (azure-ds/_report_ready)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (init-network/config-bootcmd)
+     00.00600s (azure-ds/_run_x509_action)
+     00.00300s (modules-config/config-set-passwords)
+     00.00300s (azure-ds/write_files)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-locale)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-local/check-cache)
+     00.00100s (azure-ds/parse_network_config)
+     00.00100s (azure-ds/maybe_remove_ubuntu_network_config_scripts)
+     00.00100s (azure-ds/load_azure_ds_dir)
+     00.00100s (azure-ds/_extract_preprovisioned_vm_setting)
+     00.00000s (modules-final/config-scripts-vendor)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (azure-ds/wait-for-ephemeral-disk)
+     00.00000s (azure-ds/temporary_hostname)
+     00.00000s (azure-ds/parse_network_config)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/get_system_info)
+     00.00000s (azure-ds/_networkd_get_value_from_leases)
+     00.00000s (azure-ds/_get_random_seed)
+
+1 boot records analyzed
++ echo 'After upgrade networking config'
+After upgrade networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+cat: /etc/network/interfaces.d/50-cloud-init.cfg: No such file or directory
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region:
++ echo 'Get cloud-id'
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-id
+azure
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+cloud-region:
++ echo 'Validating whether metadata is being updated per boot LP:1819913'
+Validating whether metadata is being updated per boot LP:1819913
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-08-30 16:52:37,128 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- sudo reboot
+Connection to 52.179.121.103 closed by remote host.
++ true
++ sleep 30
++ echo 'After reboot'
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@52.179.121.103 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+ssh: connect to host 52.179.121.103 port 22: Connection refused
++ echo '### END bionic'
+### END bionic
++ for series in $SRU_SERIES
++ echo '### BEGIN disco'
+### BEGIN disco
++ case $series in
++ image_version=19.04-DAILY
++ name=test-sru-disco
++ az vm create --name=test-sru-disco --image=Canonical:UbuntuServer:19.04-DAILY:latest --admin-username=root --admin-username=ubuntu -g cloud-init-sru --ssh-key-value /home/ubuntu/.ssh/id_rsa.pub --boot-diagnostics-storage cibootdiagstor --custom-data sethostname.yaml
+{
+  "fqdns": "",
+  "id": "/subscriptions/371684ae-3628-4ff2-a946-034d8f2e30f9/resourceGroups/cloud-init-sru/providers/Microsoft.Compute/virtualMachines/test-sru-disco",
+  "location": "eastus",
+  "macAddress": "00-0D-3A-18-51-EE",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.1.18",
+  "publicIpAddress": "104.41.135.8",
+  "resourceGroup": "cloud-init-sru",
+  "zones": ""
+}
+++ az vm list-ip-addresses --name test-sru-disco
+++ awk '{printf "ubuntu@%s", $1}'
+++ jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'
++ IP=ubuntu@104.41.135.8
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init status --wait --long
+ssh: connect to host 104.41.135.8 port 22: Connection refused
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- dpkg-query --show cloud-init
+ssh: connect to host 104.41.135.8 port 22: Connection refused
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo cat /run/cloud-init/result.json
+ssh: connect to host 104.41.135.8 port 22: Connection refused
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- grep Trace /var/log/cloud-init.log
+ssh: connect to host 104.41.135.8 port 22: Connection refused
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- systemd-analyze
+Bootup is not yet finished (org.freedesktop.systemd1.Manager.FinishTimestampMonotonic=0).
+Please try again later.
+Hint: Use 'systemctl list-jobs' to see active jobs
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- systemd-analyze blame
+Bootup is not yet finished (org.freedesktop.systemd1.Manager.FinishTimestampMonotonic=0).
+Please try again later.
+Hint: Use 'systemctl list-jobs' to see active jobs
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00000s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.12500s +00.01000s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.13600s +00.06100s
+|`->load_azure_ds_dir @00.19700s +00.00000s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.34200s +00.00100s
+|`->_extract_preprovisioned_vm_setting @00.34300s +00.00000s
+Finished stage: (azure-ds/read_azure_ovf) 00.01300 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.01700 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->_get_metadata_from_imds @00.78300s +00.04000s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.46400 seconds
+
+|`->_get_random_seed @00.84600s +00.00000s
+Finished stage: (azure-ds/crawl_metadata) 00.72200 seconds
+
+|`->maybe_remove_ubuntu_network_config_scripts @00.85700s +00.00100s
+|`->write_files @00.85800s +00.01200s
+Finished stage: (azure-ds/_get_data) 00.74500 seconds
+
+Finished stage: (init-local/search-Azure) 00.74900 seconds
+
+|`->network config from imds @00.95200s +00.00100s
+Finished stage: (init-local) 01.14500 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/dev/sr0] @03.70100s +00.02700s
+|`->network config from imds @03.78600s +00.00000s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @03.80300s +00.00000s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00400 seconds
+
+Starting stage: azure-ds/get_metadata_from_fabric
+Starting stage: azure-ds/register_with_azure_and_fetch_data
+|`->generate_certificate @03.80700s +00.48500s
+Starting stage: azure-ds/find_endpoint
+|`->_networkd_get_value_from_leases @04.29200s +00.00100s
+Finished stage: (azure-ds/find_endpoint) 00.00200 seconds
+
+Starting stage: azure-ds/parse_certificates
+|`->_decrypt_certs_from_xml @04.31600s +00.01400s
+Starting stage: azure-ds/_get_ssh_key_from_cert
+|`->_run_x509_action @04.33100s +00.00700s
+Finished stage: (azure-ds/_get_ssh_key_from_cert) 00.04700 seconds
+
+Starting stage: azure-ds/_get_fingerprint_from_cert
+|`->_run_x509_action @04.37900s +00.00800s
+Finished stage: (azure-ds/_get_fingerprint_from_cert) 00.00900 seconds
+
+Finished stage: (azure-ds/parse_certificates) 00.07200 seconds
+
+|`->_report_ready @04.38800s +04.86500s
+Finished stage: (azure-ds/register_with_azure_and_fetch_data) 05.44700 seconds
+
+Finished stage: (azure-ds/get_metadata_from_fabric) 05.44800 seconds
+
+Finished stage: (azure-ds/_negotiate) 05.45300 seconds
+
+Finished stage: (azure-ds/setup) 05.45400 seconds
+
+Finished stage: (init-network/setup-datasource) 05.45400 seconds
+
+|`->reading and applying user-data @09.26300s +00.02400s
+|`->reading and applying vendor-data @09.28700s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @09.32500s +00.00100s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @09.32600s +00.18000s
+Starting stage: azure-ds/mount-ntfs-and-count
+|`->count_files @09.59900s +00.00200s
+Finished stage: (azure-ds/mount-ntfs-and-count) 00.10600 seconds
+
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.28700 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.28800 seconds
+
+Finished stage: (azure-ds/activate) 00.28800 seconds
+
+Finished stage: (init-network/activate-datasource) 00.29000 seconds
+
+|`->config-migrator ran successfully @09.67200s +00.00100s
+|`->config-seed_random ran successfully @09.67400s +00.00100s
+|`->config-bootcmd ran successfully @09.67600s +00.00000s
+|`->config-write-files ran successfully @09.67700s +00.00100s
+|`->config-growpart ran successfully @09.67800s +00.86700s
+|`->config-resizefs ran successfully @10.54600s +02.62000s
+|`->config-disk_setup ran successfully @13.16600s +02.49700s
+|`->config-mounts ran successfully @15.66800s +00.37400s
+|`->config-set_hostname ran successfully @16.04400s +00.00900s
+|`->config-update_hostname ran successfully @16.05400s +00.00100s
+|`->config-update_etc_hosts ran successfully @16.05600s +00.00000s
+|`->config-ca-certs ran successfully @16.05700s +00.00100s
+|`->config-rsyslog ran successfully @16.05800s +00.00100s
+|`->config-users-groups ran successfully @16.05900s +00.40500s
+|`->config-ssh ran successfully @16.46400s +00.39200s
+Finished stage: (init-network) 13.17100 seconds
+
+Total Time: 45.67500 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init analyze blame
+-- Boot Record 01 --
+     04.86500s (azure-ds/_report_ready)
+     02.62000s (init-network/config-resizefs)
+     02.49700s (init-network/config-disk_setup)
+     00.86700s (init-network/config-growpart)
+     00.48500s (azure-ds/generate_certificate)
+     00.40500s (init-network/config-users-groups)
+     00.39200s (init-network/config-ssh)
+     00.37400s (init-network/config-mounts)
+     00.18000s (azure-ds/_has_ntfs_filesystem)
+     00.06100s (azure-ds/list_possible_azure_ds_devs)
+     00.04000s (azure-ds/_get_metadata_from_imds)
+     00.02700s (init-network/check-cache)
+     00.02400s (init-network/consume-user-data)
+     00.01400s (azure-ds/_decrypt_certs_from_xml)
+     00.01200s (azure-ds/write_files)
+     00.01000s (azure-ds/check-platform-viability)
+     00.00900s (init-network/config-set_hostname)
+     00.00800s (azure-ds/_run_x509_action)
+     00.00700s (azure-ds/_run_x509_action)
+     00.00200s (azure-ds/count_files)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (azure-ds/wait-for-ephemeral-disk)
+     00.00100s (azure-ds/parse_network_config)
+     00.00100s (azure-ds/maybe_remove_ubuntu_network_config_scripts)
+     00.00100s (azure-ds/load_azure_ovf_pubkeys)
+     00.00100s (azure-ds/_networkd_get_value_from_leases)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+     00.00000s (azure-ds/temporary_hostname)
+     00.00000s (azure-ds/parse_network_config)
+     00.00000s (azure-ds/load_azure_ds_dir)
+     00.00000s (azure-ds/_get_random_seed)
+     00.00000s (azure-ds/_extract_preprovisioned_vm_setting)
+
+1 boot records analyzed
++ echo 'Networking config'
+Networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+cat: /etc/network/interfaces.d/50-cloud-init.cfg: No such file or directory
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@104.41.135.8:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo bash ./setup_proposed.sh
++ egrep cloud-init
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~19.04.1 [400 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) over (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~19.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo hostname SRU-didnt-work
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo rm -f /etc/network/interfaces.d/50-cloud-init.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo cloud-init clean --logs --reboot
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init status --wait --long
+
+status: done
+time: Fri, 30 Aug 2019 16:57:19 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- grep Trace '/var/log/cloud-init*'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo systemd-analyze blame
+          3.467s cloud-config.service
+          2.799s cloud-init.service
+          2.709s dev-sda1.device
+          2.580s lvm2-monitor.service
+          2.507s snapd.service
+          2.491s snap.lxd.activate.service
+          1.901s cloud-init-local.service
+          1.827s systemd-udev-settle.service
+          1.665s systemd-logind.service
+          1.635s accounts-daemon.service
+          1.632s systemd-networkd-wait-online.service
+          1.278s grub-common.service
+           918ms cloud-final.service
+           902ms systemd-timesyncd.service
+           729ms apport.service
+           727ms ssh.service
+           723ms systemd-journald.service
+           713ms systemd-user-sessions.service
+           603ms rsyslog.service
+           591ms networkd-dispatcher.service
+           530ms apparmor.service
+           473ms systemd-udev-trigger.service
+           434ms grub-initrd-fallback.service
+           433ms systemd-resolved.service
+           421ms keyboard-setup.service
+           416ms kmod-static-nodes.service
+           366ms sys-kernel-debug.mount
+           339ms dev-hugepages.mount
+           321ms systemd-remount-fs.service
+           315ms systemd-modules-load.service
+           306ms atd.service
+           302ms systemd-networkd.service
+           288ms blk-availability.service
+           283ms dev-mqueue.mount
+           250ms ufw.service
+           221ms plymouth-quit.service
+           171ms plymouth-quit-wait.service
+           132ms sys-fs-fuse-connections.mount
+           128ms systemd-sysctl.service
+           127ms sys-kernel-config.mount
+           125ms snapd.socket
+           121ms console-setup.service
+           119ms finalrd.service
+           119ms systemd-random-seed.service
+           115ms systemd-tmpfiles-setup.service
+           112ms snapd.seeded.service
+           110ms snap-lxd-11684.mount
+           104ms systemd-sysusers.service
+           103ms user@1000.service
+           100ms systemd-update-utmp.service
+            96ms boot-efi.mount
+            83ms snap-core-7396.mount
+            67ms dev-loop0.device
+            63ms systemd-journal-flush.service
+            62ms systemd-fsck@dev-disk-cloud-azure_resource\x2dpart1.service
+            56ms multipathd.service
+            55ms setvtrgb.service
+            51ms plymouth-read-write.service
+            43ms systemd-udevd.service
+            40ms systemd-tmpfiles-setup-dev.service
+            29ms systemd-update-utmp-runlevel.service
+            23ms user-runtime-dir@1000.service
+            19ms dev-loop1.device
+            16ms ephemeral-disk-warning.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00100s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.03800s +00.01000s
+|`->get_boot_telemetry @00.04800s +00.01800s
+|`->get_system_info @00.06600s +00.00100s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.06700s +00.18200s
+|`->load_azure_ds_dir @00.24900s +00.00100s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.25300s +00.00000s
+|`->_extract_preprovisioned_vm_setting @00.25400s +00.00000s
+Finished stage: (azure-ds/read_azure_ovf) 00.00300 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.00400 seconds
+
+Starting stage: azure-ds/get_metadata_from_imds
+|`->obtain dhcp lease @00.27400s +00.26800s
+|`->_get_metadata_from_imds @00.54200s +00.01500s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.30600 seconds
+
+|`->_get_random_seed @00.58000s +00.00100s
+Finished stage: (azure-ds/crawl_metadata) 00.52400 seconds
+
+|`->maybe_remove_ubuntu_network_config_scripts @00.59200s +00.00000s
+|`->write_files @00.59300s +00.00200s
+Finished stage: (azure-ds/_get_data) 00.55700 seconds
+
+Finished stage: (init-local/search-Azure) 00.56000 seconds
+
+|`->network config from imds @00.67400s +00.00100s
+Finished stage: (init-local) 00.81300 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/var/lib/waagent] @03.36100s +00.02400s
+|`->network config from imds @03.43700s +00.00000s
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @03.44700s +00.00000s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00300 seconds
+
+Starting stage: azure-ds/get_metadata_from_fabric
+Starting stage: azure-ds/register_with_azure_and_fetch_data
+|`->generate_certificate @03.45100s +00.07100s
+Starting stage: azure-ds/find_endpoint
+|`->_networkd_get_value_from_leases @03.52300s +00.00100s
+Finished stage: (azure-ds/find_endpoint) 00.00200 seconds
+
+Starting stage: azure-ds/parse_certificates
+|`->_decrypt_certs_from_xml @03.55900s +00.01400s
+Starting stage: azure-ds/_get_ssh_key_from_cert
+|`->_run_x509_action @03.57400s +00.00800s
+Finished stage: (azure-ds/_get_ssh_key_from_cert) 00.01500 seconds
+
+Starting stage: azure-ds/_get_fingerprint_from_cert
+|`->_run_x509_action @03.58900s +00.00700s
+Finished stage: (azure-ds/_get_fingerprint_from_cert) 00.00700 seconds
+
+Finished stage: (azure-ds/parse_certificates) 00.03700 seconds
+
+|`->_report_ready @03.59600s +00.00600s
+Finished stage: (azure-ds/register_with_azure_and_fetch_data) 00.15100 seconds
+
+Finished stage: (azure-ds/get_metadata_from_fabric) 00.15200 seconds
+
+Finished stage: (azure-ds/_negotiate) 00.15600 seconds
+
+Finished stage: (azure-ds/setup) 00.15700 seconds
+
+Finished stage: (init-network/setup-datasource) 00.15800 seconds
+
+|`->reading and applying user-data @03.61200s +00.00800s
+|`->reading and applying vendor-data @03.62000s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+|`->wait for ephemeral disk @03.66300s +00.00000s
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @03.66300s +00.15600s
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.15700 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.15700 seconds
+
+Finished stage: (azure-ds/activate) 00.15800 seconds
+
+Finished stage: (init-network/activate-datasource) 00.16000 seconds
+
+|`->config-migrator ran successfully @03.87100s +00.00100s
+|`->config-seed_random ran successfully @03.87200s +00.00200s
+|`->config-bootcmd ran successfully @03.87600s +00.00100s
+|`->config-write-files ran successfully @03.88400s +00.00100s
+|`->config-growpart ran successfully @03.88500s +00.12800s
+|`->config-resizefs ran successfully @04.01400s +00.30100s
+|`->config-disk_setup ran successfully @04.31600s +00.66300s
+|`->config-mounts ran successfully @04.97900s +00.34300s
+|`->config-set_hostname ran successfully @05.32300s +00.02000s
+|`->config-update_hostname ran successfully @05.34400s +00.00100s
+|`->config-update_etc_hosts ran successfully @05.34600s +00.00000s
+|`->config-ca-certs ran successfully @05.34700s +00.00100s
+|`->config-rsyslog ran successfully @05.34800s +00.00100s
+|`->config-users-groups ran successfully @05.34900s +00.03900s
+|`->config-ssh ran successfully @05.38900s +00.19600s
+Finished stage: (init-network) 02.23900 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @10.81900s +00.00100s
+|`->config-snap ran successfully @10.82100s +00.00200s
+|`->config-snap_config ran successfully @10.82300s +00.00700s
+|`->config-ssh-import-id ran successfully @10.83000s +00.92700s
+|`->config-locale ran successfully @11.75900s +00.00300s
+|`->config-set-passwords ran successfully @11.76200s +00.00300s
+|`->config-grub-dpkg ran successfully @11.76500s +00.87200s
+|`->config-apt-pipelining ran successfully @12.63800s +00.00100s
+|`->config-apt-configure ran successfully @12.64000s +00.31100s
+|`->config-ubuntu-advantage ran successfully @12.95300s +00.00100s
+|`->config-ntp ran successfully @12.95400s +00.00100s
+|`->config-timezone ran successfully @12.95600s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @12.95700s +00.00000s
+|`->config-runcmd ran successfully @12.95800s +00.00100s
+|`->config-byobu ran successfully @12.95900s +00.00100s
+Finished stage: (modules-config) 02.17200 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @13.67600s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @13.67900s +00.00100s
+|`->config-fan ran successfully @13.68000s +00.00200s
+|`->config-landscape ran successfully @13.68200s +00.00100s
+|`->config-lxd ran successfully @13.68400s +00.00100s
+|`->config-ubuntu-drivers ran successfully @13.68500s +00.00100s
+|`->config-puppet ran successfully @13.68700s +00.00100s
+|`->config-chef ran successfully @13.68800s +00.00100s
+|`->config-mcollective ran successfully @13.69000s +00.00100s
+|`->config-salt-minion ran successfully @13.69100s +00.00100s
+|`->config-rightscale_userdata ran successfully @13.69300s +00.00100s
+|`->config-scripts-vendor ran successfully @13.69500s +00.00100s
+|`->config-scripts-per-once ran successfully @13.69600s +00.00100s
+|`->config-scripts-per-boot ran successfully @13.69800s +00.00000s
+|`->config-scripts-per-instance ran successfully @13.69900s +00.00100s
+|`->config-scripts-user ran successfully @13.70000s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @13.70200s +00.05400s
+|`->config-keys-to-console ran successfully @13.76100s +00.07900s
+|`->config-phone-home ran successfully @13.84100s +00.02000s
+|`->config-final-message ran successfully @13.86100s +00.02200s
+|`->config-power-state-change ran successfully @13.88300s +00.00100s
+Finished stage: (modules-final) 00.25300 seconds
+
+Total Time: 8.90100 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.92700s (modules-config/config-ssh-import-id)
+     00.87200s (modules-config/config-grub-dpkg)
+     00.66300s (init-network/config-disk_setup)
+     00.34300s (init-network/config-mounts)
+     00.31100s (modules-config/config-apt-configure)
+     00.30100s (init-network/config-resizefs)
+     00.26800s (azure-ds/obtain-dhcp-lease)
+     00.19600s (init-network/config-ssh)
+     00.18200s (azure-ds/list_possible_azure_ds_devs)
+     00.15600s (azure-ds/_has_ntfs_filesystem)
+     00.12800s (init-network/config-growpart)
+     00.07900s (modules-final/config-keys-to-console)
+     00.07100s (azure-ds/generate_certificate)
+     00.05400s (modules-final/config-ssh-authkey-fingerprints)
+     00.03900s (init-network/config-users-groups)
+     00.02400s (init-network/check-cache)
+     00.02200s (modules-final/config-final-message)
+     00.02000s (modules-final/config-phone-home)
+     00.02000s (init-network/config-set_hostname)
+     00.01800s (azure-ds/get_boot_telemetry)
+     00.01500s (azure-ds/_get_metadata_from_imds)
+     00.01400s (azure-ds/_decrypt_certs_from_xml)
+     00.01000s (azure-ds/check-platform-viability)
+     00.00800s (init-network/consume-user-data)
+     00.00800s (azure-ds/_run_x509_action)
+     00.00700s (modules-config/config-snap_config)
+     00.00700s (azure-ds/_run_x509_action)
+     00.00600s (azure-ds/_report_ready)
+     00.00300s (modules-config/config-set-passwords)
+     00.00300s (modules-config/config-locale)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-final/config-fan)
+     00.00200s (modules-config/config-snap)
+     00.00200s (init-network/config-seed_random)
+     00.00200s (azure-ds/write_files)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-local/check-cache)
+     00.00100s (azure-ds/parse_network_config)
+     00.00100s (azure-ds/load_azure_ds_dir)
+     00.00100s (azure-ds/get_system_info)
+     00.00100s (azure-ds/_networkd_get_value_from_leases)
+     00.00100s (azure-ds/_get_random_seed)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (azure-ds/wait-for-ephemeral-disk)
+     00.00000s (azure-ds/temporary_hostname)
+     00.00000s (azure-ds/parse_network_config)
+     00.00000s (azure-ds/maybe_remove_ubuntu_network_config_scripts)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/_extract_preprovisioned_vm_setting)
+
+1 boot records analyzed
++ echo 'After upgrade networking config'
+After upgrade networking config
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+cat: /etc/network/interfaces.d/50-cloud-init.cfg: No such file or directory
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region:
++ echo 'Get cloud-id'
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-id
+azure
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+cloud-region:
++ echo 'Validating whether metadata is being updated per boot LP:1819913'
+Validating whether metadata is being updated per boot LP:1819913
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-08-30 16:57:06,058 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- sudo reboot
++ sleep 30
++ echo 'After reboot'
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@104.41.135.8 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+ssh: connect to host 104.41.135.8 port 22: Connection refused
++ echo '### END disco'
+### END disco
