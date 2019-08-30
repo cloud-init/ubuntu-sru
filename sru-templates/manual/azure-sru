@@ -5,6 +5,11 @@
 # To be adapted to the SRU to test
 SRU_SERIES="%SRU_SERIES%"
 
+# local values
+RESOURCE_GROUP="<specify your resource group>"
+BOOT_DIAG="<specify your boot diagnostics group>"
+SSH_KEY="$HOME/.ssh/id_rsa.pub"
+
 cat > sethostname.yaml <<EOF
 ## template: jinja
 #cloud-config
@@ -20,22 +25,31 @@ apt-get update -q
 apt-get install -qy cloud-init
 EOF
 
-
-
+if [ -n "${BOOT_DIAG}" ]; then
+    BOOT_DIAG="--boot-diagnostics-storage ${BOOT_DIAG}"
+else:
+    BOOT_DIAG=""
+fi
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
-
-for RELEASE in $SRU_SERIES; do
+for series in $SRU_SERIES; do
     echo "### BEGIN $RELEASE"
-    case $RELEASE in
-        xenial) image_version=16.04-DAILY-LTS;;
+    netcfg="/etc/netplan/50-cloud-init.yaml"
+    case $series in
+        xenial) image_version=16.04-DAILY-LTS
+                netcfg="/etc/network/interfaces.d/50-cloud-init.cfg";;
         bionic) image_version=18.04-DAILY-LTS;;
         cosmic) image_version=18.10-DAILY;;
         disco) image_version=19.04-DAILY;;
         *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
     esac
     name=test-sru-$series
-    az vm create --name=$name --image=Canonical:UbuntuServer:16.04-DAILY-LTS:latest --admin-username=root -g srugrp10 --admin-username=ubuntu --custom-data sethostname.yaml
+    az vm create --name=$name \
+        --image=Canonical:UbuntuServer:$image_version:latest \
+        --admin-username=root --admin-username=ubuntu \
+        -g $RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+        $BOOT_DIAG \
+        --custom-data sethostname.yaml
     IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
     ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
@@ -46,11 +60,14 @@ for RELEASE in $SRU_SERIES; do
     ssh "${sshopts[@]}" $IP -- systemd-analyze blame
     ssh "${sshopts[@]}" $IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+    echo 'Networking config'
+    ssh "${sshopts[@]}" $IP -- cat $netcfg
 
     scp "${sshopts[@]}" setup_proposed.sh $IP:.
     ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
     ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
     ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $IP -- sudo rm -f $netcfg
     ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
 
     sleep 60
@@ -61,14 +78,17 @@ for RELEASE in $SRU_SERIES; do
     ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
     ssh "${sshopts[@]}" $IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
-    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+    echo 'After upgrade Networking config'
+    ssh "${sshopts[@]}" $IP -- cat $netcfg
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
     echo 'Get cloud-id'
     ssh "${sshopts[@]}" $IP -- cloud-id
-    ssh "${sshopts[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'
+    ssh "${sshopts[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
     echo 'Validating whether metadata is being updated per boot LP:1819913'
     ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
     ssh "${sshopts[@]}" $IP -- sudo reboot || true
+    sleep 30
     echo 'After reboot'
     ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
-    echo "### END $RELEASE"
+    echo "### END $series"
 done
