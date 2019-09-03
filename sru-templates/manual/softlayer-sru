@@ -1,0 +1,98 @@
+#!/bin/bash
+# Softlayer(IBM) manual sru testing
+
+
+
+# launched performed with qa-scripts (launch-softlayer)
+# repo https://github.com/cloud-init/qa-scripts.git
+# launch-softlayer --image=os:bionic -u sethostname.yaml
+# launch-softlayer --image=os:xenial -u sethostname.yaml
+# then grab vm ips with `sl vs list`
+
+
+
+#!/bin/bash
+# Manually deploy on Softlayer using slcli client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+set -x
+ 
+# local values defaults set by sru-create.py
+SRU_SERIES=${SRU_SERIES:-"%SRU_SERIES%"}
+LP_USER=${LP_USER:-"%LP_USER%"}
+
+# Provide USE_DEV_PPA=1 if we are SRU queue is still unapproved
+# This will use our ppa:cloud-init-dev/proposed
+if [ "${USE_DEV_PPA:-0}" -eq "0" ]; then
+    PROPOSED_SCRIPT=setup_proposed.sh
+else
+    PROPOSED_SCRIPT=setup_dev_proposed.sh
+fi
+
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [$LP_USER]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    VM_IP=`launch-softlayer --image=os:$series -u sethostname.yaml | awk '/primary ip/{printf "root@%s", $NF}'`
+    ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init.log
+    ssh "${sshopts[@]}" $VM_IP -- systemd-analyze
+    ssh "${sshopts[@]}" $VM_IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
+
+    scp "${sshopts[@]}" $PROPOSED_SCRIPT $VM_IP:.
+    ssh "${sshopts[@]}" $VM_IP -- sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" $VM_IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $VM_IP -- sudo cloud-init clean --logs --reboot
+
+    sleep 60
+
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init\*
+    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $VM_IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
+    ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
+    echo 'Get cloud-id'
+    ssh "${sshopts[@]}" $VM_IP -- cloud-id
+    ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+
+    echo 'Validating whether metadata is being updated per boot LP:1819913'
+    ssh "${sshopts[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh "${sshopts[@]}" $VM_IP -- sudo reboot || true
+    echo 'After reboot'
+    ssh "${sshopts[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    echo "Confirm no traceback after reboot LP: 1823084"
+    ssh "${sshopts[@]}" $VM_IP -- "grep 'Trace' /var/log/cloud-init.log"
+
+    echo "### END $series"
+done
+
