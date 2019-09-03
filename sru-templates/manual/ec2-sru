@@ -4,11 +4,23 @@ set -e
 
 SRU_SERIES="%SRU_SERIES%"
 
+# local values
+LP_USER=${LP_USER:-"%SRU_LP_USER%"}
+
+# Provide USE_DEV_PPA=1 if we are SRU queue is still unapproved
+# This will use our ppa:cloud-init-dev/proposed
+if [ "${USE_DEV_PPA:-0}" -eq "0" ]; then
+    PROPOSED_SCRIPT=setup_proposed.sh
+else
+    PROPOSED_SCRIPT=setup_dev_proposed.sh
+fi
+
+
 # Manual EC2 upgrade and clean install validation
 cat > sethostname.yaml <<EOF
 ## template: jinja
 #cloud-config
-ssh_import_id: [%SRU_LP_USER%]
+ssh_import_id: [$LP_USER]
 hostname: SRU-worked-{{v1.cloud_name}}
 EOF
 
@@ -20,15 +32,22 @@ apt-get update -q;
 apt-get install -qy cloud-init;
 EOF
 
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
 # set -x outputs each commant to standard error, so an easy way to keen an eye
 # what's going on while saving a clean log file (stdout only) is using tee(1).
 set -x
 
 sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
-for RELEASE in $SRU_SERIES; do
-    echo "### BEGIN $RELEASE"
-    EC2_INST=`launch-ec2 --series $RELEASE -u sethostname.yaml | awk '/Found/{print $5}'`
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    EC2_INST=`launch-ec2 --series $series -u sethostname.yaml | awk '/Found/{print $5}'`
     sleep 60
     ssh $sshopts $EC2_INST -- cloud-init status --wait --long
     ssh $sshopts $EC2_INST -- cat /run/cloud-init/result.json
@@ -37,8 +56,8 @@ for RELEASE in $SRU_SERIES; do
     ssh $sshopts $EC2_INST -- sudo systemd-analyze blame
     ssh $sshopts $EC2_INST -- sudo cloud-init analyze show
     ssh $sshopts $EC2_INST -- ! sudo grep Trace "/var/log/cloud-init*"
-    scp $sshopts setup_proposed.sh $EC2_INST:
-    ssh $sshopts $EC2_INST sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    scp $sshopts $PROPOSED_SCRIPT $EC2_INST:
+    ssh $sshopts $EC2_INST sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
     ssh $sshopts $EC2_INST sudo hostname something-else
     ssh $sshopts $EC2_INST -- sudo cloud-init init
     ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init*"
@@ -50,7 +69,7 @@ for RELEASE in $SRU_SERIES; do
     ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init*"
     ssh $sshopts $EC2_INST -- sudo systemd-analyze
     ssh $sshopts $EC2_INST -- sudo cloud-init analyze show
-    if [ "$RELEASE" = "xenial" ]; then
+    if [ "$series" = "xenial" ]; then
        echo "--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep."
     else
        echo "--- Expect success on bionic for jinja because deb DOES have jinja dep."
@@ -69,5 +88,5 @@ for RELEASE in $SRU_SERIES; do
     sleep 60
     echo 'After reboot'
     ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
-    echo "### END $RELEASE"
+    echo "### END $series"
 done
