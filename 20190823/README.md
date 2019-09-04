@@ -19,12 +19,12 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [# 1833192](http://pad.lv/1833192) | [verification output](../bugs/lp-1833192.txt) |
 | [# 1806701](http://pad.lv/1806701) | [verification output](../bugs/lp-1806701.txt) |
 | [# 1836598](http://pad.lv/1836598) | [verification output](../bugs/lp-1836598.txt) |
-| [# 1836949](http://pad.lv/1836949) | [verification output](../bugs/lp-1836949.txt) |
+| [# 1836949](http://pad.lv/1836949) | ✔ [verification output](../bugs/lp-1836949.txt) |
 | [# 1838794](http://pad.lv/1838794) | [verification output](../bugs/lp-1838794.txt) |
-| Manual openstack test | [verification output](../manual/openstack-sru-19.2.21.txt) |
-| Manual gce test | [verification output](../manual/gce-sru-19.2.21.txt) |
-| Manual azure test | [verification output](../manual/azure-sru-19.2.21.txt) |
-| Manual ec2 test | [verification output](../manual/ec2-sru-19.2.21.txt) |
+| Manual openstack test | ✔ [verification output](../manual/openstack-sru-19.2.21.txt) |
+| Manual gce test | ✔ [verification output](../manual/gce-sru-19.2.21.txt) |
+| Manual azure test | ✔ [verification output](../manual/azure-sru-19.2.21.txt) |
+| Manual ec2 test | ✔ [verification output](../manual/ec2-sru-19.2.21.txt) |
 | Manual vmware test | [verification output](../manual/vmware-sru-19.2.21.txt) |
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-19.2.21.txt) |
 | Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-19.2.21.txt) |
