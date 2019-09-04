@@ -13,14 +13,13 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
-| [# 1827238](http://pad.lv/1827238) | [verification output](../bugs/lp-1827238.txt) |
-| [# 1669875](http://pad.lv/1669875) | [verification output](../bugs/lp-1669875.txt) |
+| [# 1841454](http://pad.lv/1841454) | ✔ [Verified by Author/Cloud vendor ExoScale]
+| [# 1840080](http://pad.lv/1840080) | ✔ [verification output](../bugs/lp-1840080.txt) |
 | [# 1812857](http://pad.lv/1812857) | [verification output](../bugs/lp-1812857.txt) |
-| [# 1833192](http://pad.lv/1833192) | [verification output](../bugs/lp-1833192.txt) |
+| [# 1833192](http://pad.lv/1833192) | ✔ [Notified cloud provider VMware for verification]
 | [# 1806701](http://pad.lv/1806701) | [verification output](../bugs/lp-1806701.txt) |
-| [# 1836598](http://pad.lv/1836598) | [verification output](../bugs/lp-1836598.txt) |
 | [# 1836949](http://pad.lv/1836949) | ✔ [verification output](../bugs/lp-1836949.txt) |
-| [# 1838794](http://pad.lv/1838794) | [verification output](../bugs/lp-1838794.txt) |
+| [# 1838794](http://pad.lv/1838794) | ✔ [verification output](../bugs/lp-1838794.txt) |
 | Manual openstack test | ✔ [verification output](../manual/openstack-sru-19.2.21.txt) |
 | Manual gce test | ✔ [verification output](../manual/gce-sru-19.2.21.txt) |
 | Manual azure test | ✔ [verification output](../manual/azure-sru-19.2.21.txt) |
