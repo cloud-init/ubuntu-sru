@@ -3,33 +3,261 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1836949
 
 === Begin SRU Template ===
 [Impact]
+When providing network v2 config containing mtu values, cloud-init dropped mtu
+values from both ENI and sysconfig rendering.
 
 [Test Case]
+#!/bin/sh
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+chmod 755 setup_proposed.sh
 
-[Regression Potential]
-
-[Other Info]
-Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
-
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
+cat > bond-mtu-v1.yaml <<EOF
+version: 1
+config:
+  - type: vlan
+    name: bond0.1000
+    vlan_link: bond0
+    vlan_id: 1000
+    mtu: 1496
+    subnets:
+      - type: static
+        address: "192.6.1.9/24"
+  - type: vlan
+    name: bond0.1001
+    vlan_id: 1001
+    vlan_link: bond0
+  - type: bond
+    name: bond0
+    mtu: 1496
+    bond_interfaces: ["enp0s0", "enp0s1"]
+    params: {}
 EOF
 
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series;
-   ref=$series-proposed;
-   lxc delete test-$series --force 2> /dev/null;
-   lxc init  test-$series;
-   lxc config set test-$series user.user-data - < some.yaml;
-   lxc start test-$series;
-   lxc exec test-$series -- cloud-init status --wait --long;
+cat > bond-mtu-v2.yaml <<EOF
+version: 2
+vlans:
+  bond0.1000:
+    addresses: ["192.6.1.9/24"]
+    id: 1000
+    link: bond0
+    mtu: 1496
+  bond0.1001:
+    id: 1001
+    link: bond0
+bonds:
+  bond0:
+    interfaces: ["enp0s0", "enp0s1"]
+    parameters: {}
+    mtu: 1496
+EOF
 
-   # Add specific tests
-   echo '=== END ' $series;
+
+for SERIES in xenial bionic disco; do
+   echo '=== BEGIN ' $SERIES;
+   lxc delete test-$SERIES --force;
+   lxc launch ubuntu-daily:$SERIES test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc file push setup_proposed.sh bond-mtu-v[12].yaml test-$SERIES/;
+   lxc exec test-$SERIES -- /setup_proposed.sh 2>&1 | egrep 'cloud-init';
+   for pair in centos/sysconfig ubuntu/eni ubuntu/netplan; do
+     distro=${pair%/*}
+     kind=${pair#*/}
+     for v in v1 v2; do
+       out=$distro/$kind/from-$v
+       lxc exec test-$SERIES -- cloud-init devel net-convert --kind=yaml --distro=$distro --network-data=/bond-mtu-$v.yaml -O $kind -d $out;
+     done
+     lxc file pull --recursive test-$SERIES/root/$distro/$kind .;
+     echo --- $SERIES:$pair ----;
+     diff -Naur $kind/*;
+     rm -rf $kind;
+   done
 done
 
 
+[Regression Potential]
+
+Limited as changeset should only add missing mtu config to written network.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=5498107d
+
 === End SRU Template ===
+=== Begin SRU Verification ===
+
+=== BEGIN  xenial
+Creating test-xenial
+Starting test-xenial
+.......................
+status: done
+time: Wed, 04 Sep 2019 04:00:16 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~16.04.1 [406 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) over (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v2/'
+
+--- xenial:centos/sysconfig ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v2/'
+
+--- xenial:ubuntu/eni ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v2/'
+
+--- xenial:ubuntu/netplan ----
+diff -Naur netplan/from-v1/etc/netplan/50-cloud-init.yaml netplan/from-v2/etc/netplan/50-cloud-init.yaml
+--- netplan/from-v1/etc/netplan/50-cloud-init.yaml	2019-09-03 21:59:31.411076447 -0600
++++ netplan/from-v2/etc/netplan/50-cloud-init.yaml	2019-09-03 21:53:46.705714140 -0600
+@@ -4,15 +4,14 @@
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+-    version: 2
+     bonds:
+         bond0:
+             interfaces:
+             - enp0s0
+             - enp0s1
+             mtu: 1496
+-        enp0s0: {}
+-        enp0s1: {}
++            parameters: {}
++    version: 2
+     vlans:
+         bond0.1000:
+             addresses:
+=== BEGIN  bionic
+Creating test-bionic
+Starting test-bionic
+............................
+status: done
+time: Wed, 04 Sep 2019 04:01:46 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~18.04.1 [404 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v2/'
+
+--- bionic:centos/sysconfig ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v2/'
+
+--- bionic:ubuntu/eni ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v2/'
+
+--- bionic:ubuntu/netplan ----
+diff -Naur netplan/from-v1/etc/netplan/50-cloud-init.yaml netplan/from-v2/etc/netplan/50-cloud-init.yaml
+--- netplan/from-v1/etc/netplan/50-cloud-init.yaml	2019-09-03 22:05:10.900262531 -0600
++++ netplan/from-v2/etc/netplan/50-cloud-init.yaml	2019-09-03 22:05:10.932263017 -0600
+@@ -4,15 +4,14 @@
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+-    version: 2
+     bonds:
+         bond0:
+             interfaces:
+             - enp0s0
+             - enp0s1
+             mtu: 1496
+-        enp0s0: {}
+-        enp0s1: {}
++            parameters: {}
++    version: 2
+     vlans:
+         bond0.1000:
+             addresses:
+
+=== BEGIN  disco
+Creating test-disco
+Starting test-disco
+..................................................................
+status: done
+time: Wed, 04 Sep 2019 04:02:34 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~19.04.1 [400 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) over (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) ...
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'sysconfig' to 'centos/sysconfig/from-v2/'
+
+--- disco:centos/sysconfig ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'eni' to 'ubuntu/eni/from-v2/'
+
+--- disco:ubuntu/eni ----
+Read input format 'yaml' from '/bond-mtu-v1.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v1/'
+
+Read input format 'yaml' from '/bond-mtu-v2.yaml'.
+Wrote output format 'netplan' to 'ubuntu/netplan/from-v2/'
+
+--- disco:ubuntu/netplan ----
+diff -Naur netplan/from-v1/etc/netplan/50-cloud-init.yaml netplan/from-v2/etc/netplan/50-cloud-init.yaml
+--- netplan/from-v1/etc/netplan/50-cloud-init.yaml	2019-09-03 22:05:11.516271887 -0600
++++ netplan/from-v2/etc/netplan/50-cloud-init.yaml	2019-09-03 22:05:11.540272252 -0600
+@@ -4,15 +4,14 @@
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+-    version: 2
+     bonds:
+         bond0:
+             interfaces:
+             - enp0s0
+             - enp0s1
+             mtu: 1496
+-        enp0s0: {}
+-        enp0s1: {}
++            parameters: {}
++    version: 2
+     vlans:
+         bond0.1000:
+             addresses:
+
+
+=== End SRU Verification ===
