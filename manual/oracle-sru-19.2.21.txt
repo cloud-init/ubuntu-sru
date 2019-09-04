@@ -1,0 +1,1177 @@
+# Manual Oracle upgrade and clean install validation
+
+# No disco images in Oracle, otherwise it would be included
+SRU_SERIES="xenial bionic"
+
+# local values
+LP_USER="daniel-thewatkins"
+
+cat > sethostname.yaml << EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [$LP_USER]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+for series in $SRU_SERIES; do
+  echo "### BEGIN $series"
+  if [ "$series" = "xenial" ]; then
+    netcfg="/etc/network/interfaces.d/50-cloud-init.cfg"
+  else
+    netcfg="/etc/netplan/50-cloud-init.yaml"
+  fi
+
+  # TODO: Use the Oracle CLI
+  echo "Please manually launch a $series instance in Oracle and enter its IP address"
+  read -p "$series IP address: " VM_IP
+
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  # Capture current state
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+  echo 'Networking config'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg
+
+  # Upgrade to -proposed cloud-init and reboot
+  scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+  ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo rm -f $netcfg
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+  ssh-keygen -f "~/.ssh/known_hosts" -R $VM_IP
+
+  sleep 10  # Wait for the instance to actually go down
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 1
+  done
+
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- hostname
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+  echo 'After upgrade Networking config'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+  echo "Get cloud-id"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-id
+  echo 'Validating whether metadata is being updated per boot LP:1819913'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo reboot || true
+
+  sleep 10  # Wait for the instance to actually go down
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 1
+  done
+  echo 'After reboot'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+done
+
+echo "Don't forget to clean up your instances"
+
+
+#### OUTPUT ####
+
+### BEGIN xenial
+Please manually launch a xenial instance in Oracle and enter its IP address
+xenial IP address: 129.146.132.127
+
+status: done
+time: Wed, 04 Sep 2019 14:53:04 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+cloud-init	19.1-1-gbaa47854-0ubuntu1~16.04.1
+{
+ "v1": {
+  "datasource": "DataSourceOpenStackLocal [net,ver=2]",
+  "errors": []
+ }
+}
+Traceback (most recent call last):
+Startup finished in 10.421s (kernel) + 24.964s (userspace) = 35.386s
+          9.679s snapd.seeded.service
+          7.192s cloud-init-local.service
+          3.291s cloud-config.service
+          1.812s apparmor.service
+          1.338s pollinate.service
+          1.313s cloud-init.service
+          1.299s console-setup.service
+          1.143s dev-sda1.device
+          1.070s snapd.service
+           695ms lvm2-monitor.service
+           630ms cloud-final.service
+           558ms netfilter-persistent.service
+           489ms iscsid.service
+           447ms accounts-daemon.service
+           351ms lxd-containers.service
+           290ms grub-common.service
+           261ms systemd-logind.service
+           223ms mdadm.service
+           208ms lxd.socket
+           208ms systemd-timesyncd.service
+           198ms polkitd.service
+           189ms resolvconf.service
+           171ms systemd-remount-fs.service
+           170ms kmod-static-nodes.service
+           169ms ufw.service
+           166ms keyboard-setup.service
+           154ms systemd-modules-load.service
+           141ms run-rpc_pipefs.mount
+           139ms systemd-journald.service
+           129ms dev-hugepages.mount
+           124ms networking.service
+           124ms systemd-udev-trigger.service
+           114ms irqbalance.service
+           111ms open-iscsi.service
+           103ms apport.service
+            97ms dev-mqueue.mount
+            90ms rsyslog.service
+            81ms systemd-machine-id-commit.service
+            78ms systemd-tmpfiles-setup.service
+            76ms systemd-udevd.service
+            73ms systemd-tmpfiles-setup-dev.service
+            58ms systemd-journal-flush.service
+            54ms plymouth-read-write.service
+            51ms systemd-sysctl.service
+            50ms sys-kernel-debug.mount
+            47ms ssh.service
+            46ms ondemand.service
+            44ms plymouth-quit-wait.service
+            41ms rc-local.service
+            41ms sys-kernel-config.mount
+            40ms systemd-update-utmp.service
+            37ms sys-fs-fuse-connections.mount
+            36ms plymouth-quit.service
+            31ms snap-core-7396.mount
+            31ms systemd-random-seed.service
+            30ms snap-oracle\x2dcloud\x2dagent-4.mount
+            29ms nfs-config.service
+            25ms iscsi-cleanup.service
+            23ms setvtrgb.service
+            20ms systemd-user-sessions.service
+            20ms user@1001.service
+            16ms systemd-update-utmp-runlevel.service
+            15ms boot-efi.mount
+             8ms dev-loop0.device
+             7ms snapd.socket
+             1ms dev-loop1.device
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00900s +00.00000s
+|`->found local data from DataSourceOpenStackLocal @00.03100s +05.24500s
+Finished stage: (init-local) 05.35900 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @05.90400s +00.00500s
+|`->setting up datasource @05.97600s +00.00000s
+|`->reading and applying user-data @05.98400s +00.00300s
+|`->reading and applying vendor-data @05.98700s +00.00000s
+|`->activating datasource @06.01600s +00.00100s
+|`->config-migrator ran successfully @06.04800s +00.00100s
+|`->config-seed_random ran successfully @06.04900s +00.00100s
+|`->config-bootcmd ran successfully @06.05000s +00.00000s
+|`->config-write-files ran successfully @06.05000s +00.00100s
+|`->config-growpart ran successfully @06.05100s +00.13400s
+|`->config-resizefs ran successfully @06.18600s +00.09300s
+|`->config-disk_setup ran successfully @06.27900s +00.00100s
+|`->config-mounts ran successfully @06.28100s +00.03400s
+|`->config-set_hostname ran successfully @06.31500s +00.00200s
+|`->config-update_hostname ran successfully @06.31700s +00.00100s
+|`->config-update_etc_hosts ran successfully @06.31800s +00.00200s
+|`->config-ca-certs ran successfully @06.32000s +00.00100s
+|`->config-rsyslog ran successfully @06.32100s +00.00100s
+|`->config-users-groups ran successfully @06.32200s +00.16800s
+|`->config-ssh ran successfully @06.49100s +00.25900s
+Finished stage: (init-network) 00.86300 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @18.52800s +00.00100s
+|`->config-snap ran successfully @18.52900s +00.00200s
+|`->config-snap_config ran successfully @18.53100s +00.00100s
+|`->config-ssh-import-id ran successfully @18.53300s +00.00200s
+|`->config-locale ran successfully @18.53500s +01.97400s
+|`->config-set-passwords ran successfully @20.51000s +00.00100s
+|`->config-grub-dpkg ran successfully @20.51100s +00.30400s
+|`->config-apt-pipelining ran successfully @20.81600s +00.00100s
+|`->config-apt-configure ran successfully @20.81700s +00.10700s
+|`->config-ubuntu-advantage ran successfully @20.92500s +00.00100s
+|`->config-ntp ran successfully @20.92700s +00.00100s
+|`->config-timezone ran successfully @20.92800s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @20.92900s +00.00000s
+|`->config-runcmd ran successfully @20.93000s +00.00100s
+|`->config-byobu ran successfully @20.93100s +00.00100s
+Finished stage: (modules-config) 02.46900 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @21.40100s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @21.40300s +00.00100s
+|`->config-fan ran successfully @21.40400s +00.00100s
+|`->config-landscape ran successfully @21.40500s +00.00100s
+|`->config-lxd ran successfully @21.40600s +00.00100s
+|`->config-ubuntu-drivers ran successfully @21.40700s +00.00100s
+|`->config-puppet ran successfully @21.40800s +00.00100s
+|`->config-chef ran successfully @21.40900s +00.00100s
+|`->config-mcollective ran successfully @21.41000s +00.00100s
+|`->config-salt-minion ran successfully @21.41100s +00.00100s
+|`->config-rightscale_userdata ran successfully @21.41200s +00.00100s
+|`->config-scripts-vendor ran successfully @21.41300s +00.00100s
+|`->config-scripts-per-once ran successfully @21.41400s +00.00100s
+|`->config-scripts-per-boot ran successfully @21.41500s +00.00000s
+|`->config-scripts-per-instance ran successfully @21.41500s +00.00100s
+|`->config-scripts-user ran successfully @21.41600s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @21.41700s +00.02000s
+|`->config-keys-to-console ran successfully @21.43700s +00.05900s
+|`->config-phone-home ran successfully @21.49700s +00.00200s
+|`->config-final-message ran successfully @21.50000s +00.00800s
+|`->config-power-state-change ran successfully @21.50800s +00.00200s
+Finished stage: (modules-final) 00.14500 seconds 
+
+Total Time: 8.83600 seconds
+
+1 boot records analyzed
+-- Boot Record 01 --
+     05.24500s (init-local/search-OpenStackLocal)
+     01.97400s (modules-config/config-locale)
+     00.30400s (modules-config/config-grub-dpkg)
+     00.25900s (init-network/config-ssh)
+     00.16800s (init-network/config-users-groups)
+     00.13400s (init-network/config-growpart)
+     00.10700s (modules-config/config-apt-configure)
+     00.09300s (init-network/config-resizefs)
+     00.05900s (modules-final/config-keys-to-console)
+     00.03400s (init-network/config-mounts)
+     00.02000s (modules-final/config-ssh-authkey-fingerprints)
+     00.00800s (modules-final/config-final-message)
+     00.00500s (init-network/check-cache)
+     00.00300s (init-network/consume-user-data)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-final/config-power-state-change)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-ssh-import-id)
+     00.00200s (modules-config/config-snap)
+     00.00200s (init-network/config-update_etc_hosts)
+     00.00200s (init-network/config-set_hostname)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+Networking config
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+# control-manual ens3
+iface ens3 inet dhcp
+    broadcast 10.0.0.255
+    dns-nameservers 169.254.169.254
+    gateway 10.0.0.1
+setup_proposed.sh                                                                                                                                                                100%  194     2.4KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~16.04.1 [406 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) over (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~16.04.1
+sudo: unable to resolve host SRU-didnt-work
+sudo: unable to resolve host SRU-didnt-work
+Connection to 129.146.132.127 closed by remote host.
+mkstemp: No such file or directory
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+.........
+status: done
+time: Wed, 04 Sep 2019 14:55:15 +0000
+detail:
+DataSourceOpenStack [net,ver=2]
+oddbloke-sru-xenial-20190904-1050
+/var/log/cloud-init.log:Traceback (most recent call last):
+/var/log/cloud-init.log:Traceback (most recent call last):
+Startup finished in 14.543s (kernel) + 15.983s (userspace) = 30.527s
+          6.229s cloud-init.service
+          2.963s cloud-config.service
+          1.949s snapd.service
+          1.719s dev-sda1.device
+          1.496s cloud-init-local.service
+           684ms lvm2-monitor.service
+           677ms cloud-final.service
+           528ms lxd-containers.service
+           510ms grub-common.service
+           487ms accounts-daemon.service
+           478ms apparmor.service
+           459ms netfilter-persistent.service
+           350ms mdadm.service
+           341ms ssh.service
+           321ms keyboard-setup.service
+           317ms console-setup.service
+           294ms iscsid.service
+           271ms systemd-modules-load.service
+           254ms systemd-timesyncd.service
+           196ms systemd-journald.service
+           186ms systemd-udev-trigger.service
+           186ms rsyslog.service
+           183ms apport.service
+           174ms irqbalance.service
+           168ms run-rpc_pipefs.mount
+           162ms ondemand.service
+           127ms systemd-udevd.service
+           122ms networking.service
+           107ms snapd.seeded.service
+            89ms systemd-logind.service
+            83ms polkitd.service
+            82ms rc-local.service
+            76ms dev-loop1.device
+            75ms systemd-tmpfiles-setup-dev.service
+            73ms open-iscsi.service
+            73ms resolvconf.service
+            72ms nfs-config.service
+            69ms kmod-static-nodes.service
+            67ms systemd-update-utmp.service
+            61ms dev-hugepages.mount
+            58ms ufw.service
+            57ms sys-kernel-debug.mount
+            53ms systemd-remount-fs.service
+            52ms systemd-journal-flush.service
+            49ms dev-mqueue.mount
+            45ms systemd-random-seed.service
+            43ms lxd.socket
+            41ms dev-loop0.device
+            38ms plymouth-read-write.service
+            38ms snap-core-7396.mount
+            37ms systemd-tmpfiles-setup.service
+            37ms iscsi-cleanup.service
+            36ms snap-oracle\x2dcloud\x2dagent-4.mount
+            30ms systemd-sysctl.service
+            29ms snapd.socket
+            28ms plymouth-quit.service
+            23ms systemd-user-sessions.service
+            22ms systemd-update-utmp-runlevel.service
+            22ms boot-efi.mount
+            19ms sys-kernel-config.mount
+            18ms user@1001.service
+            13ms setvtrgb.service
+            12ms sys-fs-fuse-connections.mount
+            11ms plymouth-quit-wait.service
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00100s
+|`->no local data found from DataSourceOpenStackLocal @00.02300s +00.10000s
+Finished stage: (init-local) 00.16400 seconds 
+
+Starting stage: init-network
+|`->no cache found @00.71500s +00.00000s
+|`->found network data from DataSourceOpenStack @00.72200s +05.10000s
+|`->setting up datasource @05.96600s +00.00100s
+|`->reading and applying user-data @05.99600s +00.00500s
+|`->reading and applying vendor-data @06.00100s +00.00100s
+|`->activating datasource @06.04600s +00.00200s
+|`->config-migrator ran successfully @06.10100s +00.00100s
+|`->config-seed_random ran successfully @06.10200s +00.00100s
+|`->config-bootcmd ran successfully @06.10300s +00.00000s
+|`->config-write-files ran successfully @06.10400s +00.00000s
+|`->config-growpart ran successfully @06.10500s +00.09000s
+|`->config-resizefs ran successfully @06.19500s +00.02400s
+|`->config-disk_setup ran successfully @06.21900s +00.00200s
+|`->config-mounts ran successfully @06.22200s +00.05400s
+|`->config-set_hostname ran successfully @06.27600s +00.00200s
+|`->config-update_hostname ran successfully @06.27800s +00.00100s
+|`->config-update_etc_hosts ran successfully @06.27900s +00.00100s
+|`->config-ca-certs ran successfully @06.28000s +00.00100s
+|`->config-rsyslog ran successfully @06.28100s +00.00100s
+|`->config-users-groups ran successfully @06.28200s +00.04600s
+|`->config-ssh ran successfully @06.32800s +00.18200s
+Finished stage: (init-network) 05.81200 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @10.48000s +00.00000s
+|`->config-snap ran successfully @10.48100s +00.00100s
+|`->config-snap_config ran successfully @10.48300s +00.00100s
+|`->config-ssh-import-id ran successfully @10.48400s +00.01400s
+|`->config-locale ran successfully @10.49900s +00.00200s
+|`->config-set-passwords ran successfully @10.50100s +00.00200s
+|`->config-grub-dpkg ran successfully @10.50300s +00.67900s
+|`->config-apt-pipelining ran successfully @11.18400s +00.00200s
+|`->config-apt-configure ran successfully @11.18600s +00.56900s
+|`->config-ubuntu-advantage ran successfully @11.75600s +00.00300s
+|`->config-ntp ran successfully @11.76000s +00.00100s
+|`->config-timezone ran successfully @11.76100s +00.00200s
+|`->config-disable-ec2-metadata ran successfully @11.76300s +00.00000s
+|`->config-runcmd ran successfully @11.76400s +00.00100s
+|`->config-byobu ran successfully @11.76500s +00.00100s
+Finished stage: (modules-config) 01.37000 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @12.35400s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @12.35600s +00.00000s
+|`->config-fan ran successfully @12.35700s +00.00000s
+|`->config-landscape ran successfully @12.35800s +00.00000s
+|`->config-lxd ran successfully @12.35900s +00.00000s
+|`->config-ubuntu-drivers ran successfully @12.36000s +00.00100s
+|`->config-puppet ran successfully @12.36100s +00.00000s
+|`->config-chef ran successfully @12.36200s +00.00000s
+|`->config-mcollective ran successfully @12.36300s +00.00000s
+|`->config-salt-minion ran successfully @12.36400s +00.00000s
+|`->config-rightscale_userdata ran successfully @12.36500s +00.00000s
+|`->config-scripts-vendor ran successfully @12.36600s +00.00000s
+|`->config-scripts-per-once ran successfully @12.36700s +00.00000s
+|`->config-scripts-per-boot ran successfully @12.36800s +00.00000s
+|`->config-scripts-per-instance ran successfully @12.36800s +00.00100s
+|`->config-scripts-user ran successfully @12.36900s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @12.37000s +00.04200s
+|`->config-keys-to-console ran successfully @12.41300s +00.05700s
+|`->config-phone-home ran successfully @12.47000s +00.00200s
+|`->config-final-message ran successfully @12.47200s +00.00500s
+|`->config-power-state-change ran successfully @12.47700s +00.00100s
+Finished stage: (modules-final) 00.16300 seconds 
+
+Total Time: 7.50900 seconds
+
+1 boot records analyzed
+-- Boot Record 01 --
+     05.10000s (init-network/search-OpenStack)
+     00.67900s (modules-config/config-grub-dpkg)
+     00.56900s (modules-config/config-apt-configure)
+     00.18200s (init-network/config-ssh)
+     00.10000s (init-local/search-OpenStackLocal)
+     00.09000s (init-network/config-growpart)
+     00.05700s (modules-final/config-keys-to-console)
+     00.05400s (init-network/config-mounts)
+     00.04600s (init-network/config-users-groups)
+     00.04200s (modules-final/config-ssh-authkey-fingerprints)
+     00.02400s (init-network/config-resizefs)
+     00.01400s (modules-config/config-ssh-import-id)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/consume-user-data)
+     00.00300s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-timezone)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (modules-config/config-locale)
+     00.00200s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/config-set_hostname)
+     00.00200s (init-network/config-disk_setup)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-snappy)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/setup-datasource)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-final/config-scripts-vendor)
+     00.00000s (modules-final/config-scripts-per-once)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-rightscale_userdata)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-package-update-upgrade-install)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-lxd)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-fan)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/config-write-files)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-network/check-cache)
+
+1 boot records analyzed
+After upgrade Networking config
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+# control-manual ens3
+iface ens3 inet dhcp
+    broadcast 10.0.0.255
+    dns-nameservers 169.254.169.254
+    gateway 10.0.0.1
+cloud-region: openstack-None
+Get cloud-id
+openstack
+Validating whether metadata is being updated per boot LP:1819913
+2019-09-04 14:55:02,584 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 14:55:03,283 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+Connection to 129.146.132.127 closed by remote host.
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+ssh: connect to host 129.146.132.127 port 22: Connection refused
+.......
+status: done
+time: Wed, 04 Sep 2019 14:56:44 +0000
+detail:
+DataSourceOpenStack [net,ver=2]
+After reboot
+2019-09-04 14:55:02,584 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 14:55:03,283 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 14:56:32,994 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 14:56:33,684 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+### BEGIN bionic
+Please manually launch a bionic instance in Oracle and enter its IP address
+bionic IP address: 129.146.132.184
+
+status: done
+time: Wed, 04 Sep 2019 14:56:08 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+cloud-init	19.1-1-gbaa47854-0ubuntu1~18.04.1
+{
+ "v1": {
+  "datasource": "DataSourceOpenStackLocal [net,ver=2]",
+  "errors": []
+ }
+}
+Traceback (most recent call last):
+Startup finished in 10.411s (kernel) + 24.306s (userspace) = 34.717s
+graphical.target reached after 21.620s in userspace
+          9.069s snapd.seeded.service
+          6.576s cloud-init-local.service
+          1.974s cloud-config.service
+          1.851s cloud-init.service
+          1.522s dev-sda1.device
+          1.239s keyboard-setup.service
+          1.120s pollinate.service
+          1.055s apparmor.service
+          1.026s snapd.service
+           714ms cloud-final.service
+           679ms lxd-containers.service
+           623ms networkd-dispatcher.service
+           455ms netfilter-persistent.service
+           425ms iscsid.service
+           378ms accounts-daemon.service
+           333ms systemd-timesyncd.service
+           324ms rsyslog.service
+           321ms systemd-udev-trigger.service
+           320ms grub-common.service
+           292ms systemd-logind.service
+           257ms apport.service
+           246ms systemd-journald.service
+           204ms systemd-modules-load.service
+           199ms systemd-udevd.service
+           173ms lvm2-monitor.service
+           162ms ebtables.service
+           123ms systemd-resolved.service
+           120ms dev-mqueue.mount
+           119ms ufw.service
+           119ms run-rpc_pipefs.mount
+           115ms sys-kernel-debug.mount
+            86ms systemd-remount-fs.service
+            84ms polkit.service
+            80ms systemd-journal-flush.service
+            78ms systemd-machine-id-commit.service
+            65ms systemd-user-sessions.service
+            64ms systemd-sysctl.service
+            62ms systemd-tmpfiles-setup.service
+            60ms console-setup.service
+            53ms systemd-random-seed.service
+            52ms systemd-networkd.service
+            50ms nfs-config.service
+            49ms rpcbind.service
+            48ms systemd-tmpfiles-setup-dev.service
+            39ms ssh.service
+            39ms iscsi-cleanup.service
+            34ms user@1001.service
+            33ms plymouth-read-write.service
+            32ms systemd-update-utmp.service
+            28ms kmod-static-nodes.service
+            26ms snap-oracle\x2dcloud\x2dagent-4.mount
+            25ms snapd.socket
+            24ms lxd.socket
+            24ms dev-hugepages.mount
+            23ms sys-kernel-config.mount
+            21ms snap-core-7396.mount
+            19ms systemd-update-utmp-runlevel.service
+            19ms plymouth-quit-wait.service
+            18ms systemd-networkd-wait-online.service
+            18ms sys-fs-fuse-connections.mount
+            18ms boot-efi.mount
+            17ms plymouth-quit.service
+            14ms setvtrgb.service
+            10ms dev-loop1.device
+            10ms blk-availability.service
+             8ms dev-loop0.device
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->found local data from DataSourceOpenStackLocal @00.03400s +05.15900s
+Finished stage: (init-local) 05.40800 seconds 
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceOpenStackLocal [net,ver=2] @06.04300s +00.01900s
+|`->setting up datasource @06.12300s +00.00000s
+|`->reading and applying user-data @06.13000s +00.00200s
+|`->reading and applying vendor-data @06.13200s +00.00100s
+|`->activating datasource @06.15800s +00.00800s
+|`->config-migrator ran successfully @06.24200s +00.00100s
+|`->config-seed_random ran successfully @06.24400s +00.00200s
+|`->config-bootcmd ran successfully @06.24600s +00.00100s
+|`->config-write-files ran successfully @06.24800s +00.00100s
+|`->config-growpart ran successfully @06.25000s +00.18800s
+|`->config-resizefs ran successfully @06.43900s +00.56900s
+|`->config-disk_setup ran successfully @07.00800s +00.00100s
+|`->config-mounts ran successfully @07.01000s +00.03300s
+|`->config-set_hostname ran successfully @07.04300s +00.00100s
+|`->config-update_hostname ran successfully @07.04400s +00.00100s
+|`->config-update_etc_hosts ran successfully @07.04500s +00.00100s
+|`->config-ca-certs ran successfully @07.04700s +00.00000s
+|`->config-rsyslog ran successfully @07.04800s +00.00000s
+|`->config-users-groups ran successfully @07.04800s +00.14600s
+|`->config-ssh ran successfully @07.19400s +00.12100s
+Finished stage: (init-network) 01.29000 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @18.60100s +00.00000s
+|`->config-snap ran successfully @18.60200s +00.00100s
+|`->config-snap_config ran successfully @18.60400s +00.00100s
+|`->config-ssh-import-id ran successfully @18.60500s +00.00100s
+|`->config-locale ran successfully @18.61500s +00.00200s
+|`->config-set-passwords ran successfully @18.61700s +00.00100s
+|`->config-grub-dpkg ran successfully @18.61800s +00.46200s
+|`->config-apt-pipelining ran successfully @19.08100s +00.00200s
+|`->config-apt-configure ran successfully @19.08300s +00.18200s
+|`->config-ubuntu-advantage ran successfully @19.26500s +00.00200s
+|`->config-ntp ran successfully @19.26800s +00.00000s
+|`->config-timezone ran successfully @19.26900s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @19.27000s +00.00000s
+|`->config-runcmd ran successfully @19.27100s +00.00100s
+|`->config-byobu ran successfully @19.27200s +00.00100s
+Finished stage: (modules-config) 00.72300 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @19.89800s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @19.90000s +00.00100s
+|`->config-fan ran successfully @19.90100s +00.00100s
+|`->config-landscape ran successfully @19.90200s +00.00000s
+|`->config-lxd ran successfully @19.90300s +00.00000s
+|`->config-ubuntu-drivers ran successfully @19.90300s +00.00100s
+|`->config-puppet ran successfully @19.90400s +00.00100s
+|`->config-chef ran successfully @19.90500s +00.00100s
+|`->config-mcollective ran successfully @19.90600s +00.00000s
+|`->config-salt-minion ran successfully @19.90700s +00.00000s
+|`->config-rightscale_userdata ran successfully @19.90800s +00.00000s
+|`->config-scripts-vendor ran successfully @19.90800s +00.00100s
+|`->config-scripts-per-once ran successfully @19.90900s +00.00100s
+|`->config-scripts-per-boot ran successfully @19.91000s +00.00000s
+|`->config-scripts-per-instance ran successfully @19.91000s +00.00100s
+|`->config-scripts-user ran successfully @19.91100s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @19.91200s +00.04400s
+|`->config-keys-to-console ran successfully @19.95600s +00.05400s
+|`->config-phone-home ran successfully @20.01100s +00.00100s
+|`->config-final-message ran successfully @20.01200s +00.00500s
+|`->config-power-state-change ran successfully @20.01800s +00.00000s
+Finished stage: (modules-final) 00.15100 seconds 
+
+Total Time: 7.57200 seconds
+
+1 boot records analyzed
+-- Boot Record 01 --
+     05.15900s (init-local/search-OpenStackLocal)
+     00.56900s (init-network/config-resizefs)
+     00.46200s (modules-config/config-grub-dpkg)
+     00.18800s (init-network/config-growpart)
+     00.18200s (modules-config/config-apt-configure)
+     00.14600s (init-network/config-users-groups)
+     00.12100s (init-network/config-ssh)
+     00.05400s (modules-final/config-keys-to-console)
+     00.04400s (modules-final/config-ssh-authkey-fingerprints)
+     00.03300s (init-network/config-mounts)
+     00.01900s (init-network/check-cache)
+     00.00800s (init-network/activate-datasource)
+     00.00500s (modules-final/config-final-message)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-config/config-locale)
+     00.00200s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/consume-user-data)
+     00.00200s (init-network/config-seed_random)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/consume-vendor-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-bootcmd)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-rightscale_userdata)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-lxd)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-config/config-ntp)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+Networking config
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: 02:00:17:05:f9:5b
+            set-name: ens3
+setup_proposed.sh                                                                                                                                                                100%  194     2.3KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~18.04.1 [404 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~18.04.1
+Connection to 129.146.132.184 closed by remote host.
+mkstemp: No such file or directory
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+.......
+status: done
+time: Wed, 04 Sep 2019 15:09:07 +0000
+detail:
+DataSourceOpenStack [net,ver=2]
+instance-20190904-1054
+/var/log/cloud-init.log:Traceback (most recent call last):
+/var/log/cloud-init.log:Traceback (most recent call last):
+Startup finished in 18.884s (kernel) + 17.458s (userspace) = 36.343s
+graphical.target reached after 14.031s in userspace
+          6.507s cloud-init.service
+          2.635s cloud-config.service
+          2.330s dev-sda1.device
+          2.020s snapd.service
+          1.585s cloud-init-local.service
+          1.421s keyboard-setup.service
+           744ms cloud-final.service
+           621ms networkd-dispatcher.service
+           576ms lxd-containers.service
+           473ms iscsid.service
+           435ms apparmor.service
+           421ms netfilter-persistent.service
+           336ms systemd-udev-trigger.service
+           330ms ssh.service
+           306ms systemd-udevd.service
+           278ms systemd-journal-flush.service
+           276ms accounts-daemon.service
+           275ms systemd-timesyncd.service
+           242ms systemd-journald.service
+           230ms grub-common.service
+           217ms rsyslog.service
+           210ms lvm2-monitor.service
+           186ms systemd-logind.service
+           154ms snapd.seeded.service
+           150ms systemd-modules-load.service
+           148ms apport.service
+           138ms systemd-resolved.service
+           130ms polkit.service
+           127ms ufw.service
+           126ms kmod-static-nodes.service
+           120ms ebtables.service
+           120ms dev-mqueue.mount
+           110ms sys-kernel-debug.mount
+           108ms run-rpc_pipefs.mount
+           108ms dev-loop0.device
+            98ms dev-loop1.device
+            94ms dev-hugepages.mount
+            78ms systemd-remount-fs.service
+            73ms systemd-sysctl.service
+            71ms systemd-tmpfiles-setup-dev.service
+            67ms iscsi-cleanup.service
+            63ms systemd-random-seed.service
+            56ms plymouth-read-write.service
+            56ms systemd-tmpfiles-setup.service
+            52ms rpcbind.service
+            49ms systemd-user-sessions.service
+            48ms console-setup.service
+            48ms systemd-networkd.service
+            47ms blk-availability.service
+            46ms snapd.socket
+            45ms sys-kernel-config.mount
+            43ms snap-core-7396.mount
+            42ms plymouth-quit.service
+            35ms sys-fs-fuse-connections.mount
+            35ms nfs-config.service
+            32ms user@1001.service
+            31ms snap-oracle\x2dcloud\x2dagent-4.mount
+            30ms systemd-update-utmp.service
+            28ms systemd-update-utmp-runlevel.service
+            23ms plymouth-quit-wait.service
+            17ms lxd.socket
+            15ms boot-efi.mount
+            15ms setvtrgb.service
+            11ms systemd-networkd-wait-online.service
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->no local data found from DataSourceOpenStackLocal @00.03400s +00.09700s
+Finished stage: (init-local) 00.30900 seconds 
+
+Starting stage: init-network
+|`->no cache found @00.93500s +00.00000s
+|`->found network data from DataSourceOpenStack @00.95600s +05.11600s
+|`->setting up datasource @06.33600s +00.00000s
+|`->reading and applying user-data @06.35300s +00.00300s
+|`->reading and applying vendor-data @06.35600s +00.00000s
+|`->activating datasource @06.38100s +00.00100s
+|`->config-migrator ran successfully @06.40600s +00.00000s
+|`->config-seed_random ran successfully @06.40600s +00.00100s
+|`->config-bootcmd ran successfully @06.40700s +00.00100s
+|`->config-write-files ran successfully @06.40800s +00.00100s
+|`->config-growpart ran successfully @06.41000s +00.09100s
+|`->config-resizefs ran successfully @06.50100s +00.04000s
+|`->config-disk_setup ran successfully @06.54100s +00.00200s
+|`->config-mounts ran successfully @06.54400s +00.04300s
+|`->config-set_hostname ran successfully @06.58700s +00.00200s
+|`->config-update_hostname ran successfully @06.58900s +00.00100s
+|`->config-update_etc_hosts ran successfully @06.59000s +00.00000s
+|`->config-ca-certs ran successfully @06.59100s +00.00000s
+|`->config-rsyslog ran successfully @06.59200s +00.00000s
+|`->config-users-groups ran successfully @06.59200s +00.04000s
+|`->config-ssh ran successfully @06.63300s +00.23300s
+Finished stage: (init-network) 05.94700 seconds 
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @11.60600s +00.00000s
+|`->config-snap ran successfully @11.60700s +00.00100s
+|`->config-snap_config ran successfully @11.60800s +00.00100s
+|`->config-ssh-import-id ran successfully @11.61000s +00.00100s
+|`->config-locale ran successfully @11.61100s +00.00200s
+|`->config-set-passwords ran successfully @11.61300s +00.00100s
+|`->config-grub-dpkg ran successfully @11.61500s +00.40300s
+|`->config-apt-pipelining ran successfully @12.01900s +00.00100s
+|`->config-apt-configure ran successfully @12.02000s +00.14100s
+|`->config-ubuntu-advantage ran successfully @12.16100s +00.00200s
+|`->config-ntp ran successfully @12.16500s +00.00100s
+|`->config-timezone ran successfully @12.16600s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @12.16700s +00.00000s
+|`->config-runcmd ran successfully @12.16800s +00.00000s
+|`->config-byobu ran successfully @12.16900s +00.00000s
+Finished stage: (modules-config) 00.62100 seconds 
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @12.80200s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @12.80400s +00.00100s
+|`->config-fan ran successfully @12.80500s +00.00000s
+|`->config-landscape ran successfully @12.80600s +00.00000s
+|`->config-lxd ran successfully @12.80600s +00.00100s
+|`->config-ubuntu-drivers ran successfully @12.80700s +00.00100s
+|`->config-puppet ran successfully @12.80800s +00.00100s
+|`->config-chef ran successfully @12.80900s +00.00000s
+|`->config-mcollective ran successfully @12.81000s +00.00000s
+|`->config-salt-minion ran successfully @12.81000s +00.00100s
+|`->config-rightscale_userdata ran successfully @12.81100s +00.00100s
+|`->config-scripts-vendor ran successfully @12.81200s +00.00100s
+|`->config-scripts-per-once ran successfully @12.81300s +00.00000s
+|`->config-scripts-per-boot ran successfully @12.81400s +00.00000s
+|`->config-scripts-per-instance ran successfully @12.81400s +00.00000s
+|`->config-scripts-user ran successfully @12.81500s +00.00000s
+|`->config-ssh-authkey-fingerprints ran successfully @12.81600s +00.04200s
+|`->config-keys-to-console ran successfully @12.85800s +00.03300s
+|`->config-phone-home ran successfully @12.89200s +00.00100s
+|`->config-final-message ran successfully @12.89400s +00.01000s
+|`->config-power-state-change ran successfully @12.90400s +00.00100s
+Finished stage: (modules-final) 00.13500 seconds 
+
+Total Time: 7.01200 seconds
+
+1 boot records analyzed
+-- Boot Record 01 --
+     05.11600s (init-network/search-OpenStack)
+     00.40300s (modules-config/config-grub-dpkg)
+     00.23300s (init-network/config-ssh)
+     00.14100s (modules-config/config-apt-configure)
+     00.09700s (init-local/search-OpenStackLocal)
+     00.09100s (init-network/config-growpart)
+     00.04300s (init-network/config-mounts)
+     00.04200s (modules-final/config-ssh-authkey-fingerprints)
+     00.04000s (init-network/config-users-groups)
+     00.04000s (init-network/config-resizefs)
+     00.03300s (modules-final/config-keys-to-console)
+     00.01000s (modules-final/config-final-message)
+     00.00300s (init-network/consume-user-data)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-config/config-locale)
+     00.00200s (init-network/config-set_hostname)
+     00.00200s (init-network/config-disk_setup)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-user)
+     00.00000s (modules-final/config-scripts-per-once)
+     00.00000s (modules-final/config-scripts-per-instance)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-fan)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-runcmd)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-network/check-cache)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
+After upgrade Networking config
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: 02:00:17:05:f9:5b
+            set-name: ens3
+cloud-region: openstack-None
+Get cloud-id
+openstack
+Validating whether metadata is being updated per boot LP:1819913
+2019-09-04 15:08:54,425 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 15:08:55,347 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+Connection to 129.146.132.184 closed by remote host.
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+ssh: connect to host 129.146.132.184 port 22: Connection refused
+......
+status: done
+time: Wed, 04 Sep 2019 15:10:41 +0000
+detail:
+DataSourceOpenStack [net,ver=2]
+After reboot
+2019-09-04 15:08:54,425 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 15:08:55,347 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 15:10:29,520 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-04 15:10:30,475 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+Don't forget to clean up your instances
