@@ -1,0 +1,546 @@
+http://pad.lv/1821102
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1821102
+
+=== Begin SRU Template ===
+[Impact]
+Instances launched on platforms whose datasource utilizes the
+EphemeralDHCP context manager in cloud-init would fail to have
+proper routing to resources, like metadata service, DNS, gateway
+etc due to cloud-init not processing RFC-3442 classless static
+route information which may be provided by the DHCP server.  The
+general failure was for an instance to fail to reach the metadata
+service and hang providing a useless instance.
+
+Due to the severity of the issue (instance not usable) we need to
+fix this bug for our stable releases.  Fixing this bug required cloud-init to
+parse the RFC3442 format for additional routes and ensuring these additional
+routes were added to the instance while the EphemeralDHCP context manager is
+running and clearing them out when we release the manager.
+
+
+[Test Case]
+1. Create a single nic instance on OpenStack
+2. ssh to instance
+3. grep -A4 "Attempting setup of ephemeral" /var/log/cloud-init.log | grep -c "169.254.169.254"
+
+If (3) returns 0, verification has failed,   if (3) returns 1, then we pass.
+
+[Regression Potential]
+
+If a platform returning rfc3442 information that was inaccurate, this was
+previously ignored, newer cloud-init will now apply this information, ignoring
+the GATEWAY/ROUTER value and preferring the RFC3442 values as required by the
+rfc; the result may be no access to the instance.
+
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=07b17236
+
+
+[Verification]
+SRU_SERIES=${1:-"xenial bionic disco"}
+
+# local values
+LP_USER="raharper"
+ADMIN_NET_ID="rharper_admin_net"
+SSH_KEY="rharper-bastion"
+
+cat > sethostname.yaml << EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [$LP_USER]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+if [ ! -e "images.json" ]; then
+    openstack image list --property architecture=x86_64 -f json > images.json
+fi
+
+# create a floating ip, keep the IP and floating-ip UUID for cleanup
+FIP=( `openstack floating ip create ext_net -f json | jq -r '. | .floating_ip_address + " " + .id'` )
+VM_IP=${FIP[0]}; FIP_ID=${FIP[1]}
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+for series in $SRU_SERIES; do
+  echo "### BEGIN $series"
+  if [ "$series" = "xenial" ]; then
+    netcfg="/etc/network/interfaces.d/50-cloud-init.cfg"
+  else
+    netcfg="/etc/netplan/50-cloud-init.yaml"
+  fi
+
+  # Determine image, launch instance and attach IP address
+  image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$series'"))) | .ID' | tail -n 1)
+  openstack server create --flavor m1.small --image $image --key-name $SSH_KEY --nic net-id=$ADMIN_NET_ID --user-data sethostname.yaml test-$series --wait
+  openstack server add floating ip test-$series $VM_IP || exit
+
+  sleep 10  # Wait for the instance to boot
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  BEFORE_CI_LOG=$(mktemp)
+  scp "${sshopts[@]}" ubuntu@$VM_IP:/var/log/cloud-init.log $BEFORE_CI_LOG
+  BEFORE="$(grep -A4 'Attempting setup of ephemeral' $BEFORE_CI_LOG | grep -c '169.254.169.254')"
+  echo "Ephermal DHCP IMDS route count: $BEFORE"
+  if [ "$BEFORE" != "0" ]; then
+      echo "Verification Failed, IMDS route count should be 0, found $BEFORE"
+      exit 1
+  fi
+
+  # Upgrade to -proposed cloud-init and reboot
+  scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+  ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+
+  sleep 10  # Wait for the instance to actually go down and boot
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 1
+  done
+
+  echo 'After upgrade'
+  AFTER_CI_LOG=$(mktemp)
+  scp "${sshopts[@]}" ubuntu@$VM_IP:/var/log/cloud-init.log $AFTER_CI_LOG
+  AFTER="$(grep -A4 'Attempting setup of ephemeral' $AFTER_CI_LOG | grep -c '169.254.169.254')"
+  echo "Ephermal DHCP IMDS route count: $AFTER"
+  if [ "$AFTER" != "1" ]; then
+      echo "Verification Failed, IMDS route count should be 1, found $AFTER"
+      exit 1
+  fi
+
+  echo "SRU Verification for $series PASSED"
+  echo '=== END ' $series;
+done
+
+openstack floating ip delete $FIP_ID
+for series in $SRU_SERIES; do
+  openstack server delete test-$series
+done
+rm -f "$AFTER_CI_LOG" "$BEFORE_CI_LOG"
+
+
+[Verification Output]
++ SRU_SERIES='xenial bionic disco'
++ LP_USER=raharper
++ ADMIN_NET_ID=rharper_admin_net
++ SSH_KEY=rharper-bastion
++ cat
++ cat
++ '[' '!' -e images.json ']'
++ FIP=(`openstack floating ip create ext_net -f json | jq -r '. | .floating_ip_address + " " + .id'`)
+++ jq -r '. | .floating_ip_address + " " + .id'
+++ openstack floating ip create ext_net -f json
++ VM_IP=10.245.163.29
++ FIP_ID=5e618899-0300-41dc-9d90-908cab1255ae
++ sshopts=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
++ for series in $SRU_SERIES
++ echo '### BEGIN xenial'
+### BEGIN xenial
++ '[' xenial = xenial ']'
++ netcfg=/etc/network/interfaces.d/50-cloud-init.cfg
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID'
+++ cat images.json
++ image=9d8273eb-2446-4ab2-bc72-8cbf85a7f0f0
++ openstack server create --flavor m1.small --image 9d8273eb-2446-4ab2-bc72-8cbf85a7f0f0 --key-name rharper-bastion --nic net-id=rharper_admin_net --user-data sethostname.yaml test-xenial --wait
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2019-09-04T15:16:26.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | rharper_admin_net=10.5.0.3                                                                           |
+| adminPass                   | YtLsnD9Xe7nz                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2019-09-04T15:16:17Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | f4dd07b8dbe6fea0da15eca0e7050d44f0f4c67664bcaa150d9f5624                                             |
+| id                          | e5564dba-f142-4230-b3e0-4d26797ad042                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20190830-disk1.img (9d8273eb-2446-4ab2-bc72-8cbf85a7f0f0) |
+| key_name                    | rharper-bastion                                                                                      |
+| name                        | test-xenial                                                                                          |
+| progress                    | 0                                                                                                    |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2019-09-04T15:16:27Z                                                                                 |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
++ openstack server add floating ip test-xenial 10.245.163.29
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 5
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+.........
+status: done
+time: Wed, 04 Sep 2019 15:16:53 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~16.04.1
+++ mktemp
++ BEFORE_CI_LOG=/tmp/tmp.H5cHLFmfam
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.H5cHLFmfam
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.H5cHLFmfam
++ BEFORE=0
++ echo 'Ephermal DHCP IMDS route count: 0'
+Ephermal DHCP IMDS route count: 0
++ '[' 0 '!=' 0 ']'
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@10.245.163.29:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~16.04.1 [406 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) over (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- sudo cloud-init clean --logs --reboot
+sudo: unable to resolve host SRU-worked-openstack
+Connection to 10.245.163.29 closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+......
+status: done
+time: Wed, 04 Sep 2019 15:17:32 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'After upgrade'
+After upgrade
+++ mktemp
++ AFTER_CI_LOG=/tmp/tmp.h5GM3ZUsbO
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.h5GM3ZUsbO
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.h5GM3ZUsbO
++ AFTER=1
++ echo 'Ephermal DHCP IMDS route count: 1'
+Ephermal DHCP IMDS route count: 1
++ '[' 1 '!=' 1 ']'
++ echo 'SRU Verification for xenial PASSED'
+SRU Verification for xenial PASSED
++ echo '=== END ' xenial
+=== END  xenial
++ for series in $SRU_SERIES
++ echo '### BEGIN bionic'
+### BEGIN bionic
++ '[' bionic = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("bionic"))) | .ID'
+++ cat images.json
++ image=3db033ac-3c84-4e6a-95d9-b29fd5ef131f
++ openstack server create --flavor m1.small --image 3db033ac-3c84-4e6a-95d9-b29fd5ef131f --key-name rharper-bastion --nic net-id=rharper_admin_net --user-data sethostname.yaml test-bionic --wait
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2019-09-04T15:17:48.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | rharper_admin_net=10.5.0.36                                                                          |
+| adminPass                   | 3dtNVEBmCkFh                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2019-09-04T15:17:38Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | f4dd07b8dbe6fea0da15eca0e7050d44f0f4c67664bcaa150d9f5624                                             |
+| id                          | 9a8e109e-9cc6-4e1d-b77a-8d876eccf509                                                                 |
+| image                       | auto-sync/ubuntu-bionic-daily-amd64-server-20190828-disk1.img (3db033ac-3c84-4e6a-95d9-b29fd5ef131f) |
+| key_name                    | rharper-bastion                                                                                      |
+| name                        | test-bionic                                                                                          |
+| progress                    | 0                                                                                                    |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2019-09-04T15:17:49Z                                                                                 |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
++ openstack server add floating ip test-bionic 10.245.163.29
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 5
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 5
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 5
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 04 Sep 2019 15:18:26 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~18.04.1
+++ mktemp
++ BEFORE_CI_LOG=/tmp/tmp.3BNnKsaLiv
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.3BNnKsaLiv
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.3BNnKsaLiv
++ BEFORE=0
++ echo 'Ephermal DHCP IMDS route count: 0'
+Ephermal DHCP IMDS route count: 0
++ '[' 0 '!=' 0 ']'
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@10.245.163.29:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~18.04.1 [404 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~18.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- sudo cloud-init clean --logs --reboot
+Connection to 10.245.163.29 closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: No route to host
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: No route to host
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+......
+status: done
+time: Wed, 04 Sep 2019 15:19:21 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'After upgrade'
+After upgrade
+++ mktemp
++ AFTER_CI_LOG=/tmp/tmp.xLTO7LyyQs
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.xLTO7LyyQs
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.xLTO7LyyQs
++ AFTER=1
++ echo 'Ephermal DHCP IMDS route count: 1'
+Ephermal DHCP IMDS route count: 1
++ '[' 1 '!=' 1 ']'
++ echo 'SRU Verification for bionic PASSED'
+SRU Verification for bionic PASSED
++ echo '=== END ' bionic
+=== END  bionic
++ for series in $SRU_SERIES
++ echo '### BEGIN disco'
+### BEGIN disco
++ '[' disco = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("disco"))) | .ID'
+++ cat images.json
++ image=ca74f210-bac6-4599-bf4e-dd07c388fe78
++ openstack server create --flavor m1.small --image ca74f210-bac6-4599-bf4e-dd07c388fe78 --key-name rharper-bastion --nic net-id=rharper_admin_net --user-data sethostname.yaml test-disco --wait
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2019-09-04T15:19:34.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | rharper_admin_net=10.5.0.34                                                                         |
+| adminPass                   | PfMB7pJoye8p                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2019-09-04T15:19:26Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | f4dd07b8dbe6fea0da15eca0e7050d44f0f4c67664bcaa150d9f5624                                            |
+| id                          | 700047c7-5538-4783-b9e1-ac06c97ec337                                                                |
+| image                       | auto-sync/ubuntu-disco-daily-amd64-server-20190828-disk1.img (ca74f210-bac6-4599-bf4e-dd07c388fe78) |
+| key_name                    | rharper-bastion                                                                                     |
+| name                        | test-disco                                                                                          |
+| progress                    | 0                                                                                                   |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2019-09-04T15:19:35Z                                                                                |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
++ openstack server add floating ip test-disco 10.245.163.29
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 5
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+...................................................................
+status: done
+time: Wed, 04 Sep 2019 15:20:20 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~19.04.1
+++ mktemp
++ BEFORE_CI_LOG=/tmp/tmp.XhiR9Y1na3
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.XhiR9Y1na3
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.XhiR9Y1na3
++ BEFORE=0
++ echo 'Ephermal DHCP IMDS route count: 0'
+Ephermal DHCP IMDS route count: 0
++ '[' 0 '!=' 0 ']'
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@10.245.163.29:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~19.04.1 [400 kB]
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) over (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- dpkg-query --show cloud-init
+cloud-init	19.2-24-ge7881d5c-0ubuntu1~19.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- sudo cloud-init clean --logs --reboot
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+ssh: connect to host 10.245.163.29 port 22: Connection refused
++ sleep 1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29 -- cloud-init status --wait --long
+........
+status: done
+time: Wed, 04 Sep 2019 15:21:15 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'After upgrade'
+After upgrade
+++ mktemp
++ AFTER_CI_LOG=/tmp/tmp.XiSsIK5KMW
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@10.245.163.29:/var/log/cloud-init.log /tmp/tmp.XiSsIK5KMW
+++ grep -c 169.254.169.254
+++ grep -A4 'Attempting setup of ephemeral' /tmp/tmp.XiSsIK5KMW
++ AFTER=1
++ echo 'Ephermal DHCP IMDS route count: 1'
+Ephermal DHCP IMDS route count: 1
++ '[' 1 '!=' 1 ']'
++ echo 'SRU Verification for disco PASSED'
+SRU Verification for disco PASSED
++ echo '=== END ' disco
+=== END  disco
++ openstack floating ip delete 5e618899-0300-41dc-9d90-908cab1255ae
++ for series in $SRU_SERIES
++ openstack server delete test-xenial
++ for series in $SRU_SERIES
++ openstack server delete test-bionic
++ for series in $SRU_SERIES
++ openstack server delete test-disco
++ rm -f /tmp/tmp.XiSsIK5KMW /tmp/tmp.XhiR9Y1na3
+# === End SRU Template ===
