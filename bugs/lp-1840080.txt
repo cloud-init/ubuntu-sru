@@ -1,0 +1,95 @@
+http://pad.lv/1840080
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1840080
+
+=== Begin SRU Template ===
+[Impact]
+
+[Test Case]
+#!/bin/bash
+# Enable nvidia drivers on ubuntu aws gpu instance and validate that
+# debconf selections are properly set
+
+set -x
+
+cat > drivers.yaml <<EOF
+ssh_import_id: [chad.smith]
+drivers:
+  nvidia:
+    license-accepted: true
+EOF
+
+cat > setup_proposed.sh <<EOF
+#!/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+
+sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+for series in xenial bionic disco eoan; do
+    echo '=== BEGIN ' $series;
+    EC2_INST=`launch-ec2 --series $RELEASE -u sethostname.yaml -t g3s.xlarge | awk '/Found/{print $5}'`
+    # sleep 60
+    scp $sshopts setup_proposed.sh $EC2_INST:.
+    ssh $sshopts $EC2_INST sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh $sshopts $EC2_INST sudo apt-get install debconf-utils -y; 
+    echo 'Cloud-init should emit linux/nvidia/driver debconf selection true';
+    ssh $sshopts $EC2_INST -- sudo debconf-get-selections | grep nvidia;
+    echo 'Cloud-init should have installed ubuntu-drivers-common';
+    echo 'Known ERROR: ubuntu-drivers common did not install linux-modules-nvidia';
+    ssh $sshopts $EC2_INST -- dpkg -l | egrep  'nvidia|cloud-init|ubuntu-drivers';
+    echo 'Search for linked nvidia modules to current kernel';
+    ssh $sshopts $EC2_INST --  'find /lib/modules/`uname -r`/ | grep nvidia';
+    echo '=== END ' $series;
+done
+
+[Regression Potential]
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=e63719
+
+=== End SRU Template ===
+
+== Begin SRU Verification ===
++ cat
++ cat
++ sshopts='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR'
++ for series in eoan
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ EC2_INST=ubuntu@ec2-18-216-9-76.us-east-2.compute.amazonaws.com
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@ec2-18-216-9-76.us-east-2.compute.amazonaws.com:.
+setup_proposed.sh                             100%  197     3.7KB/s   00:00    
++ echo 'Cloud-init should emit linux/nvidia/driver debconf selection true'
+Cloud-init should emit linux/nvidia/driver debconf selection true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-216-9-76.us-east-2.compute.amazonaws.com -- sudo debconf-get-selections
++ grep nvidia
+cloud-init	linux/nvidia/latelink	boolean	true
++ echo 'Cloud-init should have installed ubuntu-drivers-common'
+Cloud-init should have installed ubuntu-drivers-common
++ echo 'Known ERROR: ubuntu-drivers common did not install linux-modules-nvidia'
+Known ERROR: ubuntu-drivers common did not install linux-modules-nvidia
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-216-9-76.us-east-2.compute.amazonaws.com -- dpkg -l
++ egrep 'nvidia|cloud-init|ubuntu-drivers'
+ii  cloud-init                     19.2-24-ge7881d5c-0ubuntu1  all          Init scripts for cloud instances
+ii  cloud-initramfs-copymods       0.44ubuntu1                 all          copy initramfs modules into root filesystem for later use
+ii  cloud-initramfs-dyn-netconf    0.44ubuntu1                 all          write a network interface file in /run for BOOTIF
+ii  libnvidia-cfg1-430:amd64       430.40-0ubuntu2             amd64        NVIDIA binary OpenGL/GLX configuration library
+ii  libnvidia-compute-430:amd64    430.40-0ubuntu2             amd64        NVIDIA libcompute package
+ii  nvidia-compute-utils-430       430.40-0ubuntu2             amd64        NVIDIA compute utilities
+ii  nvidia-headless-no-dkms-430    430.40-0ubuntu2             amd64        NVIDIA headless metapackage - no DKMS
+ii  nvidia-kernel-source-430       430.40-0ubuntu2             amd64        NVIDIA kernel source package
+ii  ubuntu-drivers-common          1:0.7.5                     amd64        Detect and install additional Ubuntu driver packages
++ echo 'Search for linked nvidia modules to current kernel'
+Search for linked nvidia modules to current kernel
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-216-9-76.us-east-2.compute.amazonaws.com -- 'find /lib/modules/`uname -r`/ | grep nvidia'
+/lib/modules/5.0.0-1012-aws/kernel/drivers/video/fbdev/nvidia
+/lib/modules/5.0.0-1012-aws/kernel/drivers/video/fbdev/nvidia/nvidiafb.ko
++ echo '=== END ' eoan
+=== END  eoan
+
+== End SRU Verification ===
