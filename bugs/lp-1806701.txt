@@ -3,33 +3,276 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1806701
 
 === Begin SRU Template ===
 [Impact]
+Customers booting images with cloud-init with an ISO attached observed
+a long boot time due to cloud-init's ds-identify grepping through the
+entire ISO for a particular value.  This slows down boot and in some cases
+prevents the OS from booting entirely.
+
+Degraded boot time and possible failure to boot is severe enough to require
+an SRU to previous releases.
+
+Cloud-init fixes this issue by checking the size of the ISO file and skips
+checking ISO contents if the size is > 10MiB.
 
 [Test Case]
+Part (a)
+1. Launch an Ubuntu Cloud-Image in a VM and attach an cdrom with an ISO
+   sized > 10MiB
+2. Verify that ds-identify logs that it skipped large ISO files expecting
+   the message string: "is considered too large for OVF" in
+   /run/cloud-init/ds-identify.log
+
+Part (b)
+1. Launch an Ubuntu Cloud-Image in a VM and attach an cdrom with an OVF ISO
+   sized <= 10MiB
+2. Verify that ds-identify indentifies OVF as datasource and enables
+   cloud-init.
+
 
 [Regression Potential]
 
+Users which generated an OVF formatted ISO whose size was > 10MiB may not
+recognize that an OVF Datasource is being provided and cloud-init may
+disable itself preventing an instance from booting properly.
+
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
-
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
-EOF
-
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series;
-   ref=$series-proposed;
-   lxc delete test-$series --force 2> /dev/null;
-   lxc init  test-$series;
-   lxc config set test-$series user.user-data - < some.yaml;
-   lxc start test-$series;
-   lxc exec test-$series -- cloud-init status --wait --long;
-
-   # Add specific tests
-   echo '=== END ' $series;
-done
+  https://git.launchpad.net/cloud-init/commit/?id=d9769c47
 
 
-=== End SRU Template ===
+[Verification]
+[[Part A]]
+# Download iso > 10MiB
+  % wget http://archive.ubuntu.com/ubuntu/dists/xenial-updates/main/installer-amd64/current/images/hwe-netboot/mini.iso
+
+# Launch $serial image
+  % kvm -drive file=xenial-server-cloudimg-amd64-disk1.img \
+        -drive file=seed.img,media=cdrom \
+        -drive file=mini.iso \
+        -m 1024  -net nic -net user -serial stdio
+
+# Login and confirm datasource is NoCloud, iso size, cloud-init version
+# run ds-identify with verbose debugging to find skip messge
+  % lsb_release -rd
+  % apt-cache policy cloud-init
+  % cloud-init --version
+  % cloud-id
+  % cloud-init status --long
+  % echo $((`cat /sys/class/block/sr1/size` * 512))
+  % export DEBUG_LEVEL=3
+  % export DI_LOG=stderr
+  % rm -f /run/cloud-init/cloud.cfg
+  % /usr/lib/cloud-init/ds-identify 2>&1 | grep considered
+
+
+[[Part B]]
+# Generate OVF transport ISO
+  % cd cloud-init/doc/sources/ovf
+  % ./make-iso ovf-env.xml.tmpl user-data --output ovftransport.iso
+# Launch $serial image
+  % kvm -drive file=xenial-server-cloudimg-amd64-disk1.img \
+        -cdrom ovftransport.iso -m 1024  -net nic -net user \
+        -serial stdio
+# Login and confirm datasource and iso size, cloud-init version
+  % lsb_release -rd
+  % apt-cache policy cloud-init
+  % cloud-init --version
+  % cloud-id
+  % cloud-init status --long
+  % echo $((`cat /sys/class/block/sr0/size` * 512))
+
+
+[Verification Output]
+=== BEGIN Xenial ===
+[[Part A]]
+root@sru-test-xenial:~# lsb_release -rd
+Description:	Ubuntu 16.04.6 LTS
+Release:	16.04
+root@sru-test-xenial:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~16.04.1 100
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~16.04.1 500
+        500 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages
+     0.7.7~bzr1212-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu xenial/main amd64 Packages
+root@sru-test-xenial:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+root@sru-test-xenial:~# cloud-id
+nocloud
+root@sru-test-xenial:~# cloud-init status --long
+status: done
+time: Wed, 04 Sep 2019 19:41:36 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+root@sru-test-xenial:~# echo $((`cat /sys/class/block/sr1/size` * 512))
+72351744
+root@sru-test-xenial:~# export DEBUG_LEVEL=3
+root@sru-test-xenial:~# export DI_LOG=stderr
+root@sru-test-xenial:~# rm -f /run/cloud-init/cloud.cfg
+root@sru-test-xenial:~# /usr/lib/cloud-init/ds-identify 2>&1 | grep considered
+/dev/sr1: size 69MB is considered too large for OVF
+
+
+[[Part B]]
+root@ovfdemo:~# lsb_release -rd
+Description:	Ubuntu 16.04.6 LTS
+Release:	16.04
+root@ovfdemo:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~16.04.1 500
+        500 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~16.04.1 500
+        500 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages
+     0.7.7~bzr1212-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu xenial/main amd64 Packages
+root@ovfdemo:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~16.04.1
+root@ovfdemo:~# cloud-id
+ovf
+root@ovfdemo:~# cloud-init status --long
+status: done
+time: Wed, 04 Sep 2019 18:36:58 +0000
+detail:
+DataSourceOVF [seed=iso]
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr0/size` * 512))
+360448
+=== END Xenial ===
+
+=== BEGIN Bionic ===
+[[Part A]]
+root@ovfdemo:~# lsb_release -rd
+Description:	Ubuntu 18.04.3 LTS
+Release:	18.04
+root@ovfdemo:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~18.04.1 100
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~18.04.1 500
+        500 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages
+     18.2-14-g6d48d265-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu bionic/main amd64 Packages
+root@ovfdemo:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+root@ovfdemo:~# cloud-id
+ovf
+root@ovfdemo:~# cloud-init status --long
+status: done
+time: Thu, 05 Sep 2019 21:23:44 +0000
+detail:
+DataSourceOVF [seed=iso]
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr1/size` * 512))
+72351744
+root@ovfdemo:~# export DEBUG_LEVEL=3
+root@ovfdemo:~# export DI_LOG=stderr
+root@ovfdemo:~# rm -f /run/cloud-init/cloud.cfg
+root@ovfdemo:~# /usr/lib/cloud-init/ds-identify 2>&1 | grep considered
+[  712.681086] print_req_error: I/O error, dev fd0, sector 0
+/dev/sr1: size 69MB is considered too large for OVF
+
+
+[[Part B]]
+root@ovfdemo:~# lsb_release -rd
+Description:	Ubuntu 18.04.3 LTS
+Release:	18.04
+root@ovfdemo:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~18.04.1 100
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~18.04.1 500
+        500 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages
+     18.2-14-g6d48d265-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu bionic/main amd64 Packages
+root@ovfdemo:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~18.04.1
+root@ovfdemo:~# cloud-id
+ovf
+root@ovfdemo:~# cloud-init status --long
+status: done
+time: Thu, 05 Sep 2019 21:23:44 +0000
+detail:
+DataSourceOVF [seed=iso]
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr0/size` * 512))
+360448
+=== END Bionic ===
+
+=== BEGIN Disco ===
+[[Part A]]
+root@ovfdemo:~# lsb_release -rd
+Description:	Ubuntu 19.04
+Release:	19.04
+root@ovfdemo:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~19.04.1 100
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~19.04.1 500
+        500 http://archive.ubuntu.com/ubuntu disco-updates/main amd64 Packages
+     18.5-62-g6322c2dd-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu disco/main amd64 Packages
+root@ovfdemo:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+root@ovfdemo:~# cloud-id
+ovf
+root@ovfdemo:~# cloud-init status --long
+status: done
+time: Thu, 05 Sep 2019 21:46:43 +0000
+detail:
+DataSourceOVF [seed=iso]
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr1/size` * 512))
+360448
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr0/size` * 512))
+72351744
+root@ovfdemo:~# export DEBUG_LEVEL=3
+root@ovfdemo:~# export DI_LOG=stderr
+root@ovfdemo:~# rm -f /run/cloud-init/cloud.cfg
+root@ovfdemo:~# /usr/lib/cloud-init/ds-identify 2>&1 | grep considered
+[  155.867972] print_req_error: I/O error, dev fd0, sector 0 flags 0
+/dev/sr0: size 69MB is considered too large for OVF
+
+[[Part B]]
+root@ovfdemo:~# lsb_release -rd
+Description:	Ubuntu 19.04
+Release:	19.04
+root@ovfdemo:~# apt-cache policy cloud-init
+cloud-init:
+  Installed: 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+  Candidate: 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+  Version table:
+ *** 19.2-24-ge7881d5c-0ubuntu1~19.04.1 100
+        100 /var/lib/dpkg/status
+     19.1-1-gbaa47854-0ubuntu1~19.04.1 500
+        500 http://archive.ubuntu.com/ubuntu disco-updates/main amd64 Packages
+     18.5-62-g6322c2dd-0ubuntu1 500
+        500 http://archive.ubuntu.com/ubuntu disco/main amd64 Packages
+root@ovfdemo:~# cloud-init --version
+/usr/bin/cloud-init 19.2-24-ge7881d5c-0ubuntu1~19.04.1
+root@ovfdemo:~# cloud-id
+ovf
+root@ovfdemo:~# cloud-init status --long
+status: done
+time: Thu, 05 Sep 2019 21:46:43 +0000
+detail:
+DataSourceOVF [seed=iso]
+root@ovfdemo:~# echo $((`cat /sys/class/block/sr1/size` * 512))
+360448
+
+=== END Disco ===
+# === End SRU Template ===
+
