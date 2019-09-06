@@ -4,32 +4,260 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1812857
 === Begin SRU Template ===
 [Impact]
 
+On systems which are booted with network configuration that specifies that a
+physical interface and a bond should have the same MAC address, cloud-init will
+fail with a traceback for some data sources (most notably the Openstack data
+sources).  This leads to both networking not being configured appropriately, as
+well as other functions of cloud-init not being executed.
+
 [Test Case]
+
+For bionic and disco, see the Test Script below.  This reproduces the issue,
+upgrades cloud-init and then demonstrates that the issue no longer exists.
+(The traceback in the bug only reproduces on the ConfigDrive data source, and
+as we don't have access to an OpenStack where we can modify network_config.json
+for instances, this is a partially synthetic test.)
+
+For xenial, we were running into unrelated problems configuring bonds inside a
+lxd container, so I manually did the following:
+
+1) Used cloud-localds to create a NoCloud data source containing the network
+   config
+2) Launched a KVM:
+    kvm \
+        -nic user,mac=9c:aa:aa:46:5d:91 \
+        -drive file=<xenial image>,if=virtio \
+        -drive file=my-seed.img,if=virtio,media=cdrom \
+        -m 2G
+3) Performed the verification that the Test Script does:
+   a) Reproduced the traceback
+   b) Upgraded to the -proposed cloud-init
+   c) Confirmed that the traceback went away
 
 [Regression Potential]
 
+Bonds will now be excluded from the list of network interfaces that cloud-init
+builds and uses in some cases.  These cases don't generally apply to bonds, but
+there may be unanticipated consequences for users who are configuring bonds
+through cloud-init.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://git.launchpad.net/cloud-init/commit/?id=e5f54213
 
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
+[Test Script]
+
+#!/bin/bash
+cat > network.yaml <<EOF
+config:
+- bond_interfaces:
+  - ens4
+  mtu: 1500
+  name: bond0
+  params:
+    bond_mimon: 100
+    bond_mode: 802.3ad
+    bond_up-delay: 250000
+    bond_xmit_hash_policy: layer2+3
+    mac_address: 9c:aa:aa:46:5d:91
+  subnets:
+  - type: dhcp4
+  type: bond
+- mac_address: 9c:aa:aa:46:5d:91
+  name: ens4
+  subnets: []
+  type: physical
+version: 1
 EOF
 
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series;
-   ref=$series-proposed;
-   lxc delete test-$series --force 2> /dev/null;
-   lxc init  test-$series;
-   lxc config set test-$series user.user-data - < some.yaml;
-   lxc start test-$series;
-   lxc exec test-$series -- cloud-init status --wait --long;
+# Use lxd for bionic and disco, because it's faster; bonding in a xenial
+# container isn't working, so we'll use a VM later
+for series in bionic disco; do
+   echo '=== BEGIN ' $series
+   ref=$series-proposed
+   lxc delete test-$series --force 2> /dev/null
+   lxc init ubuntu:$series test-$series
+   lxc config set test-$series user.network-config - < network.yaml
+   lxc config set test-$series volatile.eth0.hwaddr 9c:aa:aa:46:5d:91
+   lxc config set test-$series security.privileged true
+   lxc start test-$series
 
-   # Add specific tests
-   echo '=== END ' $series;
+   # We don't --wait, because networking will take 5 minutes to not come up
+   lxc exec test-$series -- cloud-init status --long
+
+   lxc exec test-$series -- python3 -c 'from cloudinit import net; print(net.get_interfaces_by_mac())' 2>&1 | tee interfaces_by_mac
+   if [ $(grep -c "RuntimeError" interfaces_by_mac) != 1 ]; then
+       echo "Unexpected success before upgrade"
+       exit 1
+   fi
+
+   mirror=http://archive.ubuntu.com/ubuntu
+   echo deb $mirror $series-proposed main | lxc exec test-$series -- tee /etc/apt/sources.list.d/proposed.list
+   lxc exec test-$series -- apt-get update -q
+   lxc exec test-$series -- apt-get install -qy cloud-init
+
+   lxc exec test-$series -- python3 -c 'from cloudinit import net; print(net.get_interfaces_by_mac())' 2>&1 | tee interfaces_by_mac
+   if [ $(grep -c "RuntimeError" interfaces_by_mac) != 0 ]; then
+       echo "Unexpected failure after upgrade"
+       exit 1
+   fi
+
+   echo '=== END ' $series
 done
 
+[Test Script Output]
+
+=== BEGIN  bionic
+Creating test-bionic
+status: running
+time: Fri, 06 Sep 2019 13:57:15 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3/dist-packages/cloudinit/net/__init__.py", line 596, in get_interfaces_by_mac
+    (name, ret[mac], mac))
+RuntimeError: duplicate mac found! both 'ens4' and 'bond0' have mac '9c:aa:aa:46:5d:91'
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [497 kB]
+Get:5 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [169 kB]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/restricted amd64 Packages [6296 B]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/restricted Translation-en [2776 B]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [604 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [201 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [4688 B]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2356 B]
+Err:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease
+  Connection timed out [IP: 91.189.88.175 80]
+Get:12 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Ign:14 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages
+Get:15 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Ign:15 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en
+Get:16 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [2512 B]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [1644 B]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [4000 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [1856 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [58.6 kB]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [25.9 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Fetched 15.8 MB in 1min 7s (234 kB/s)
+Reading package lists...
+W: Failed to fetch http://archive.ubuntu.com/ubuntu/dists/bionic-updates/InRelease  Connection timed out [IP: 91.189.88.175 80]
+W: Some index files failed to download. They have been ignored, or old ones used instead.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 19 not upgraded.
+Need to get 404 kB of archives.
+After this operation, 51.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~18.04.1 [404 kB]
+Fetched 404 kB in 0s (1308 kB/s)
+Preconfiguring packages ...
+(Reading database ... 28634 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/ntp.conf.debian.tmpl ...
+{'00:00:00:00:00:00': 'lo', '9c:aa:aa:46:5d:91': 'ens4'}
+=== END  bionic
+=== BEGIN  disco
+Creating test-disco
+status: running
+time: Fri, 06 Sep 2019 13:59:13 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/usr/lib/python3/dist-packages/cloudinit/net/__init__.py", line 596, in get_interfaces_by_mac
+    (name, ret[mac], mac))
+RuntimeError: duplicate mac found! both 'ens4' and 'bond0' have mac '9c:aa:aa:46:5d:91'
+deb http://archive.ubuntu.com/ubuntu disco-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu disco InRelease
+Get:2 http://security.ubuntu.com/ubuntu disco-security InRelease [97.5 kB]
+Get:3 http://archive.ubuntu.com/ubuntu disco-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu disco-security/main amd64 Packages [197 kB]
+Get:5 http://security.ubuntu.com/ubuntu disco-security/main Translation-en [71.5 kB]
+Get:6 http://security.ubuntu.com/ubuntu disco-security/restricted amd64 Packages [3424 B]
+Get:7 http://security.ubuntu.com/ubuntu disco-security/restricted Translation-en [888 B]
+Get:8 http://security.ubuntu.com/ubuntu disco-security/universe amd64 Packages [248 kB]
+Get:9 http://archive.ubuntu.com/ubuntu disco-backports InRelease [88.8 kB]
+Get:10 http://archive.ubuntu.com/ubuntu disco-proposed InRelease [255 kB]
+Get:11 http://security.ubuntu.com/ubuntu disco-security/universe Translation-en [70.2 kB]
+Get:12 http://security.ubuntu.com/ubuntu disco-security/universe amd64 c-n-f Metadata [1260 B]
+Get:13 http://security.ubuntu.com/ubuntu disco-security/multiverse amd64 Packages [1172 B]
+Get:14 http://archive.ubuntu.com/ubuntu disco/universe amd64 Packages [9065 kB]
+Get:15 http://security.ubuntu.com/ubuntu disco-security/multiverse Translation-en [632 B]
+Get:16 http://security.ubuntu.com/ubuntu disco-security/multiverse amd64 c-n-f Metadata [116 B]
+Ign:14 http://archive.ubuntu.com/ubuntu disco/universe amd64 Packages
+Get:17 http://archive.ubuntu.com/ubuntu disco/universe Translation-en [5251 kB]
+Ign:17 http://archive.ubuntu.com/ubuntu disco/universe Translation-en
+Get:18 http://archive.ubuntu.com/ubuntu disco/universe amd64 c-n-f Metadata [277 kB]
+Get:19 http://archive.ubuntu.com/ubuntu disco/multiverse amd64 Packages [157 kB]
+Get:20 http://archive.ubuntu.com/ubuntu disco/multiverse Translation-en [112 kB]
+Get:21 http://archive.ubuntu.com/ubuntu disco/multiverse amd64 c-n-f Metadata [9348 B]
+Get:22 http://archive.ubuntu.com/ubuntu disco-updates/main amd64 Packages [260 kB]
+Get:23 http://archive.ubuntu.com/ubuntu disco-updates/main Translation-en [99.6 kB]
+Get:24 http://archive.ubuntu.com/ubuntu disco-updates/restricted amd64 Packages [3816 B]
+Get:25 http://archive.ubuntu.com/ubuntu disco-updates/restricted Translation-en [928 B]
+Get:26 http://archive.ubuntu.com/ubuntu disco-updates/universe amd64 Packages [301 kB]
+Get:27 http://archive.ubuntu.com/ubuntu disco-updates/universe Translation-en [100 kB]
+Get:28 http://archive.ubuntu.com/ubuntu disco-updates/universe amd64 c-n-f Metadata [1780 B]
+Get:29 http://archive.ubuntu.com/ubuntu disco-updates/multiverse amd64 Packages [1172 B]
+Get:30 http://archive.ubuntu.com/ubuntu disco-updates/multiverse Translation-en [632 B]
+Get:31 http://archive.ubuntu.com/ubuntu disco-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:32 http://archive.ubuntu.com/ubuntu disco-backports/main amd64 Packages [1220 B]
+Get:33 http://archive.ubuntu.com/ubuntu disco-backports/main Translation-en [684 B]
+Get:34 http://archive.ubuntu.com/ubuntu disco-backports/main amd64 c-n-f Metadata [528 B]
+Get:35 http://archive.ubuntu.com/ubuntu disco-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu disco-backports/universe amd64 Packages [3420 B]
+Get:37 http://archive.ubuntu.com/ubuntu disco-backports/universe Translation-en [1532 B]
+Get:38 http://archive.ubuntu.com/ubuntu disco-backports/universe amd64 c-n-f Metadata [188 B]
+Get:39 http://archive.ubuntu.com/ubuntu disco-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 Packages [36.0 kB]
+Get:41 http://archive.ubuntu.com/ubuntu disco-proposed/main Translation-en [17.6 kB]
+Get:42 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 c-n-f Metadata [2168 B]
+Get:14 http://archive.ubuntu.com/ubuntu disco/universe amd64 Packages [9065 kB]
+Get:17 http://archive.ubuntu.com/ubuntu disco/universe Translation-en [5251 kB]
+Ign:17 http://archive.ubuntu.com/ubuntu disco/universe Translation-en
+Get:17 http://archive.ubuntu.com/ubuntu disco/universe Translation-en [7566 kB]
+Fetched 19.2 MB in 1min 35s (201 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 36 not upgraded.
+Need to get 400 kB of archives.
+After this operation, 51.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.2-24-ge7881d5c-0ubuntu1~19.04.1 [400 kB]
+Fetched 400 kB in 0s (1119 kB/s)
+Preconfiguring packages ...
+(Reading database ... 28915 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.2-24-ge7881d5c-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) over (19.1-1-gbaa47854-0ubuntu1~19.04.1) ...
+Setting up cloud-init (19.2-24-ge7881d5c-0ubuntu1~19.04.1) ...
+Installing new version of config file /etc/cloud/templates/ntp.conf.debian.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu7) ...
+{'00:00:00:00:00:00': 'lo', '9c:aa:aa:46:5d:91': 'ens4'}
+=== END  disco
 
 === End SRU Template ===
