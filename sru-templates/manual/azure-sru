@@ -50,17 +50,17 @@ az network nsg create \
     --name $NETWORK_SECURITY_GROUP
 
 az network nsg rule create \
-  --resource-group $RESOURCE_GROUP \
-  --nsg-name $NETWORK_SECURITY_GROUP \
-  --name Allow-SSH-Internet \
-  --access Allow \
-  --protocol Tcp \
-  --direction Inbound \
-  --priority 100 \
-  --source-address-prefix Internet \
-  --source-port-range "*" \
-  --destination-address-prefix "*" \
-  --destination-port-range 22
+    --resource-group $RESOURCE_GROUP \
+    --nsg-name $NETWORK_SECURITY_GROUP \
+    --name Allow-SSH-Internet \
+    --access Allow \
+    --protocol Tcp \
+    --direction Inbound \
+    --priority 100 \
+    --source-address-prefix Internet \
+    --source-port-range "*" \
+    --destination-address-prefix "*" \
+    --destination-port-range 22
 
 
 sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
@@ -77,11 +77,11 @@ for series in $SRU_SERIES; do
     # Note: accelerated network requires bigger size than our default DS1
     for nics in "" "--nics $NIC_NAME-$series --size Standard_DS2_v2"; do
         if [ "" = "$nics" ]; then
-	    echo "Creating standard network vm"
-	    name=test-sru-$series
+            echo "Creating standard network vm"
+            name=test-sru-$series
         else
-	    echo "Creating advanced network vm"
-	    name=test-sru-$series-advanced
+            echo "Creating advanced network vm"
+            name=test-sru-$series-advanced
             az network public-ip create \
                 --name sruPublicIp-$series \
                 --resource-group $RESOURCE_GROUP
@@ -95,41 +95,41 @@ for series in $SRU_SERIES; do
                 --public-ip-address sruPublicIp-$series \
                 --network-security-group $NETWORK_SECURITY_GROUP
         fi
-	az vm create --name=$name \
-	    --image=Canonical:UbuntuServer:$image_version:latest \
-	    --admin-username=root --admin-username=ubuntu \
-	    -g $RESOURCE_GROUP --ssh-key-value $SSH_KEY \
-	    $BOOT_DIAG \
-	    --custom-data sethostname.yaml $nics
-	IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+        az vm create --name=$name \
+            --image=Canonical:UbuntuServer:$image_version:latest \
+            --admin-username=root --admin-username=ubuntu \
+            -g $RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+            $BOOT_DIAG \
+            --custom-data sethostname.yaml $nics
+        IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
-	ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
-	ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
-	ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
-	ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
-	ssh "${sshopts[@]}" $IP -- systemd-analyze
-	ssh "${sshopts[@]}" $IP -- systemd-analyze blame
-	ssh "${sshopts[@]}" $IP -- cloud-init analyze show
-	ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
-	echo 'Networking config'
-	ssh "${sshopts[@]}" $IP -- cat $netcfg
+        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+        ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+        ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+        ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
+        ssh "${sshopts[@]}" $IP -- systemd-analyze
+        ssh "${sshopts[@]}" $IP -- systemd-analyze blame
+        ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+        ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+        echo 'Networking config'
+        ssh "${sshopts[@]}" $IP -- cat $netcfg
 
-	scp "${sshopts[@]}" setup_proposed.sh $IP:.
-	ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
-	ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
-	ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
-	ssh "${sshopts[@]}" $IP -- sudo rm -f $netcfg
-	ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
+        scp "${sshopts[@]}" setup_proposed.sh $IP:.
+        ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+        ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
+        ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
+        ssh "${sshopts[@]}" $IP -- sudo rm -f $netcfg
+        ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
 
-	sleep 60
+        sleep 60
 
-	ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
-	ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
-	ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
-	ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
-	ssh "${sshopts[@]}" $IP -- cloud-init analyze show
-	ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
-	echo 'After upgrade Networking config'
+        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+        ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
+        ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
+        ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
+        ssh "${sshopts[@]}" $IP -- cloud-init analyze show
+        ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+        echo 'After upgrade Networking config'
         ssh "${sshopts[@]}" $IP -- cat $netcfg
         ssh "${sshopts[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
         echo 'Get cloud-id'
@@ -138,7 +138,7 @@ for series in $SRU_SERIES; do
         echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to be Sytem Boot'
         ssh "${sshopts[@]}" $IP -- sudo reboot || true
         sleep 30
-	ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
         echo 'After reboot'
         ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
     done
