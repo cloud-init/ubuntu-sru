@@ -22,6 +22,9 @@ cat > sethostname.yaml <<EOF
 #cloud-config
 ssh_import_id: [$LP_USER]
 hostname: SRU-worked-{{v1.cloud_name}}
+runcmd:
+  # Avoid sudo host lookup errors for our cloud-init set username
+  - "sed -e 's/localhost$/localhost SRU-worked-{{v1.cloud_name}}' /etc/hosts"
 EOF
 
 cat > setup_proposed.sh <<EOF
@@ -90,3 +93,1076 @@ for series in $SRU_SERIES; do
     ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
     echo "### END $series"
 done
+
+
+==== Begin SRU Validation ===
++ sshopts=-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR
++ echo ### BEGIN xenial
+### BEGIN xenial
++ launch-ec2 --series xenial -u sethostname.yaml
++ awk /Found/{print $5}
++ EC2_INST=ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:35:56 +0000
+detail:
+DataSourceEc2Local
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init.*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+sudo: unable to resolve host SRU-worked-aws
+Startup finished in 4.017s (kernel) + 20.175s (userspace) = 24.193s
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo systemd-analyze blame
+sudo: unable to resolve host SRU-worked-aws
+          9.935s snapd.seeded.service
+          3.692s cloud-init-local.service
+          2.985s console-setup.service
+          2.935s dev-xvda1.device
+          2.722s cloud-config.service
+          2.174s apparmor.service
+          1.697s plymouth-read-write.service
+          1.556s systemd-tmpfiles-setup.service
+          1.546s systemd-machine-id-commit.service
+          1.111s pollinate.service
+           820ms cloud-init.service
+           807ms snapd.service
+           792ms lvm2-monitor.service
+           554ms cloud-final.service
+           396ms systemd-update-utmp.service
+           322ms iscsid.service
+           261ms mdadm.service
+           259ms lxd-containers.service
+           253ms accounts-daemon.service
+           249ms ufw.service
+           230ms kmod-static-nodes.service
+           213ms grub-common.service
+           209ms systemd-logind.service
+           205ms systemd-remount-fs.service
+           189ms systemd-modules-load.service
+           189ms dev-hugepages.mount
+           173ms apport.service
+           162ms rsyslog.service
+           157ms keyboard-setup.service
+           157ms networking.service
+           138ms resolvconf.service
+           119ms systemd-udev-trigger.service
+           111ms systemd-journald.service
+           102ms irqbalance.service
+            98ms systemd-journal-flush.service
+            91ms systemd-timesyncd.service
+            89ms sys-kernel-debug.mount
+            88ms open-iscsi.service
+            80ms polkitd.service
+            76ms ondemand.service
+            58ms sys-fs-fuse-connections.mount
+            57ms systemd-sysctl.service
+            56ms dev-mqueue.mount
+            52ms rc-local.service
+            45ms snapd.socket
+            41ms systemd-update-utmp-runlevel.service
+            40ms systemd-random-seed.service
+            40ms systemd-tmpfiles-setup-dev.service
+            33ms snap-core-7396.mount
+            28ms plymouth-quit-wait.service
+            28ms user@1000.service
+            27ms plymouth-quit.service
+            26ms ssh.service
+            24ms snap-amazon\x2dssm\x2dagent-1455.mount
+            23ms systemd-udevd.service
+            20ms setvtrgb.service
+            17ms systemd-user-sessions.service
+            15ms lxd.socket
+            10ms dev-loop0.device
+             6ms dev-loop1.device
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+sudo: unable to resolve host SRU-worked-aws
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01600s +00.00900s
+|`->no local data found from DataSourceNoCloud @00.17200s +00.22200s
+|`->no local data found from DataSourceConfigDrive @00.39400s +00.20000s
+|`->no local data found from DataSourceOpenNebula @00.59400s +00.08900s
+|`->no local data found from DataSourceDigitalOcean @00.68300s +00.01500s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->Non-Azure DMI asset tag '' discovered. @00.69900s +00.01500s
+Finished stage: (azure-ds/_get_data) 00.01500 seconds
+
+Finished stage: (init-local/search-Azure) 00.01600 seconds
+
+|`->no local data found from DataSourceOVF @00.71400s +00.08800s
+|`->no local data found from DataSourceOpenStackLocal @00.80200s +00.03600s
+|`->no local data found from DataSourceCloudSigma @00.83900s +00.01600s
+|`->no local data found from DataSourceSmartOS @00.85500s +00.01200s
+|`->no local data found from DataSourceScaleway @00.86700s +00.01600s
+|`->found local data from DataSourceEc2Local @00.88300s +01.56700s
+Finished stage: (init-local) 02.61300 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @03.22000s +00.00300s
+|`->setting up datasource @03.28900s +00.00000s
+|`->reading and applying user-data @03.29600s +00.00900s
+|`->reading and applying vendor-data @03.30500s +00.00000s
+|`->activating datasource @03.33500s +00.00200s
+|`->config-migrator ran successfully @03.35300s +00.00000s
+|`->config-seed_random ran successfully @03.35400s +00.00100s
+|`->config-bootcmd ran successfully @03.35500s +00.00000s
+|`->config-write-files ran successfully @03.35500s +00.00100s
+|`->config-growpart ran successfully @03.35600s +00.04400s
+|`->config-resizefs ran successfully @03.40100s +00.01800s
+|`->config-disk_setup ran successfully @03.41900s +00.00100s
+|`->config-mounts ran successfully @03.42000s +00.00200s
+|`->config-set_hostname ran successfully @03.42300s +00.00400s
+|`->config-update_hostname ran successfully @03.42700s +00.00200s
+|`->config-update_etc_hosts ran successfully @03.42900s +00.00000s
+|`->config-ca-certs ran successfully @03.43000s +00.00000s
+|`->config-rsyslog ran successfully @03.43100s +00.00000s
+|`->config-users-groups ran successfully @03.43200s +00.07000s
+|`->config-ssh ran successfully @03.50300s +00.12600s
+Finished stage: (init-network) 00.42400 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @15.35500s +00.00100s
+|`->config-snap ran successfully @15.35600s +00.00100s
+|`->config-snap_config ran successfully @15.35700s +00.00100s
+|`->config-ssh-import-id ran successfully @15.35800s +00.82400s
+|`->config-locale ran successfully @16.18500s +00.76100s
+|`->config-set-passwords ran successfully @16.94600s +00.00100s
+|`->config-grub-dpkg ran successfully @16.94800s +00.14600s
+|`->config-apt-pipelining ran successfully @17.09400s +00.00100s
+|`->config-apt-configure ran successfully @17.09600s +00.10500s
+|`->config-ubuntu-advantage ran successfully @17.20100s +00.00100s
+|`->config-ntp ran successfully @17.20200s +00.00100s
+|`->config-timezone ran successfully @17.20300s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @17.20400s +00.00100s
+|`->config-runcmd ran successfully @17.20500s +00.00100s
+|`->config-byobu ran successfully @17.20600s +00.00100s
+Finished stage: (modules-config) 01.93100 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @17.62400s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @17.62600s +00.00100s
+|`->config-fan ran successfully @17.62700s +00.00100s
+|`->config-landscape ran successfully @17.62900s +00.00000s
+|`->config-lxd ran successfully @17.63000s +00.00000s
+|`->config-ubuntu-drivers ran successfully @17.63100s +00.00000s
+|`->config-puppet ran successfully @17.63200s +00.00000s
+|`->config-chef ran successfully @17.63300s +00.00100s
+|`->config-mcollective ran successfully @17.63400s +00.00100s
+|`->config-salt-minion ran successfully @17.63500s +00.00100s
+|`->config-rightscale_userdata ran successfully @17.63600s +00.00100s
+|`->config-scripts-vendor ran successfully @17.63700s +00.00100s
+|`->config-scripts-per-once ran successfully @17.63800s +00.00100s
+|`->config-scripts-per-boot ran successfully @17.63900s +00.00000s
+|`->config-scripts-per-instance ran successfully @17.63900s +00.00100s
+|`->config-scripts-user ran successfully @17.64000s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @17.64100s +00.03600s
+|`->config-keys-to-console ran successfully @17.67700s +00.07400s
+|`->config-phone-home ran successfully @17.75100s +00.00100s
+|`->config-final-message ran successfully @17.75300s +00.00500s
+|`->config-power-state-change ran successfully @17.75900s +00.00000s
+Finished stage: (modules-final) 00.15500 seconds
+
+Total Time: 5.15400 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- ! sudo grep Trace /var/log/cloud-init*
+sudo: unable to resolve host SRU-worked-aws
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com:
++ + egrep cloud-init
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com sudo bash setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.2-36-g059d049c-0ubuntu1~16.04.1 [408 kB]
+Preparing to unpack .../cloud-init_19.2-36-g059d049c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.2-36-g059d049c-0ubuntu1~16.04.1) over (19.2-24-ge7881d5c-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.2-36-g059d049c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com sudo hostname something-else
+sudo: unable to resolve host SRU-worked-aws
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo cloud-init init
+sudo: unable to resolve host something-else
+Cloud-init v. 19.2-36-g059d049c-0ubuntu1~16.04.1 running 'init' at Thu, 19 Sep 2019 09:37:04 +0000. Up 92.08 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.238        | 255.255.255.0 | global | 06:63:c1:f2:56:58 |
+ci-info: |  eth0  | True | fe80::463:c1ff:fef2:5658/64 |       .       |  link  | 06:63:c1:f2:56:58 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |    Genmask    | Interface | Flags |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |    0.0.0.0    |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   | 255.255.255.0 |    eth0   |   U   |
+ci-info: +-------+-------------+------------+---------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   0   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo cloud-init clean --logs --reboot
+sudo: unable to resolve host something-else
+Connection to ec2-3-19-217-22.us-east-2.compute.amazonaws.com closed by remote host.
++ true
++ sleep 60
++ date --utc +%s.%N
+1568885887.450085395
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:37:46 +0000
+detail:
+DataSourceEc2Local
++ date --utc +%s.%N
+1568885888.744463749
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- hostname
+SRU-worked-aws
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+sudo: unable to resolve host SRU-worked-aws
+Startup finished in 4.052s (kernel) + 10.053s (userspace) = 14.106s
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+sudo: unable to resolve host SRU-worked-aws
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.01400s +00.00000s
+|`->no local data found from DataSourceNoCloud @00.11500s +00.14500s
+|`->no local data found from DataSourceConfigDrive @00.26000s +00.14100s
+|`->no local data found from DataSourceOpenNebula @00.40200s +00.09500s
+|`->no local data found from DataSourceDigitalOcean @00.49700s +00.01500s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->Non-Azure DMI asset tag '' discovered. @00.51200s +00.01500s
+Finished stage: (azure-ds/_get_data) 00.01500 seconds
+
+Finished stage: (init-local/search-Azure) 00.01500 seconds
+
+|`->no local data found from DataSourceOVF @00.52700s +00.04800s
+|`->no local data found from DataSourceOpenStackLocal @00.57600s +00.04100s
+|`->no local data found from DataSourceCloudSigma @00.61700s +00.01200s
+|`->no local data found from DataSourceSmartOS @00.62900s +00.01600s
+|`->no local data found from DataSourceScaleway @00.64500s +00.01500s
+|`->found local data from DataSourceEc2Local @00.66000s +00.56000s
+Finished stage: (init-local) 01.30000 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @01.87200s +00.00300s
+|`->setting up datasource @01.94100s +00.00100s
+|`->reading and applying user-data @01.95000s +00.00800s
+|`->reading and applying vendor-data @01.95800s +00.00000s
+|`->activating datasource @01.98800s +00.00200s
+|`->config-migrator ran successfully @02.00600s +00.00100s
+|`->config-seed_random ran successfully @02.00700s +00.00100s
+|`->config-bootcmd ran successfully @02.00800s +00.00100s
+|`->config-write-files ran successfully @02.00900s +00.00100s
+|`->config-growpart ran successfully @02.01000s +00.05400s
+|`->config-resizefs ran successfully @02.06400s +00.01800s
+|`->config-disk_setup ran successfully @02.08200s +00.00100s
+|`->config-mounts ran successfully @02.08300s +00.00200s
+|`->config-set_hostname ran successfully @02.08500s +00.00500s
+|`->config-update_hostname ran successfully @02.09000s +00.00200s
+|`->config-update_etc_hosts ran successfully @02.09200s +00.00000s
+|`->config-ca-certs ran successfully @02.09300s +00.00000s
+|`->config-rsyslog ran successfully @02.09400s +00.00000s
+|`->config-users-groups ran successfully @02.09500s +00.01500s
+|`->config-ssh ran successfully @02.11000s +00.35800s
+Finished stage: (init-network) 00.61100 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @05.31400s +00.00100s
+|`->config-snap ran successfully @05.31500s +00.00100s
+|`->config-snap_config ran successfully @05.31600s +00.00100s
+|`->config-ssh-import-id ran successfully @05.31700s +00.63800s
+|`->config-locale ran successfully @05.95600s +00.00100s
+|`->config-set-passwords ran successfully @05.95800s +00.00000s
+|`->config-grub-dpkg ran successfully @05.95900s +00.19400s
+|`->config-apt-pipelining ran successfully @06.15300s +00.00100s
+|`->config-apt-configure ran successfully @06.15400s +00.11800s
+|`->config-ubuntu-advantage ran successfully @06.27300s +00.00100s
+|`->config-ntp ran successfully @06.27400s +00.00100s
+|`->config-timezone ran successfully @06.27500s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @06.27600s +00.00000s
+|`->config-runcmd ran successfully @06.27700s +00.00000s
+|`->config-byobu ran successfully @06.27800s +00.00000s
+Finished stage: (modules-config) 00.98200 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @06.69700s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @06.69900s +00.00100s
+|`->config-fan ran successfully @06.70000s +00.00100s
+|`->config-landscape ran successfully @06.70100s +00.00100s
+|`->config-lxd ran successfully @06.70200s +00.00100s
+|`->config-ubuntu-drivers ran successfully @06.70300s +00.00100s
+|`->config-puppet ran successfully @06.70400s +00.00100s
+|`->config-chef ran successfully @06.70500s +00.00100s
+|`->config-mcollective ran successfully @06.70600s +00.00100s
+|`->config-salt-minion ran successfully @06.70700s +00.00100s
+|`->config-rightscale_userdata ran successfully @06.70800s +00.00100s
+|`->config-scripts-vendor ran successfully @06.70900s +00.00100s
+|`->config-scripts-per-once ran successfully @06.71000s +00.00100s
+|`->config-scripts-per-boot ran successfully @06.71100s +00.00100s
+|`->config-scripts-per-instance ran successfully @06.71200s +00.00100s
+|`->config-scripts-user ran successfully @06.71300s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @06.71400s +00.04700s
+|`->config-keys-to-console ran successfully @06.76100s +00.09100s
+|`->config-phone-home ran successfully @06.85300s +00.00100s
+|`->config-final-message ran successfully @06.85400s +00.00600s
+|`->config-power-state-change ran successfully @06.86000s +00.00100s
+Finished stage: (modules-final) 00.18300 seconds
+
+Total Time: 3.10600 seconds
+
+1 boot records analyzed
++ [ xenial = xenial ]
++ echo --- Expect warning on xenial for jinja because deb DOES NOT have jinja dep.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep.
+ LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region: aws-us-east-2
++ echo Per LP:1794399 expect we do not see a lot of killing dhclient logs
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/nullPer LP:1794399 expect we do not see a lot of killing dhclient logs
+ -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com grep dhclient /var/log/cloud-init.log
+2019-09-19 09:37:40,248 - util.py[DEBUG]: Copying /sbin/dhclient to /var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient
+2019-09-19 09:37:40,256 - util.py[DEBUG]: Running command ['/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient', '-1', '-v', '-lf', '/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhcp.leases', '-pf', '/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient.pid', 'eth0', '-sf', '/bin/true'] with allowed return codes [0] (shell=False, capture=True)
+2019-09-19 09:37:40,277 - util.py[DEBUG]: Waiting up to 5 seconds for the following files: ['/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient.pid', '/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhcp.leases']
+2019-09-19 09:37:40,288 - util.py[DEBUG]: All files appeared after 0.01 seconds: ['/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient.pid', '/var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhcp.leases']
+2019-09-19 09:37:40,288 - util.py[DEBUG]: Reading from /var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient.pid (quiet=False)
+2019-09-19 09:37:40,288 - util.py[DEBUG]: Read 4 bytes from /var/tmp/cloud-init/cloud-init-dhcp-32g2bvi2/dhclient.pid
+2019-09-19 09:37:40,288 - dhcp.py[DEBUG]: killing dhclient with pid=837
++ echo Get cloud-id
++ ssh -oGet cloud-id
+ StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com cloud-id
+aws
++ echo Validating whether metadata is being updated per boot LP:1819913
++ sshValidating whether metadata is being updated per boot LP:1819913
+ -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:37:39,360 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,504 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,646 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,741 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,756 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,772 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,820 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,861 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,888 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,889 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,904 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com sudo reboot
+sudo: unable to resolve host SRU-worked-aws
+Connection to ec2-3-19-217-22.us-east-2.compute.amazonaws.com closed by remote host.
++ true
++ sleep 60
++ echo After reboot
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-3-19-217-22.us-east-2.compute.amazonaws.com grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:37:39,360 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,504 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,646 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,741 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,756 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,772 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,820 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,861 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,888 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,889 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:37:39,904 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:47,761 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:47,913 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,071 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,160 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,173 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,193 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,252 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,291 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,322 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,323 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:48,338 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:38:49,695 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: System boot
++ echo ### END xenial
++ echo### END xenial
+ ### BEGIN bionic
+### BEGIN bionic
++ launch-ec2 --series bionic -u sethostname.yaml
++ awk /Found/{print $5}
++ EC2_INST=ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:40:22 +0000
+detail:
+DataSourceEc2Local
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init.*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+Startup finished in 5.140s (kernel) + 29.396s (userspace) = 34.536s
+graphical.target reached after 28.612s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo systemd-analyze blame
+         10.489s snapd.seeded.service
+          6.281s cloud-init-local.service
+          2.466s pollinate.service
+          2.445s keyboard-setup.service
+          2.254s dev-xvda1.device
+          1.789s cloud-config.service
+          1.750s networkd-dispatcher.service
+          1.664s cloud-init.service
+          1.640s systemd-networkd-wait-online.service
+          1.599s lxd-containers.service
+          1.135s apparmor.service
+           995ms accounts-daemon.service
+           964ms grub-common.service
+           756ms cloud-final.service
+           595ms apport.service
+           515ms systemd-journal-flush.service
+           400ms systemd-tmpfiles-setup-dev.service
+           370ms systemd-logind.service
+           354ms systemd-udev-trigger.service
+           291ms polkit.service
+           291ms systemd-sysctl.service
+           264ms systemd-udevd.service
+           256ms ebtables.service
+           255ms lvm2-monitor.service
+           251ms rsyslog.service
+           241ms systemd-timesyncd.service
+           227ms systemd-modules-load.service
+           203ms ufw.service
+           202ms kmod-static-nodes.service
+           202ms systemd-journald.service
+           201ms sys-kernel-debug.mount
+           200ms dev-mqueue.mount
+           177ms systemd-machine-id-commit.service
+           167ms setvtrgb.service
+           150ms systemd-remount-fs.service
+           134ms hibinit-agent.service
+           127ms systemd-update-utmp.service
+           127ms snapd.socket
+           120ms systemd-user-sessions.service
+           111ms dev-hugepages.mount
+           100ms lxd.socket
+            99ms snapd.service
+            70ms ssh.service
+            66ms systemd-random-seed.service
+            64ms plymouth-read-write.service
+            63ms systemd-resolved.service
+            63ms console-setup.service
+            63ms systemd-tmpfiles-setup.service
+            55ms systemd-networkd.service
+            42ms blk-availability.service
+            36ms sys-kernel-config.mount
+            32ms systemd-update-utmp-runlevel.service
+            30ms user@1000.service
+            28ms dev-loop0.device
+            26ms sys-fs-fuse-connections.mount
+            24ms snap-core-7396.mount
+            24ms snap-amazon\x2dssm\x2dagent-1455.mount
+            21ms plymouth-quit.service
+            21ms dev-loop1.device
+            19ms plymouth-quit-wait.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00000s
+|`->found local data from DataSourceEc2Local @00.02400s +04.11600s
+Finished stage: (init-local) 04.33200 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @06.57000s +00.01700s
+|`->setting up datasource @06.64700s +00.00000s
+|`->reading and applying user-data @06.65300s +00.00800s
+|`->reading and applying vendor-data @06.66100s +00.00000s
+|`->activating datasource @06.70500s +00.00100s
+|`->config-migrator ran successfully @06.74700s +00.00100s
+|`->config-seed_random ran successfully @06.74800s +00.00100s
+|`->config-bootcmd ran successfully @06.74900s +00.00000s
+|`->config-write-files ran successfully @06.74900s +00.00100s
+|`->config-growpart ran successfully @06.75000s +00.15800s
+|`->config-resizefs ran successfully @06.90900s +00.05700s
+|`->config-disk_setup ran successfully @06.96600s +00.00100s
+|`->config-mounts ran successfully @06.97200s +00.00200s
+|`->config-set_hostname ran successfully @06.97400s +00.01100s
+|`->config-update_hostname ran successfully @06.98600s +00.00800s
+|`->config-update_etc_hosts ran successfully @06.99400s +00.00000s
+|`->config-ca-certs ran successfully @06.99500s +00.00000s
+|`->config-rsyslog ran successfully @06.99600s +00.00000s
+|`->config-users-groups ran successfully @06.99700s +00.20800s
+|`->config-ssh ran successfully @07.20500s +00.46700s
+Finished stage: (init-network) 01.11700 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @21.23300s +00.00100s
+|`->config-snap ran successfully @21.23400s +00.00100s
+|`->config-snap_config ran successfully @21.23500s +00.00100s
+|`->config-ssh-import-id ran successfully @21.23600s +00.69800s
+|`->config-locale ran successfully @21.93400s +00.00600s
+|`->config-set-passwords ran successfully @21.94100s +00.00000s
+|`->config-grub-dpkg ran successfully @21.94200s +00.17700s
+|`->config-apt-pipelining ran successfully @22.12000s +00.00100s
+|`->config-apt-configure ran successfully @22.12100s +00.21300s
+|`->config-ubuntu-advantage ran successfully @22.33500s +00.00100s
+|`->config-ntp ran successfully @22.33600s +00.00100s
+|`->config-timezone ran successfully @22.33700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @22.33900s +00.00000s
+|`->config-runcmd ran successfully @22.33900s +00.00100s
+|`->config-byobu ran successfully @22.34000s +00.00100s
+Finished stage: (modules-config) 01.13100 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @23.09600s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @23.09800s +00.00000s
+|`->config-fan ran successfully @23.09900s +00.00000s
+|`->config-landscape ran successfully @23.09900s +00.00100s
+|`->config-lxd ran successfully @23.10000s +00.00100s
+|`->config-ubuntu-drivers ran successfully @23.10100s +00.00100s
+|`->config-puppet ran successfully @23.10200s +00.00100s
+|`->config-chef ran successfully @23.10300s +00.00000s
+|`->config-mcollective ran successfully @23.10400s +00.00000s
+|`->config-salt-minion ran successfully @23.10500s +00.00000s
+|`->config-rightscale_userdata ran successfully @23.10500s +00.00100s
+|`->config-scripts-vendor ran successfully @23.10600s +00.00100s
+|`->config-scripts-per-once ran successfully @23.10700s +00.00100s
+|`->config-scripts-per-boot ran successfully @23.10800s +00.00000s
+|`->config-scripts-per-instance ran successfully @23.10800s +00.00100s
+|`->config-scripts-user ran successfully @23.10900s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @23.11000s +00.05200s
+|`->config-keys-to-console ran successfully @23.16200s +00.09600s
+|`->config-phone-home ran successfully @23.25800s +00.00100s
+|`->config-final-message ran successfully @23.25900s +00.00500s
+|`->config-power-state-change ran successfully @23.26400s +00.00100s
+Finished stage: (modules-final) 00.19500 seconds
+
+Total Time: 6.77500 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- ! sudo grep Trace /var/log/cloud-init*
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com:
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com sudo+  bash setup_proposed.sh
+egrep cloud-init
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.2-36-g059d049c-0ubuntu1~18.04.1 [404 kB]
+Preparing to unpack .../cloud-init_19.2-36-g059d049c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.2-36-g059d049c-0ubuntu1~18.04.1) over (19.2-24-ge7881d5c-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.2-36-g059d049c-0ubuntu1~18.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com sudo hostname something-else
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo cloud-init init
+Cloud-init v. 19.2-36-g059d049c-0ubuntu1~18.04.1 running 'init' at Thu, 19 Sep 2019 09:41:28 +0000. Up 101.02 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.41.41.172        | 255.255.255.0 | global | 06:1f:73:9c:d5:c0 |
+ci-info: |  eth0  | True | fe80::41f:73ff:fe9c:d5c0/64 |       .       |  link  | 06:1f:73:9c:d5:c0 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo cloud-init clean --logs --reboot
+Connection to ec2-52-14-49-180.us-east-2.compute.amazonaws.com closed by remote host.
++ true
++ sleep 60
++ date --utc +%s.%N
+1568886151.622901396
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:42:12 +0000
+detail:
+DataSourceEc2Local
++ date --utc +%s.%N
+1568886153.815322445
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- hostname
+SRU-worked-aws
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+Startup finished in 4.481s (kernel) + 12.558s (userspace) = 17.040s
+graphical.target reached after 11.678s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->found local data from DataSourceEc2Local @00.02400s +00.25900s
+Finished stage: (init-local) 00.48200 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.78600s +00.01600s
+|`->setting up datasource @02.86200s +00.00100s
+|`->reading and applying user-data @02.87000s +00.00800s
+|`->reading and applying vendor-data @02.87800s +00.00000s
+|`->activating datasource @02.91400s +00.00200s
+|`->config-migrator ran successfully @02.94900s +00.00100s
+|`->config-seed_random ran successfully @02.95000s +00.00100s
+|`->config-bootcmd ran successfully @02.95100s +00.00000s
+|`->config-write-files ran successfully @02.95200s +00.00600s
+|`->config-growpart ran successfully @02.95900s +00.15000s
+|`->config-resizefs ran successfully @03.11000s +00.05900s
+|`->config-disk_setup ran successfully @03.16900s +00.00100s
+|`->config-mounts ran successfully @03.17000s +00.00200s
+|`->config-set_hostname ran successfully @03.17300s +00.00500s
+|`->config-update_hostname ran successfully @03.17900s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.18000s +00.00000s
+|`->config-ca-certs ran successfully @03.18100s +00.00000s
+|`->config-rsyslog ran successfully @03.18200s +00.00000s
+|`->config-users-groups ran successfully @03.18200s +00.03600s
+|`->config-ssh ran successfully @03.21800s +00.32800s
+Finished stage: (init-network) 00.77500 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.29500s +00.00100s
+|`->config-snap ran successfully @06.29600s +00.00100s
+|`->config-snap_config ran successfully @06.29700s +00.00100s
+|`->config-ssh-import-id ran successfully @06.29800s +00.72700s
+|`->config-locale ran successfully @07.02500s +00.00100s
+|`->config-set-passwords ran successfully @07.02700s +00.00000s
+|`->config-grub-dpkg ran successfully @07.02800s +00.20700s
+|`->config-apt-pipelining ran successfully @07.23600s +00.00100s
+|`->config-apt-configure ran successfully @07.23700s +00.22900s
+|`->config-ubuntu-advantage ran successfully @07.46700s +00.00100s
+|`->config-ntp ran successfully @07.46800s +00.00100s
+|`->config-timezone ran successfully @07.46900s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @07.47100s +00.00000s
+|`->config-runcmd ran successfully @07.47100s +00.00100s
+|`->config-byobu ran successfully @07.47200s +00.00100s
+Finished stage: (modules-config) 01.19800 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @08.25000s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @08.25200s +00.00000s
+|`->config-fan ran successfully @08.25200s +00.00100s
+|`->config-landscape ran successfully @08.25300s +00.00100s
+|`->config-lxd ran successfully @08.25400s +00.00100s
+|`->config-ubuntu-drivers ran successfully @08.25500s +00.00100s
+|`->config-puppet ran successfully @08.25600s +00.00100s
+|`->config-chef ran successfully @08.25700s +00.00000s
+|`->config-mcollective ran successfully @08.25800s +00.00000s
+|`->config-salt-minion ran successfully @08.25900s +00.00000s
+|`->config-rightscale_userdata ran successfully @08.25900s +00.00100s
+|`->config-scripts-vendor ran successfully @08.26000s +00.00100s
+|`->config-scripts-per-once ran successfully @08.26100s +00.00100s
+|`->config-scripts-per-boot ran successfully @08.26200s +00.00000s
+|`->config-scripts-per-instance ran successfully @08.26200s +00.00100s
+|`->config-scripts-user ran successfully @08.26300s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @08.26400s +00.06600s
+|`->config-keys-to-console ran successfully @08.33000s +00.12300s
+|`->config-phone-home ran successfully @08.45400s +00.00100s
+|`->config-final-message ran successfully @08.45500s +00.00500s
+|`->config-power-state-change ran successfully @08.46000s +00.00100s
+Finished stage: (modules-final) 00.23300 seconds
+
+Total Time: 2.68800 seconds
+
+1 boot records analyzed
++ [ bionic = xenial ]
++ echo --- Expect success on bionic for jinja because deb DOES have jinja dep.
++ ssh -o--- Expect success on bionic for jinja because deb DOES have jinja dep.
+ StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region: aws-us-east-2
++ echo Per LP:1794399 expect we do not see a lot of killing dhclient logs
++ ssh -o StrictHostKeyChecking=no -oPer LP:1794399 expect we do not see a lot of killing dhclient logs
+ UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com grep dhclient /var/log/cloud-init.log
+2019-09-19 09:42:04,433 - util.py[DEBUG]: Copying /sbin/dhclient to /var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient
+2019-09-19 09:42:04,448 - util.py[DEBUG]: Running command ['/var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient', '-1', '-v', '-lf', '/var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhcp.leases', '-pf', '/var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient.pid', 'eth0', '-sf', '/bin/true'] with allowed return codes [0] (shell=False, capture=True)
+2019-09-19 09:42:04,484 - util.py[DEBUG]: All files appeared after 0 seconds: ['/var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient.pid', '/var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhcp.leases']
+2019-09-19 09:42:04,485 - util.py[DEBUG]: Reading from /var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient.pid (quiet=False)
+2019-09-19 09:42:04,485 - util.py[DEBUG]: Read 4 bytes from /var/tmp/cloud-init/cloud-init-dhcp-3w_w0s4s/dhclient.pid
+2019-09-19 09:42:04,485 - dhcp.py[DEBUG]: killing dhclient with pid=668
++ echo Get cloud-id
++ ssh -o StrictHostKeyChecking=noGet cloud-id
+ -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com cloud-id
+aws
++ echo Validating whether metadata is being updated per boot LP:1819913
+Validating whether metadata is being updated per boot LP:1819913
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:42:04,403 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com sudo reboot
+Connection to ec2-52-14-49-180.us-east-2.compute.amazonaws.com closed by remote host.
++ true
++ sleep 60
++ echo After reboot
++ ssh -o StrictHostKeyChecking=no -oAfter reboot
+ UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-52-14-49-180.us-east-2.compute.amazonaws.com grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:42:04,403 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:43:22,638 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ echo ### END bionic
++ echo### END bionic
+ ### BEGIN disco
+### BEGIN disco
++ launch-ec2 --series disco -u sethostname.yaml
++ awk /Found/{print $5}
++ EC2_INST=ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com
++ sleep 60
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:44:42 +0000
+detail:
+DataSourceEc2Local
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceEc2Local",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init.*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+Startup finished in 1.706s (kernel) + 28.128s (userspace) = 29.834s
+graphical.target reached after 25.899s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo systemd-analyze blame
+         17.090s snapd.seeded.service
+          1.953s systemd-networkd-wait-online.service
+          1.666s pollinate.service
+          1.637s cloud-config.service
+          1.588s lvm2-monitor.service
+          1.532s dev-xvda1.device
+          1.267s accounts-daemon.service
+          1.176s cloud-init.service
+          1.168s systemd-logind.service
+          1.137s cloud-init-local.service
+           977ms apparmor.service
+           887ms systemd-udev-settle.service
+           689ms rsyslog.service
+           644ms systemd-journald.service
+           623ms cloud-final.service
+           543ms apport.service
+           534ms systemd-timesyncd.service
+           464ms networkd-dispatcher.service
+           409ms grub-common.service
+           398ms systemd-user-sessions.service
+           367ms systemd-udev-trigger.service
+           364ms snap.lxd.activate.service
+           292ms dev-mqueue.mount
+           288ms systemd-resolved.service
+           285ms dev-hugepages.mount
+           282ms systemd-remount-fs.service
+           280ms sys-kernel-debug.mount
+           277ms ufw.service
+           273ms systemd-networkd.service
+           269ms kmod-static-nodes.service
+           266ms systemd-modules-load.service
+           222ms keyboard-setup.service
+           216ms atd.service
+           195ms grub-initrd-fallback.service
+           148ms systemd-random-seed.service
+           142ms systemd-sysctl.service
+           140ms systemd-sysusers.service
+           127ms sys-kernel-config.mount
+           117ms console-setup.service
+           115ms systemd-machine-id-commit.service
+           115ms plymouth-quit.service
+           112ms sys-fs-fuse-connections.mount
+           107ms plymouth-read-write.service
+            99ms systemd-tmpfiles-setup.service
+            96ms finalrd.service
+            96ms snapd.socket
+            93ms snapd.service
+            92ms plymouth-quit-wait.service
+            78ms user@1000.service
+            52ms multipathd.service
+            43ms systemd-udevd.service
+            41ms systemd-update-utmp-runlevel.service
+            40ms systemd-journal-flush.service
+            36ms snap-core-7396.mount
+            33ms dev-loop2.device
+            32ms dev-loop1.device
+            31ms ssh.service
+            30ms systemd-update-utmp.service
+            29ms blk-availability.service
+            29ms snap-amazon\x2dssm\x2dagent-1455.mount
+            27ms setvtrgb.service
+            27ms snap-lxd-11964.mount
+            23ms dev-loop0.device
+            22ms systemd-tmpfiles-setup-dev.service
+            18ms user-runtime-dir@1000.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00000s
+|`->found local data from DataSourceEc2Local @00.01200s +00.21700s
+Finished stage: (init-local) 00.41700 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @03.09700s +00.00300s
+|`->setting up datasource @03.15500s +00.00000s
+|`->reading and applying user-data @03.16100s +00.00800s
+|`->reading and applying vendor-data @03.16900s +00.00000s
+|`->activating datasource @03.20200s +00.00100s
+|`->config-migrator ran successfully @03.23800s +00.00100s
+|`->config-seed_random ran successfully @03.23900s +00.00100s
+|`->config-bootcmd ran successfully @03.24000s +00.00000s
+|`->config-write-files ran successfully @03.24000s +00.00100s
+|`->config-growpart ran successfully @03.24100s +00.14700s
+|`->config-resizefs ran successfully @03.38900s +00.07000s
+|`->config-disk_setup ran successfully @03.46100s +00.00100s
+|`->config-mounts ran successfully @03.46300s +00.00500s
+|`->config-set_hostname ran successfully @03.46800s +00.00900s
+|`->config-update_hostname ran successfully @03.47700s +00.00200s
+|`->config-update_etc_hosts ran successfully @03.47900s +00.00000s
+|`->config-ca-certs ran successfully @03.47900s +00.00200s
+|`->config-rsyslog ran successfully @03.48100s +00.00100s
+|`->config-users-groups ran successfully @03.48200s +00.07900s
+|`->config-ssh ran successfully @03.56100s +00.23300s
+Finished stage: (init-network) 00.71100 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @22.64300s +00.00000s
+|`->config-snap ran successfully @22.64300s +00.00100s
+|`->config-snap_config ran successfully @22.64400s +00.00100s
+|`->config-ssh-import-id ran successfully @22.64500s +00.78600s
+|`->config-locale ran successfully @23.43200s +00.00100s
+|`->config-set-passwords ran successfully @23.43300s +00.00100s
+|`->config-grub-dpkg ran successfully @23.43400s +00.16600s
+|`->config-apt-pipelining ran successfully @23.60100s +00.00100s
+|`->config-apt-configure ran successfully @23.60200s +00.11600s
+|`->config-ubuntu-advantage ran successfully @23.71900s +00.00100s
+|`->config-ntp ran successfully @23.72000s +00.00100s
+|`->config-timezone ran successfully @23.72100s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @23.72200s +00.00000s
+|`->config-runcmd ran successfully @23.72200s +00.00100s
+|`->config-byobu ran successfully @23.72300s +00.00100s
+Finished stage: (modules-config) 01.09900 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @24.21300s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @24.21500s +00.00000s
+|`->config-fan ran successfully @24.21500s +00.00100s
+|`->config-landscape ran successfully @24.21600s +00.00100s
+|`->config-lxd ran successfully @24.21700s +00.00100s
+|`->config-ubuntu-drivers ran successfully @24.21800s +00.00100s
+|`->config-puppet ran successfully @24.21900s +00.00100s
+|`->config-chef ran successfully @24.22000s +00.00000s
+|`->config-mcollective ran successfully @24.22100s +00.00000s
+|`->config-salt-minion ran successfully @24.22200s +00.00000s
+|`->config-rightscale_userdata ran successfully @24.22200s +00.00100s
+|`->config-scripts-vendor ran successfully @24.22300s +00.00100s
+|`->config-scripts-per-once ran successfully @24.22400s +00.00100s
+|`->config-scripts-per-boot ran successfully @24.22500s +00.00000s
+|`->config-scripts-per-instance ran successfully @24.22500s +00.00100s
+|`->config-scripts-user ran successfully @24.22600s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @24.22700s +00.04500s
+|`->config-keys-to-console ran successfully @24.27200s +00.07400s
+|`->config-phone-home ran successfully @24.34600s +00.00100s
+|`->config-final-message ran successfully @24.34700s +00.00400s
+|`->config-power-state-change ran successfully @24.35200s +00.00000s
+Finished stage: (modules-final) 00.16000 seconds
+
+Total Time: 2.38700 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- ! sudo grep Trace /var/log/cloud-init*
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com:
++ ssh+  -o StrictHostKeyChecking=no -oegrep UserKnownHostsFile=/dev/null cloud-init -o
+ LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com sudo bash setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.2-36-g059d049c-0ubuntu1~19.04.1 [401 kB]
+Preparing to unpack .../cloud-init_19.2-36-g059d049c-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.2-36-g059d049c-0ubuntu1~19.04.1) over (19.2-24-ge7881d5c-0ubuntu1~19.04.1) ...
+Setting up cloud-init (19.2-36-g059d049c-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com sudo hostname something-else
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo cloud-init init
+Cloud-init v. 19.2-36-g059d049c-0ubuntu1~19.04.1 running 'init' at Thu, 19 Sep 2019 09:45:54 +0000. Up 101.25 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |          Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |        10.41.41.188        | 255.255.255.0 | global | 06:cb:ab:04:0c:7a |
+ci-info: |  eth0  | True | fe80::4cb:abff:fe04:c7a/64 |       .       |  link  | 06:cb:ab:04:0c:7a |
+ci-info: |   lo   | True |         127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |          ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+----------------------------+---------------+--------+-------------------+
+ci-info: +++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: | Route | Destination |  Gateway   |     Genmask     | Interface | Flags |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: |   0   |   0.0.0.0   | 10.41.41.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |  10.41.41.0 |  0.0.0.0   |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  10.41.41.1 |  0.0.0.0   | 255.255.255.255 |    eth0   |   UH  |
+ci-info: +-------+-------------+------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo cloud-init clean --logs --reboot
+Connection to ec2-18-188-57-88.us-east-2.compute.amazonaws.com closed by remote host.
++ true
++ sleep 60
++ date --utc +%s.%N
+1568886417.818706398
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- cloud-init status --wait --long
+
+status: done
+time: Thu, 19 Sep 2019 09:46:39 +0000
+detail:
+DataSourceEc2Local
++ date --utc +%s.%N
+1568886419.852850675
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- hostname
+SRU-worked-aws
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- ! grep Trace /var/log/cloud-init*
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo systemd-analyze
+Startup finished in 1.715s (kernel) + 12.360s (userspace) = 14.076s
+graphical.target reached after 9.625s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com -- sudo cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->found local data from DataSourceEc2Local @00.01100s +00.23500s
+Finished stage: (init-local) 00.42600 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceEc2Local @02.96100s +00.00300s
+|`->setting up datasource @03.01800s +00.00000s
+|`->reading and applying user-data @03.02500s +00.00700s
+|`->reading and applying vendor-data @03.03200s +00.00000s
+|`->activating datasource @03.06200s +00.00200s
+|`->config-migrator ran successfully @03.09500s +00.00100s
+|`->config-seed_random ran successfully @03.09600s +00.00100s
+|`->config-bootcmd ran successfully @03.09700s +00.00000s
+|`->config-write-files ran successfully @03.09700s +00.00100s
+|`->config-growpart ran successfully @03.09800s +00.14200s
+|`->config-resizefs ran successfully @03.24000s +00.04200s
+|`->config-disk_setup ran successfully @03.28300s +00.00000s
+|`->config-mounts ran successfully @03.28400s +00.00100s
+|`->config-set_hostname ran successfully @03.28500s +00.00500s
+|`->config-update_hostname ran successfully @03.29100s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.29200s +00.00000s
+|`->config-ca-certs ran successfully @03.29300s +00.00000s
+|`->config-rsyslog ran successfully @03.29300s +00.00100s
+|`->config-users-groups ran successfully @03.29400s +00.01800s
+|`->config-ssh ran successfully @03.31200s +00.30100s
+Finished stage: (init-network) 00.66600 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.83300s +00.00000s
+|`->config-snap ran successfully @06.83300s +00.00100s
+|`->config-snap_config ran successfully @06.83400s +00.00100s
+|`->config-ssh-import-id ran successfully @06.83500s +00.85500s
+|`->config-locale ran successfully @07.69000s +00.00200s
+|`->config-set-passwords ran successfully @07.69200s +00.00100s
+|`->config-grub-dpkg ran successfully @07.69300s +00.21800s
+|`->config-apt-pipelining ran successfully @07.91100s +00.00100s
+|`->config-apt-configure ran successfully @07.91200s +00.11500s
+|`->config-ubuntu-advantage ran successfully @08.02800s +00.00100s
+|`->config-ntp ran successfully @08.02900s +00.00100s
+|`->config-timezone ran successfully @08.03000s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @08.03100s +00.00000s
+|`->config-runcmd ran successfully @08.03200s +00.00000s
+|`->config-byobu ran successfully @08.03300s +00.00000s
+Finished stage: (modules-config) 01.21900 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @08.51700s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @08.51900s +00.00000s
+|`->config-fan ran successfully @08.52000s +00.00000s
+|`->config-landscape ran successfully @08.52100s +00.00000s
+|`->config-lxd ran successfully @08.52100s +00.00100s
+|`->config-ubuntu-drivers ran successfully @08.52200s +00.00100s
+|`->config-puppet ran successfully @08.52300s +00.00100s
+|`->config-chef ran successfully @08.52400s +00.00000s
+|`->config-mcollective ran successfully @08.52500s +00.00000s
+|`->config-salt-minion ran successfully @08.52500s +00.00100s
+|`->config-rightscale_userdata ran successfully @08.52600s +00.00100s
+|`->config-scripts-vendor ran successfully @08.52700s +00.00100s
+|`->config-scripts-per-once ran successfully @08.52800s +00.00100s
+|`->config-scripts-per-boot ran successfully @08.52900s +00.00000s
+|`->config-scripts-per-instance ran successfully @08.52900s +00.00100s
+|`->config-scripts-user ran successfully @08.53000s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @08.53100s +00.03300s
+|`->config-keys-to-console ran successfully @08.56400s +00.07300s
+|`->config-phone-home ran successfully @08.63800s +00.00100s
+|`->config-final-message ran successfully @08.63900s +00.00400s
+|`->config-power-state-change ran successfully @08.64300s +00.00100s
+Finished stage: (modules-final) 00.14500 seconds
+
+Total Time: 2.45600 seconds
+
+1 boot records analyzed
++ [ disco = xenial ]
++ echo --- Expect success on bionic for jinja because deb DOES have jinja dep.
++ ssh -o StrictHostKeyChecking=no -o--- Expect success on bionic for jinja because deb DOES have jinja dep.
+ UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+cloud-region: aws-us-east-2
++ echo Per LP:1794399 expect we do not see a lot of killing dhclient logs
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/nullPer LP:1794399 expect we do not see a lot of killing dhclient logs
+ -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com grep dhclient /var/log/cloud-init.log
+2019-09-19 09:46:30,441 - util.py[DEBUG]: Copying /usr/sbin/dhclient to /var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient
+2019-09-19 09:46:30,468 - util.py[DEBUG]: Running command ['/var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient', '-1', '-v', '-lf', '/var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhcp.leases', '-pf', '/var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient.pid', 'eth0', '-sf', '/bin/true'] with allowed return codes [0] (shell=False, capture=True)
+2019-09-19 09:46:30,491 - util.py[DEBUG]: All files appeared after 0 seconds: ['/var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient.pid', '/var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhcp.leases']
+2019-09-19 09:46:30,492 - util.py[DEBUG]: Reading from /var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient.pid (quiet=False)
+2019-09-19 09:46:30,492 - util.py[DEBUG]: Read 4 bytes from /var/tmp/cloud-init/cloud-init-dhcp-j_6rof6g/dhclient.pid
+2019-09-19 09:46:30,492 - dhcp.py[DEBUG]: killing dhclient with pid=405
++ echo Get cloud-id
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com cloud-id
+aws
++ echo Validating whether metadata is being updated per boot LP:1819913
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.comValidating whether metadata is being updated per boot LP:1819913
+ grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:46:30,411 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com sudo reboot
++ sleep 60
++ echo After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERRORAfter reboot
+ ubuntu@ec2-18-188-57-88.us-east-2.compute.amazonaws.com grep 'Update datasource' /var/log/cloud-init.log
+2019-09-19 09:46:30,411 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
+2019-09-19 09:47:45,094 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ echo ### END disco
+### END disco
+
+==== End SRU Validation ===
