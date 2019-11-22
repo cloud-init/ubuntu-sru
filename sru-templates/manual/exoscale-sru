@@ -1,0 +1,125 @@
+#!/bin/bash
+
+# Exoscale.com manual SRU testing
+
+# This requires the Exoscale CLI to be installed locally and available in the PATH.
+# The easiest way to achieve this is:
+
+# $ sudo snap install exoscale-cli
+
+# Using the client-configured default zone should be fine.
+# You can configure which account to use (exo -A) by setting the
+# EXOSCALE_ACCOUNT environment variable.
+
+set -x
+
+SRU_SERIES=${SRU_SERIES:="%SRU_SERIES%"}
+EXOSCALE_ACCOUNT=${EXOSCALE_ACCOUNT:=}
+
+exo="exo"
+if [ "$EXOSCALE_ACCOUNT" != "" ] ; then
+    exo="exo -A $EXOSCALE_ACCOUNT"
+
+# pubkey
+SSH_KEY="$HOME/.ssh/id_rsa.pub"
+TMP_SSH_KEY="$HOME/tmp_rsa.pub"
+
+# Name for the on-cloud SSH key
+SRU_SSH_KEY="sru-test-ssh-key"
+
+# Name for teh on-cloud privnet
+SRU_PRIVNET_NAME="sru-test-privnet"
+
+# Name for the SSH-only security group we create (just in case the account we are using
+# doesn't allow SSH in the default group).
+SRU_SECURITY_GROUP="sru-test-security-group"
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+# First of all we copy the pubkey that's in the .ssh folder to the root of home - otherwise
+# our snapped CLI client won't be allowed to read it (it can't read $HOME dotfiles).
+# Setting the SSH key this way is one way of ensuring the datasource actually works.
+cp $SSH_KEY $TMP_SSH_KEY
+$exo sshkey upload $SRU_SSH_KEY $TMP_SSH_KEY
+rm $TMP_SSH_KEY
+
+# Create a managed private network
+$exo privnet create $SRU_PRIVNET_NAME --description "A test privnet for use during SRU testing" --netmask 255.255.255.0 --startip 10.0.0.1 --endip 10.0.0.200
+
+# Create a security group, and ensure it allows SSH in
+$exo firewall create $SRU_SECURITY_GROUP
+$exo firewall add $SRU_SECURITY_GROUP ssh
+
+# We pass -i to make sure we are using the key we uploaded to exoscale.
+sshopts=(-i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+for series in $SRU_SERIES; do
+
+    case $series in
+        xenial) token="Ubuntu 16.04";;
+        bionic) token="Ubuntu 18.04";;
+        cosmic) token="Ubuntu 18.10";;
+        disco) token="Ubuntu 19.04";;
+        *) echo "Unknown series, update exoscale script!"; exit 1;;
+    esac
+
+    # find the template ID
+    template_id=$($exo vm template list --output-format text | grep $token | cut -f1)
+
+    $exo vm create $series-sru-test -t $template_id -k $SRU_SSH_KEY -p $SRU_PRIVNET_NAME
+
+    VM_IP=$($exo vm list --output-format text | grep $series-sru-test | cut -f6)
+
+    # Wait for the VM to be up
+    while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+        sleep 5
+    done
+
+    # Capture current state
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+
+    # Upgrade to -proposed cloud-init and reboot
+    scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+    ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+    ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
+
+    sleep 10  # Wait for the instance to actually go down
+    while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+        sleep 5
+    done
+
+    echo "Rebooted with the SRU version of cloud-init"
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- hostname
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+
+    # Check that the private network interface is up - this should show *two* interfaces (3 with lo)
+    ssh "${sshopts[@]}" ubuntu@$VM_IP -- ifconfig -s
+
+done
+
+# Cleanup after ourselves
+for series in $SRU_SERIES; do
+    $exo vm delete --force $series-sru-test
+done
+$exo privnet delete --force $SRU_PRIVNET_NAME
+$exo sshkey delete --force $SRU_SSH_KEY
+$exo firewall delete --force $SRU_SECURITY_GROUP
