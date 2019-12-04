@@ -1,4 +1,4 @@
-Ubuntu SRU xenial, bionic, cosmic, disco (post-freeze): 12/03/2019
+Ubuntu SRU xenial, bionic, cosmic, disco, eoan: 12/03/2019
 =====
 This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on 12/03/2019
 
