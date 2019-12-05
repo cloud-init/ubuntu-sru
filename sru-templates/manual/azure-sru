@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 set -x
 # Manually deploy on Azure using Azure CLI client.
 # Validate upgrade to proposed version of cloud-init
@@ -18,8 +18,8 @@ BOOT_DIAG="<specify your boot diagnostics group>"
 SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
 
-IPV6_NET_REGISTERED=`az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state'`
-IPV6_CA_LB_REGISTERED=`az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state'`
+IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
 
 if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; then
 	echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
@@ -32,17 +32,17 @@ if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Regi
     while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
         echo -n "."
         sleep 5
-        IPV6_NET_REGISTERED=`az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state'`
-        IPV6_CA_LB_REGISTERED=`az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state'`
+	IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+	IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
     done
 fi
 
-IPV6_REGISTRATION_COMPLETE=`az provider show -n Microsoft.Network | jq -r ".registrationState"`
+IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
 echo "Waiting for Microsoft.Network IPv6 feature registration"
 while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
     echo -n "."
     sleep 5;
-    IPV6_REGISTRATION_COMPLETE=`az provider show -n Microsoft.Network | jq -r ".registrationState"`
+    IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
 done
 
 
@@ -107,9 +107,9 @@ az network nsg rule create \
     --destination-port-range 22
 
 
-sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 for series in $SRU_SERIES; do
-    echo "### BEGIN $RELEASE"
+    echo "### BEGIN $series"
     netcfg="/etc/netplan/50-cloud-init.yaml"
     case $series in
         xenial) image_version=16.04-DAILY-LTS
@@ -144,13 +144,6 @@ for series in $SRU_SERIES; do
                 --private-ip-address-version IPv4 \
                 --public-ip-address sruPublicIP-IPv4-$series \
                 --network-security-group $NETWORK_SECURITY_GROUP
-            az network nic ip-config create \
-		--name $NIC_NAME-$series-IPv6Config \
-		--nic-name $NIC_NAME-$series \
-                --resource-group $RESOURCE_GROUP \
-                --vnet-name $VNET_NAME \
-                --subnet sruSubnet \
-		--private-ip-address-version IPv6
         fi
         az vm create --name=$name \
             --image=Canonical:UbuntuServer:$image_version:latest \
@@ -162,45 +155,61 @@ for series in $SRU_SERIES; do
 
 	echo "Created $name: ubuntu@$IP"
 
-        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
-        ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
-        ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
-        ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init.log
-        ssh "${sshopts[@]}" $IP -- systemd-analyze
-        ssh "${sshopts[@]}" $IP -- systemd-analyze blame
-        ssh "${sshopts[@]}" $IP -- cloud-init analyze show
-        ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+        ssh $sshopts $IP -- cloud-init status --wait --long
+        ssh $sshopts $IP -- dpkg-query --show cloud-init
+        ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+        ssh $sshopts $IP -- grep Trace /var/log/cloud-init.log
+        ssh $sshopts $IP -- systemd-analyze
+        ssh $sshopts $IP -- systemd-analyze blame
+        ssh $sshopts $IP -- cloud-init analyze show
+        ssh $sshopts $IP -- cloud-init analyze blame
         echo 'Networking config'
-        ssh "${sshopts[@]}" $IP -- cat $netcfg
+        ssh $sshopts $IP -- cat $netcfg
 
-        scp "${sshopts[@]}" setup_proposed.sh $IP:.
-        ssh "${sshopts[@]}" $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
-        ssh "${sshopts[@]}" $IP -- dpkg-query --show cloud-init
-        ssh "${sshopts[@]}" $IP -- sudo hostname SRU-didnt-work
-        ssh "${sshopts[@]}" $IP -- sudo rm -f $netcfg
-        ssh "${sshopts[@]}" $IP -- sudo cloud-init clean --logs --reboot
+        scp $sshopts setup_proposed.sh $IP:.
+        ssh $sshopts $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+        ssh $sshopts $IP -- dpkg-query --show cloud-init
+        ssh $sshopts $IP -- sudo hostname SRU-didnt-work
+        ssh $sshopts $IP -- sudo rm -f $netcfg
+        if [ "" = "$nics" ]; then
+            ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
+        else
+	    echo "Shutting down instance and adding IPv6 config to nic"
+            # TODO: This is only done late because current published cloud-init
+	    # TODO: does not support dual stack ipv6 yet
+	    # TODO: move this higher inside "Creating advanced network vm"
+	    # TODO: after this SRU completes
 
+	    az vm stop --name=$name -g $RESOURCE_GROUP 
+            az network nic ip-config create \
+		--name $NIC_NAME-$series-IPv6Config \
+		--nic-name $NIC_NAME-$series \
+                --resource-group $RESOURCE_GROUP \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+		--private-ip-address-version IPv6
+	    az vm start --name=$name -g $RESOURCE_GROUP 
+	fi
         sleep 60
 
-        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
-        ssh "${sshopts[@]}" $IP -- grep Trace /var/log/cloud-init\*
-        ssh "${sshopts[@]}" $IP -- sudo cat /run/cloud-init/result.json
-        ssh "${sshopts[@]}" $IP -- sudo systemd-analyze blame
-        ssh "${sshopts[@]}" $IP -- cloud-init analyze show
-        ssh "${sshopts[@]}" $IP -- cloud-init analyze blame
+        ssh $sshopts $IP -- cloud-init status --wait --long
+        ssh $sshopts $IP -- grep Trace /var/log/cloud-init\*
+        ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+        ssh $sshopts $IP -- sudo systemd-analyze blame
+        ssh $sshopts $IP -- cloud-init analyze show
+        ssh $sshopts $IP -- cloud-init analyze blame
         echo 'After upgrade Networking config'
-        ssh "${sshopts[@]}" $IP -- cat $netcfg
-        ssh "${sshopts[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+        ssh $sshopts $IP -- cat $netcfg
+        ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
         echo 'Get cloud-id'
-        ssh "${sshopts[@]}" $IP -- cloud-id
-        ssh "${sshopts[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+        ssh $sshopts $IP -- cloud-id
+        ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
         echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to be Sytem Boot'
-        ssh "${sshopts[@]}" $IP -- sudo reboot || true
+        ssh $sshopts $IP -- sudo reboot || true
         sleep 30
-        ssh "${sshopts[@]}" $IP -- cloud-init status --wait --long
+        ssh $sshopts $IP -- cloud-init status --wait --long
         echo 'After reboot'
-        ssh "${sshopts[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+        ssh $sshopts $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
     done
     echo "### END $series"
 done
-
