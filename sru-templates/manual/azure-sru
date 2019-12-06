@@ -28,12 +28,12 @@ if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Regi
         az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
         az feature register --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network
     fi
-    echo "Waiting for AllowIPv6VirtualNetwork freature registration"
+    echo "Waiting for AllowIPv6VirtualNetwork feature registration"
     while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
         echo -n "."
         sleep 5
-    IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
-    IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+        IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+        IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
     done
 fi
 
@@ -41,7 +41,7 @@ IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".reg
 echo "Waiting for Microsoft.Network IPv6 feature registration"
 while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
     echo -n "."
-    sleep 5;
+    sleep 5
     IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
 done
 
@@ -118,7 +118,7 @@ for series in $SRU_SERIES; do
         *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
     esac
     # Note: accelerated network requires bigger size than our default DS1
-    for nics in "" "--nics $NIC_NAME-$series --size Standard_DS2_v2"; do
+    for nics in "" "--nics $NIC_NAME-$series ${NIC_NAME}2-$series --size Standard_DS2_v2"; do
         if [ "" = "$nics" ]; then
             echo "Creating standard network vm"
             name=test-sru-$series
@@ -141,6 +141,14 @@ for series in $SRU_SERIES; do
                 --accelerated-networking true \
                 --private-ip-address-version IPv4 \
                 --public-ip-address sruPublicIP-IPv4-$series \
+                --network-security-group $NETWORK_SECURITY_GROUP
+            az network nic create \
+                --resource-group $RESOURCE_GROUP \
+                --name ${NIC_NAME}2-$series \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+                --accelerated-networking true \
+                --private-ip-address-version IPv4 \
                 --network-security-group $NETWORK_SECURITY_GROUP
         fi
         az vm create --name=$name \
