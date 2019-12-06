@@ -22,7 +22,7 @@ IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace
 IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
 
 if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; then
-	echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
+    echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
     read RESP
     if [ "$RESP" = "y" ]; then
         az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
@@ -32,8 +32,8 @@ if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Regi
     while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
         echo -n "."
         sleep 5
-	IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
-	IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+    IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+    IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
     done
 fi
 
@@ -51,8 +51,6 @@ cat > sethostname.yaml <<EOF
 #cloud-config
 ssh_import_id : [%SRU_LP_USER%]
 hostname: SRU-worked-{{v1.cloud_name}}
-runcmd:
-  - cp /run/cloud-init/ds-identify.log /var/log
 EOF
 
 cat > setup_proposed.sh <<EOF
@@ -67,11 +65,11 @@ az group create --name $RESOURCE_GROUP --location $REGION
 
 if [ -n "${BOOT_DIAG}" ]; then
     az storage account create \
-	    --name $BOOT_DIAG \
-	    --resource-group $RESOURCE_GROUP \
-	    --location $REGION \
-	    --sku Standard_RAGRS \
-	    --kind StorageV2
+        --name $BOOT_DIAG \
+        --resource-group $RESOURCE_GROUP \
+        --location $REGION \
+        --sku Standard_RAGRS \
+        --kind StorageV2
     BOOT_DIAG_ARG="--boot-diagnostics-storage ${BOOT_DIAG}"
 else
     BOOT_DIAG_ARG=""
@@ -153,7 +151,7 @@ for series in $SRU_SERIES; do
             --custom-data sethostname.yaml $nics
         IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
-	echo "Created $name: ubuntu@$IP"
+        echo "Created $name: ubuntu@$IP"
 
         ssh $sshopts $IP -- cloud-init status --wait --long
         ssh $sshopts $IP -- dpkg-query --show cloud-init
@@ -174,22 +172,21 @@ for series in $SRU_SERIES; do
         if [ "" = "$nics" ]; then
             ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
         else
-	    echo "Shutting down instance and adding IPv6 config to nic"
+            echo "Shutting down instance and adding IPv6 config to nic"
             # TODO: This is only done late because current published cloud-init
-	    # TODO: does not support dual stack ipv6 yet
-	    # TODO: move this higher inside "Creating advanced network vm"
-	    # TODO: after this SRU completes
-
-	    az vm stop --name=$name -g $RESOURCE_GROUP 
+            # TODO: does not support dual stack ipv6 yet
+            # TODO: move this higher inside "Creating advanced network vm"
+            # TODO: after this SRU completes
+            az vm stop --name=$name -g $RESOURCE_GROUP 
             az network nic ip-config create \
-		--name $NIC_NAME-$series-IPv6Config \
-		--nic-name $NIC_NAME-$series \
+                --name $NIC_NAME-$series-IPv6Config \
+                --nic-name $NIC_NAME-$series \
                 --resource-group $RESOURCE_GROUP \
                 --vnet-name $VNET_NAME \
                 --subnet sruSubnet \
-		--private-ip-address-version IPv6
-	    az vm start --name=$name -g $RESOURCE_GROUP 
-	fi
+                --private-ip-address-version IPv6
+            az vm start --name=$name -g $RESOURCE_GROUP 
+        fi
         sleep 60
 
         ssh $sshopts $IP -- cloud-init status --wait --long
