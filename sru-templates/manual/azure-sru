@@ -18,6 +18,9 @@ BOOT_DIAG="<specify your boot diagnostics group>"
 SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
 
+ADVANCED_NIC_TESTS=true
+
+
 IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
 IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
 
@@ -27,6 +30,16 @@ if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Regi
     if [ "$RESP" = "y" ]; then
         az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
         az feature register --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network
+    else
+        echo "Skipping any advanced network tests because you opted to avoid registering IPv6 feature"
+        echo -n "Proceed without any advanced networking tests (y/n)? "
+        read OK
+        if [ "$OK" = "y" ]; then
+            ADVANCED_NIC_TESTS=false
+        else
+            echo "quit the test run"
+            exit 1
+        fi
     fi
     echo "Waiting for AllowIPv6VirtualNetwork feature registration"
     while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
@@ -123,6 +136,10 @@ for series in $SRU_SERIES; do
             echo "Creating standard network vm"
             name=test-sru-$series
         else
+            if [ $ADVANCED_NIC_TESTS = false ]; then
+                echo "Skipping advanced nic tests because ipv6 feature is disabled"
+                continue
+            fi
             echo "Creating advanced network vm"
             name=test-sru-$series-advanced
             az network public-ip create \
