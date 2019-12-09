@@ -58,8 +58,9 @@ sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLeve
 for series in $SRU_SERIES; do
     echo "### BEGIN $series"
     VM_IP=`launch-softlayer --image=os:$series -u sethostname.yaml | awk '/primary ip/{printf "root@%s", $NF}'`
+    sleep 180
     ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $VM_IP -- cat /run/cloud-init/result.json
     ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init.log
     ssh "${sshopts[@]}" $VM_IP -- systemd-analyze
     ssh "${sshopts[@]}" $VM_IP -- systemd-analyze blame
@@ -67,17 +68,17 @@ for series in $SRU_SERIES; do
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
 
     scp "${sshopts[@]}" $PROPOSED_SCRIPT $VM_IP:.
-    ssh "${sshopts[@]}" $VM_IP -- sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $VM_IP -- bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
     ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${sshopts[@]}" $VM_IP -- sudo hostname SRU-didnt-work
-    ssh "${sshopts[@]}" $VM_IP -- sudo cloud-init clean --logs --reboot
+    ssh "${sshopts[@]}" $VM_IP -- hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init clean --logs --reboot
 
-    sleep 60
+    sleep 180
 
     ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
     ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init\*
-    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
-    ssh "${sshopts[@]}" $VM_IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $VM_IP -- cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $VM_IP -- systemd-analyze blame
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
     ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
@@ -86,7 +87,8 @@ for series in $SRU_SERIES; do
     ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
 
     echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
-    ssh "${sshopts[@]}" $VM_IP -- sudo reboot || true
+    ssh "${sshopts[@]}" $VM_IP -- reboot || true
+    sleep 180
     echo 'After reboot'
     ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
     ssh "${sshopts[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
