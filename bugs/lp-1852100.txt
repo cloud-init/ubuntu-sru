@@ -1,0 +1,51 @@
+http://pad.lv/1852100
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1852100
+
+=== Begin SRU Template ===
+[Impact]
+
+Prior to this fix, a ConfigDrive that was constructed with `null` as the
+local-hostname would cause a traceback.  This would lead to cloud-init not
+completing successfully.
+
+[Test Case]
+
+```sh
+test_case() {
+    series=$1
+    container_name=$series-lp1852100
+
+    lxc delete -f $container_name
+
+    lxc-proposed-snapshot -p -P $series $series-proposed
+
+    cat > lp1852100-meta-data.yaml << EOF
+local-hostname: null
+EOF
+    # This is appended to the lxd generated meta-data, which is sufficient to
+    # trigger this bug
+    lxc launch -c user.meta-data="$(cat lp1852100-meta-data.yaml)" $series-proposed $container_name
+
+    lxc exec $container_name -- cloud-init status --wait
+
+    echo "This should be 0: "
+    lxc exec $container_name -- grep -c "AttributeError: 'NoneType' object has no attribute 'split'" /var/log/cloud-init.log
+}
+
+test_case xenial
+test_case bionic
+test_case disco
+test_case eoan
+```
+
+[Regression Potential]
+
+This is a single line change, and the code in question is executed on every
+cloud-init run.  Any potential regressions are very likely to be caught in SRU
+testing.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=0469f70c
+
+=== End SRU Template ===
