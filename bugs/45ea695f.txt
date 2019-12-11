@@ -1,0 +1,150 @@
+=== Begin SRU Template ===
+[Impact]
+Some image creators would like to lock down authorized ssh keys for closed
+appliance type vms. This new cloud-config directive will skip sourcing
+ssh public keys from the metadata service.
+
+[Test Case]
+# Provide cloud metadata public-keys and ignore them via allow_public_ssh_keys: false
+cat > md <<EOF
+instance-id: mytest
+local-hostname: mytest
+public-keys:
+- ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB blah@cloudkeys
+EOF
+
+cat > lxd.yaml <<EOF
+#cloud-config
+lxd:
+  init:
+    storage_backend: dir
+ssh_import_id: [chad.smith]
+allow_public_ssh_keys: false
+EOF
+
+for SERIES in xenial bionic disco eoan; do
+   echo '=== BEGIN ' $SERIES;
+   ref=$SERIES-proposed;
+   lxc delete test-$SERIES --force 2> /dev/null;
+   lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+   lxc init $ref test-$SERIES;
+   lxc config set test-$SERIES user.user-data - < lxd.yaml;
+   lxc config set test-$SERIES user.meta-data - < md;
+   lxc start test-$SERIES;
+   lxc exec test-$SERIES -- cloud-init status --wait --long;
+   lxc exec test-$SERIES grep wait /var/log/cloud-init.log;
+   lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+   lxc exec test-$SERIES grep Skipping /var/log/cloud-init.log | grep ssh;
+   echo -n "Expect 0 cloud keys in authorized_keys: ";
+   lxc exec test-$SERIES -- grep -c cloud /home/ubuntu/.ssh/authorized_keys;
+   echo -n "Expect 1 cloud key in meta-data: ";
+   lxc exec test-$SERIES -- grep -c cloud /var/lib/cloud/seed/nocloud-net/meta-data;
+   lxc stop test-$SERIES;
+   lxc delete test-$SERIES;
+done
+
+[Regression Potential]
+Could be signifcant regression in connectivity to instances if not cloud
+public keys were published to authorized_keys file in default case
+where allow_public_ssh_keys: true
+
+[Other Info]
+Upstream commit a
+  https://git.launchpad.net/cloud-init/commit/?id=45ea695f
+
+=== End SRU Template ===
+
+
+=== BEGIN SRU Validation output ===
+ubuntu@dev-b2:~$ for SERIES in xenial bionic disco eoan; do
+>    echo '=== BEGIN ' $SERIES;
+>    ref=$SERIES-proposed;
+>    lxc delete test-$SERIES --force 2> /dev/null;
+>    lxc-proposed-snapshot -p -P $SERIES $ref | egrep 'Creating|cloud-init';
+>    lxc init $ref test-$SERIES;
+>    lxc config set test-$SERIES user.user-data - < lxd.yaml;
+>    lxc config set test-$SERIES user.meta-data - < md;
+>    lxc start test-$SERIES;
+>    lxc exec test-$SERIES -- cloud-init status --wait --long;
+>    lxc exec test-$SERIES grep wait /var/log/cloud-init.log;
+>    lxc exec test-$SERIES grep Trace /var/log/cloud-init.log;
+>    lxc exec test-$SERIES grep Skipping /var/log/cloud-init.log | grep ssh;
+>    echo -n "Expect 0 cloud keys in authorized_keys: ";
+>    lxc exec test-$SERIES -- grep -c cloud /home/ubuntu/.ssh/authorized_keys;
+>    echo -n "Expect 1 cloud key in meta-data: ";
+>    lxc exec test-$SERIES -- grep -c cloud /var/lib/cloud/seed/nocloud-net/meta-data;
+>    lxc stop test-$SERIES;
+>    lxc delete test-$SERIES;
+> done
+=== BEGIN  xenial
+Creating xenial-proposed-1952326887
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~16.04.1 [414 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) over (19.2-36-g059d049c-0ubuntu2~16.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Creating test-xenial
+
+.............................................
+status: done
+time: Wed, 11 Dec 2019 18:05:03 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2019-12-11 18:05:02,612 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+2019-12-11 18:04:57,847 - cc_ssh.py[DEBUG]: Skipping import of publish ssh keys per config setting: allow_public_ssh_keys=False
+Expect 0 cloud keys in authorized_keys: 0
+Expect 1 cloud key in meta-data: 1
+=== BEGIN  bionic
+Creating bionic-proposed-2405226161
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~18.04.1 [411 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~18.04.1) over (19.2-36-g059d049c-0ubuntu2~18.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~18.04.1) ...
+Creating test-bionic
+......................................................
+status: done
+time: Wed, 11 Dec 2019 18:07:45 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2019-12-11 18:07:41,424 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+2019-12-11 18:07:37,125 - cc_ssh.py[DEBUG]: Skipping import of publish ssh keys per config setting: allow_public_ssh_keys=False
+Expect 0 cloud keys in authorized_keys: 0
+Expect 1 cloud key in meta-data: 1
+=== BEGIN  disco
+Creating disco-proposed-1065626120
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.04.1 [407 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) over (19.2-36-g059d049c-0ubuntu2~19.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) ...
+Creating test-disco
+.........................................................................................................
+status: done
+time: Wed, 11 Dec 2019 18:11:30 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2019-12-11 18:11:25,145 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+2019-12-11 18:11:10,030 - cc_ssh.py[DEBUG]: Skipping import of publish ssh keys per config setting: allow_public_ssh_keys=False
+Expect 0 cloud keys in authorized_keys: 0
+Expect 1 cloud key in meta-data: 1
+=== BEGIN  eoan
+Creating eoan-proposed-45662293
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.10.1 [406 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) over (19.2-36-g059d049c-0ubuntu3) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
+Creating test-eoan
+..................................................................................................................
+status: done
+time: Wed, 11 Dec 2019 18:15:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+2019-12-11 18:15:18,313 - util.py[DEBUG]: Running command ['lxd', 'waitready', '--timeout=300'] with allowed return codes [0] (shell=False, capture=True)
+2019-12-11 18:15:01,921 - cc_ssh.py[DEBUG]: Skipping import of publish ssh keys per config setting: allow_public_ssh_keys=False
+Expect 0 cloud keys in authorized_keys: 0
+Expect 1 cloud key in meta-data: 1
+=== END SRU Validation output ===
+
