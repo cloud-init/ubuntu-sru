@@ -1170,5 +1170,433 @@ Expect proposed to have 'dhcp6: true'
 + openstack server delete test-bionic-ipv6-dhcpv6-stateless
 + exit
 ### BEGIN disco
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' disco = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("disco"))) | .ID'
+++ cat images.json
++ image=afba2c47-0f82-49be-9dc6-ef1f6a107875
++ server_name=test-disco-ipv6-slaac
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image afba2c47-0f82-49be-9dc6-ef1f6a107875 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-slaac test-disco-ipv6-slaac --wait
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:14:10.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | rharper_admin_net=10.5.0.25; ipv6-slaac=fd11::1:f816:3eff:feb1:6cd3                                 |
+| adminPass                   | ZwXyoV3qCMz4                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2019-12-12T18:13:51Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                            |
+| id                          | e7ffbbb5-26ee-4762-9b5a-3aacaed0274b                                                                |
+| image                       | auto-sync/ubuntu-disco-daily-amd64-server-20191204-disk1.img (afba2c47-0f82-49be-9dc6-ef1f6a107875) |
+| key_name                    | rharper-bastion                                                                                     |
+| name                        | test-disco-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                   |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2019-12-12T18:14:11Z                                                                                |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-disco-ipv6-slaac/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-disco-ipv6-slaac
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- cloud-init status --wait --long
+...................................................
+status: done
+time: Thu, 12 Dec 2019 18:14:56 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~19.04.1
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:92:15:47
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            addresses:
+            - fd11::1:f816:3eff:feb1:6cd3/64
+            match:
+                macaddress: fa:16:3e:b1:6c:d3
+            mtu: 8958
+            routes:
+            -   to: ::/0
+                via: fd11:0:0:1::1
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-disco-ipv6-slaac:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.04.1 [407 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) over (19.2-36-g059d049c-0ubuntu2~19.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- sudo cloud-init clean --logs --reboot
+Connection to test-disco-ipv6-slaac closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- cloud-init status --wait --long
+..
+status: done
+time: Thu, 12 Dec 2019 18:17:50 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:15:14.527908728 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:15:44.524000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+@@ -13,12 +13,8 @@
+             mtu: 8958
+             set-name: ens3
+         ens4:
+-            addresses:
+-            - fd11::1:f816:3eff:feb1:6cd3/64
++            dhcp6: true
+             match:
+                 macaddress: fa:16:3e:b1:6c:d3
+             mtu: 8958
+-            routes:
+-            -   to: ::/0
+-                via: fd11:0:0:1::1
+             set-name: ens4
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'''
+Expect proposed to have 'dhcp6: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-slaac -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ openstack server delete test-disco-ipv6-slaac
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' disco = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("disco"))) | .ID'
+++ cat images.json
++ image=afba2c47-0f82-49be-9dc6-ef1f6a107875
++ server_name=test-disco-ipv6-dhcpv6-stateful
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image afba2c47-0f82-49be-9dc6-ef1f6a107875 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateful test-disco-ipv6-dhcpv6-stateful --wait
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:18:17.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | rharper_admin_net=10.5.0.21; ipv6-dhcpv6-stateful=fd30:0:0:1::8                                     |
+| adminPass                   | gYrSnqQc7s8U                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2019-12-12T18:18:00Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                            |
+| id                          | 7a01a42a-220d-472c-9c9c-5df8e653d5ec                                                                |
+| image                       | auto-sync/ubuntu-disco-daily-amd64-server-20191204-disk1.img (afba2c47-0f82-49be-9dc6-ef1f6a107875) |
+| key_name                    | rharper-bastion                                                                                     |
+| name                        | test-disco-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                   |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2019-12-12T18:18:18Z                                                                                |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-disco-ipv6-dhcpv6-stateful/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-disco-ipv6-dhcpv6-stateful
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+................................................................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:19:25 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~19.04.1
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:23:cc:6c
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:76:86:ce
+            mtu: 8958
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-disco-ipv6-dhcpv6-stateful:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.04.1 [407 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) over (19.2-36-g059d049c-0ubuntu2~19.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- sudo cloud-init clean --logs --reboot
+Connection to test-disco-ipv6-dhcpv6-stateful closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+..................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:20:42 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:19:44.769961114 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:20:12.936000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+@@ -13,6 +13,7 @@
+             mtu: 8958
+             set-name: ens3
+         ens4:
++            accept-ra: true
+             dhcp6: true
+             match:
+                 macaddress: fa:16:3e:76:86:ce
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'' and '\''accept-ra: true'\'''
+Expect proposed to have 'dhcp6: true' and 'accept-ra: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateful -- grep 'accept-ra:\ true$' /etc/netplan/50-cloud-init.yaml
+            accept-ra: true
++ openstack server delete test-disco-ipv6-dhcpv6-stateful
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' disco = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("disco"))) | .ID'
+++ cat images.json
++ image=afba2c47-0f82-49be-9dc6-ef1f6a107875
++ server_name=test-disco-ipv6-dhcpv6-stateless
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image afba2c47-0f82-49be-9dc6-ef1f6a107875 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateless test-disco-ipv6-dhcpv6-stateless --wait
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:21:11.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | rharper_admin_net=10.5.0.5; ipv6-dhcpv6-stateless=fd39::1:f816:3eff:fe8f:ea42                       |
+| adminPass                   | m46CS92qAoEE                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2019-12-12T18:20:54Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                            |
+| id                          | bb2d1c48-83ca-496b-bf06-f118dbc9321f                                                                |
+| image                       | auto-sync/ubuntu-disco-daily-amd64-server-20191204-disk1.img (afba2c47-0f82-49be-9dc6-ef1f6a107875) |
+| key_name                    | rharper-bastion                                                                                     |
+| name                        | test-disco-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                   |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2019-12-12T18:21:12Z                                                                                |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-disco-ipv6-dhcpv6-stateless/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-disco-ipv6-dhcpv6-stateless
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+.................................................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:22:14 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~19.04.1
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:9a:cf:23
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:8f:ea:42
+            mtu: 8958
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-disco-ipv6-dhcpv6-stateless:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu disco-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.04.1 [407 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) over (19.2-36-g059d049c-0ubuntu2~19.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- sudo cloud-init clean --logs --reboot
+Connection to test-disco-ipv6-dhcpv6-stateless closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+....................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:23:32 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:22:33.967761919 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:23:02.800000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'''
+Expect proposed to have 'dhcp6: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-disco-ipv6-dhcpv6-stateless -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ openstack server delete test-disco-ipv6-dhcpv6-stateless
++ exit
 ### BEGIN eoan
 === END SRU Validation output ===
