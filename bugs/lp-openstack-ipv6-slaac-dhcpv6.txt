@@ -1599,4 +1599,432 @@ Expect proposed to have 'dhcp6: true'
 + openstack server delete test-disco-ipv6-dhcpv6-stateless
 + exit
 ### BEGIN eoan
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' eoan = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("eoan"))) | .ID'
+++ cat images.json
++ image=bb2d4177-aaf6-4813-bdcc-1b09eb34edbf
++ server_name=test-eoan-ipv6-slaac
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image bb2d4177-aaf6-4813-bdcc-1b09eb34edbf --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-slaac test-eoan-ipv6-slaac --wait
+
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                              |
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                             |
+| OS-EXT-AZ:availability_zone | nova                                                                                               |
+| OS-EXT-STS:power_state      | Running                                                                                            |
+| OS-EXT-STS:task_state       | None                                                                                               |
+| OS-EXT-STS:vm_state         | active                                                                                             |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:27:27.000000                                                                         |
+| OS-SRV-USG:terminated_at    | None                                                                                               |
+| accessIPv4                  |                                                                                                    |
+| accessIPv6                  |                                                                                                    |
+| addresses                   | rharper_admin_net=10.5.0.24; ipv6-slaac=fd11::1:f816:3eff:fe40:4f6a                                |
+| adminPass                   | qW6z2Z3RUAwT                                                                                       |
+| config_drive                |                                                                                                    |
+| created                     | 2019-12-12T18:27:11Z                                                                               |
+| flavor                      | m1.small (2)                                                                                       |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                           |
+| id                          | 3895f0e3-df11-4632-bffe-e3113fca7ead                                                               |
+| image                       | auto-sync/ubuntu-eoan-daily-amd64-server-20191204-disk1.img (bb2d4177-aaf6-4813-bdcc-1b09eb34edbf) |
+| key_name                    | rharper-bastion                                                                                    |
+| name                        | test-eoan-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                  |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                   |
+| properties                  |                                                                                                    |
+| security_groups             | name='default'                                                                                     |
+| status                      | ACTIVE                                                                                             |
+| updated                     | 2019-12-12T18:27:27Z                                                                               |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                   |
+| volumes_attached            |                                                                                                    |
++-----------------------------+----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-eoan-ipv6-slaac/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-eoan-ipv6-slaac
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- cloud-init status --wait --long
+.........................................................
+status: done
+time: Thu, 12 Dec 2019 18:28:12 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu3
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:40:8c:c0
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            addresses:
+            - fd11::1:f816:3eff:fe40:4f6a/64
+            match:
+                macaddress: fa:16:3e:40:4f:6a
+            mtu: 8958
+            routes:
+            -   to: ::/0
+                via: fd11:0:0:1::1
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-eoan-ipv6-slaac:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.10.1 [406 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) over (19.2-36-g059d049c-0ubuntu3) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.10.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- sudo cloud-init clean --logs --reboot
+Connection to test-eoan-ipv6-slaac closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- cloud-init status --wait --long
+....
+status: done
+time: Thu, 12 Dec 2019 18:31:05 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:28:30.630810545 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:28:57.904000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+@@ -13,12 +13,8 @@
+             mtu: 8958
+             set-name: ens3
+         ens4:
+-            addresses:
+-            - fd11::1:f816:3eff:fe40:4f6a/64
++            dhcp6: true
+             match:
+                 macaddress: fa:16:3e:40:4f:6a
+             mtu: 8958
+-            routes:
+-            -   to: ::/0
+-                via: fd11:0:0:1::1
+             set-name: ens4
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'''
+Expect proposed to have 'dhcp6: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-slaac -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ openstack server delete test-eoan-ipv6-slaac
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' eoan = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("eoan"))) | .ID'
+++ cat images.json
++ image=bb2d4177-aaf6-4813-bdcc-1b09eb34edbf
++ server_name=test-eoan-ipv6-dhcpv6-stateful
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image bb2d4177-aaf6-4813-bdcc-1b09eb34edbf --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateful test-eoan-ipv6-dhcpv6-stateful --wait
+
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                              |
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                             |
+| OS-EXT-AZ:availability_zone | nova                                                                                               |
+| OS-EXT-STS:power_state      | Running                                                                                            |
+| OS-EXT-STS:task_state       | None                                                                                               |
+| OS-EXT-STS:vm_state         | active                                                                                             |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:31:31.000000                                                                         |
+| OS-SRV-USG:terminated_at    | None                                                                                               |
+| accessIPv4                  |                                                                                                    |
+| accessIPv6                  |                                                                                                    |
+| addresses                   | rharper_admin_net=10.5.0.22; ipv6-dhcpv6-stateful=fd30:0:0:1::4                                    |
+| adminPass                   | Rd4jNpF2yJcj                                                                                       |
+| config_drive                |                                                                                                    |
+| created                     | 2019-12-12T18:31:14Z                                                                               |
+| flavor                      | m1.small (2)                                                                                       |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                           |
+| id                          | fca03943-2ba7-4425-b274-c3be73550194                                                               |
+| image                       | auto-sync/ubuntu-eoan-daily-amd64-server-20191204-disk1.img (bb2d4177-aaf6-4813-bdcc-1b09eb34edbf) |
+| key_name                    | rharper-bastion                                                                                    |
+| name                        | test-eoan-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                  |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                   |
+| properties                  |                                                                                                    |
+| security_groups             | name='default'                                                                                     |
+| status                      | ACTIVE                                                                                             |
+| updated                     | 2019-12-12T18:31:32Z                                                                               |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                   |
+| volumes_attached            |                                                                                                    |
++-----------------------------+----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-eoan-ipv6-dhcpv6-stateful/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-eoan-ipv6-dhcpv6-stateful
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+................................................................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:32:39 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu3
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:2b:7d:ec
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:9c:98:48
+            mtu: 8958
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-eoan-ipv6-dhcpv6-stateful:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.10.1 [406 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) over (19.2-36-g059d049c-0ubuntu3) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.10.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- sudo cloud-init clean --logs --reboot
+Connection to test-eoan-ipv6-dhcpv6-stateful closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+...................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:33:56 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:32:56.215649544 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:33:24.340000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
+@@ -13,6 +13,7 @@
+             mtu: 8958
+             set-name: ens3
+         ens4:
++            accept-ra: true
+             dhcp6: true
+             match:
+                 macaddress: fa:16:3e:9c:98:48
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'' and '\''accept-ra: true'\'''
+Expect proposed to have 'dhcp6: true' and 'accept-ra: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateful -- grep 'accept-ra:\ true$' /etc/netplan/50-cloud-init.yaml
+            accept-ra: true
++ openstack server delete test-eoan-ipv6-dhcpv6-stateful
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' eoan = xenial ']'
++ netcfg=/etc/netplan/50-cloud-init.yaml
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("eoan"))) | .ID'
+++ cat images.json
++ image=bb2d4177-aaf6-4813-bdcc-1b09eb34edbf
++ server_name=test-eoan-ipv6-dhcpv6-stateless
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image bb2d4177-aaf6-4813-bdcc-1b09eb34edbf --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateless test-eoan-ipv6-dhcpv6-stateless --wait
+
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                              |
++-----------------------------+----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                             |
+| OS-EXT-AZ:availability_zone | nova                                                                                               |
+| OS-EXT-STS:power_state      | Running                                                                                            |
+| OS-EXT-STS:task_state       | None                                                                                               |
+| OS-EXT-STS:vm_state         | active                                                                                             |
+| OS-SRV-USG:launched_at      | 2019-12-12T18:34:24.000000                                                                         |
+| OS-SRV-USG:terminated_at    | None                                                                                               |
+| accessIPv4                  |                                                                                                    |
+| accessIPv6                  |                                                                                                    |
+| addresses                   | rharper_admin_net=10.5.0.7; ipv6-dhcpv6-stateless=fd39::1:f816:3eff:fed8:fa93                      |
+| adminPass                   | t8ZE9VHPQaBZ                                                                                       |
+| config_drive                |                                                                                                    |
+| created                     | 2019-12-12T18:34:06Z                                                                               |
+| flavor                      | m1.small (2)                                                                                       |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                           |
+| id                          | ca1f94b8-39e5-4c8e-b9bf-069f21143137                                                               |
+| image                       | auto-sync/ubuntu-eoan-daily-amd64-server-20191204-disk1.img (bb2d4177-aaf6-4813-bdcc-1b09eb34edbf) |
+| key_name                    | rharper-bastion                                                                                    |
+| name                        | test-eoan-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                  |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                   |
+| properties                  |                                                                                                    |
+| security_groups             | name='default'                                                                                     |
+| status                      | ACTIVE                                                                                             |
+| updated                     | 2019-12-12T18:34:24Z                                                                               |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                   |
+| volumes_attached            |                                                                                                    |
++-----------------------------+----------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-eoan-ipv6-dhcpv6-stateless/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-eoan-ipv6-dhcpv6-stateless
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+......................................................................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:35:32 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu3
++ case $series in
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:38:30:4a
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:d8:fa:93
+            mtu: 8958
+            set-name: ens4
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-eoan-ipv6-dhcpv6-stateless:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~19.10.1 [406 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) over (19.2-36-g059d049c-0ubuntu3) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~19.10.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- sudo cp /etc/netplan/50-cloud-init.yaml /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- sudo cloud-init clean --logs --reboot
+Connection to test-eoan-ipv6-dhcpv6-stateless closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+....................................................................................
+status: done
+time: Thu, 12 Dec 2019 18:36:47 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/netplan/50-cloud-init.yaml
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- diff -u /home/ubuntu/50-cloud-init.yaml /etc/netplan/50-cloud-init.yaml
+--- /home/ubuntu/50-cloud-init.yaml	2019-12-12 18:35:49.436980300 +0000
++++ /etc/netplan/50-cloud-init.yaml	2019-12-12 18:36:15.956000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ network:
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''dhcp6: true'\'''
+Expect proposed to have 'dhcp6: true'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-eoan-ipv6-dhcpv6-stateless -- grep 'dhcp6:\ true$' /etc/netplan/50-cloud-init.yaml
+            dhcp6: true
++ openstack server delete test-eoan-ipv6-dhcpv6-stateless
++ exit
 === END SRU Validation output ===
