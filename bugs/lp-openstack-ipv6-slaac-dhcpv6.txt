@@ -206,6 +206,487 @@ and systemd-networkd already handled all 3 ipv6 modes already.
 === End SRU Template ===
 === BEGIN SRU Validation output ===
 ### BEGIN xenial
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' xenial = xenial ']'
++ netcfg=/etc/network/interfaces.d/50-cloud-init.cfg
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID'
+++ cat images.json
++ image=55c04510-3be4-4e74-957d-2529125908f9
++ server_name=test-xenial-ipv6-slaac
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image 55c04510-3be4-4e74-957d-2529125908f9 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-slaac test-xenial-ipv6-slaac --wait
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2019-12-12T17:37:29.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | rharper_admin_net=10.5.0.31; ipv6-slaac=fd11::1:f816:3eff:fe7f:c8ab                                  |
+| adminPass                   | DFFUGGA5am34                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2019-12-12T17:37:11Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                             |
+| id                          | 68a8f348-4e08-4310-ac5b-f246abc0c1ad                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20191204-disk1.img (55c04510-3be4-4e74-957d-2529125908f9) |
+| key_name                    | rharper-bastion                                                                                      |
+| name                        | test-xenial-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                    |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2019-12-12T17:37:29Z                                                                                 |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-xenial-ipv6-slaac/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-xenial-ipv6-slaac
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- cloud-init status --wait --long
+status: done
+time: Thu, 12 Dec 2019 17:37:53 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~16.04.1
++ case $series in
++ echo 'Copying apply_network_config.cfg'
+Copying apply_network_config.cfg
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR apply_network_config.cfg ubuntu@test-xenial-ipv6-slaac:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- sudo cp apply_network_config.cfg /etc/cloud/cloud.cfg.d/apply_network_config.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- sudo cat /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-slaac closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- cloud-init status --wait --long
+.....
+status: done
+time: Thu, 12 Dec 2019 17:38:27 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 static
+    address fd11::1:f816:3eff:fe7f:c8ab/64
+    mtu 8958
+    post-up route add -A inet6 default gw fd11:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd11:0:0:1::1 || true
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-xenial-ipv6-slaac:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~16.04.1 [414 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) over (19.2-36-g059d049c-0ubuntu2~16.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- sudo cp /etc/network/interfaces.d/50-cloud-init.cfg /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-slaac closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- cloud-init status --wait --long
+...
+status: done
+time: Thu, 12 Dec 2019 17:39:08 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/network/interfaces.d/50-cloud-init.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- diff -u /home/ubuntu/50-cloud-init.cfg /etc/network/interfaces.d/50-cloud-init.cfg
+--- /home/ubuntu/50-cloud-init.cfg	2019-12-12 17:38:42.592000000 +0000
++++ /etc/network/interfaces.d/50-cloud-init.cfg	2019-12-12 17:39:04.276000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ auto lo
+@@ -11,8 +11,8 @@
+     mtu 8958
+
+ auto ens4
+-iface ens4 inet6 static
+-    address fd11::1:f816:3eff:fe7f:c8ab/64
++iface ens4 inet6 auto
++    dhcp 0
+     mtu 8958
+     post-up route add -A inet6 default gw fd11:0:0:1::1 || true
+     pre-down route del -A inet6 default gw fd11:0:0:1::1 || true
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''inet6 auto'\'' and '\''dhcp 0'\'''
+Expect proposed to have 'inet6 auto' and 'dhcp 0'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- grep 'inet6\ auto$' /etc/network/interfaces.d/50-cloud-init.cfg
+iface ens4 inet6 auto
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-slaac -- grep 'dhcp\ 0$' /etc/network/interfaces.d/50-cloud-init.cfg
+    dhcp 0
++ openstack server delete test-xenial-ipv6-slaac
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' xenial = xenial ']'
++ netcfg=/etc/network/interfaces.d/50-cloud-init.cfg
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID'
+++ cat images.json
++ image=55c04510-3be4-4e74-957d-2529125908f9
++ server_name=test-xenial-ipv6-dhcpv6-stateful
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image 55c04510-3be4-4e74-957d-2529125908f9 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateful test-xenial-ipv6-dhcpv6-stateful --wait
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2019-12-12T17:39:36.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | rharper_admin_net=10.5.0.11; ipv6-dhcpv6-stateful=fd30:0:0:1::4                                      |
+| adminPass                   | rYFG4Tj82aeL                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2019-12-12T17:39:17Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 26317fed55d9270931cde9e146e43cb9f3997c9c5aea912d6954dafe                                             |
+| id                          | 621f0731-db3a-4ed4-a5af-2e39e6175106                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20191204-disk1.img (55c04510-3be4-4e74-957d-2529125908f9) |
+| key_name                    | rharper-bastion                                                                                      |
+| name                        | test-xenial-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                    |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2019-12-12T17:39:37Z                                                                                 |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-xenial-ipv6-dhcpv6-stateful/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-xenial-ipv6-dhcpv6-stateful
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+status: done
+time: Thu, 12 Dec 2019 17:40:05 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~16.04.1
++ case $series in
++ echo 'Copying apply_network_config.cfg'
+Copying apply_network_config.cfg
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR apply_network_config.cfg ubuntu@test-xenial-ipv6-dhcpv6-stateful:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- sudo cp apply_network_config.cfg /etc/cloud/cloud.cfg.d/apply_network_config.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- sudo cat /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-dhcpv6-stateful closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+status: done
+time: Thu, 12 Dec 2019 17:40:39 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 dhcp
+    mtu 8958
+    post-up route add -A inet6 default gw fd30:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd30:0:0:1::1 || true
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-xenial-ipv6-dhcpv6-stateful:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~16.04.1 [414 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) over (19.2-36-g059d049c-0ubuntu2~16.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- sudo cp /etc/network/interfaces.d/50-cloud-init.cfg /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-dhcpv6-stateful closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- cloud-init status --wait --long
+.....
+status: done
+time: Thu, 12 Dec 2019 17:41:26 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/network/interfaces.d/50-cloud-init.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- diff -u /home/ubuntu/50-cloud-init.cfg /etc/network/interfaces.d/50-cloud-init.cfg
+--- /home/ubuntu/50-cloud-init.cfg	2019-12-12 17:40:57.083396671 +0000
++++ /etc/network/interfaces.d/50-cloud-init.cfg	2019-12-12 17:41:18.380000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ auto lo
+@@ -12,6 +12,7 @@
+
+ auto ens4
+ iface ens4 inet6 dhcp
++    accept_ra 1
+     mtu 8958
+     post-up route add -A inet6 default gw fd30:0:0:1::1 || true
+     pre-down route del -A inet6 default gw fd30:0:0:1::1 || true
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''inet6 dhcp'\'' and '\''accept_ra 1'\'''
+Expect proposed to have 'inet6 dhcp' and 'accept_ra 1'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- grep 'inet6\ dhcp$' /etc/network/interfaces.d/50-cloud-init.cfg
+iface ens4 inet6 dhcp
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateful -- grep 'accept_ra\ 1$' /etc/network/interfaces.d/50-cloud-init.cfg
+    accept_ra 1
++ openstack server delete test-xenial-ipv6-dhcpv6-stateful
++ for ipv6_net in ${IPV6_NETWORKS}
++ '[' xenial = xenial ']'
++ netcfg=/etc/network/interfaces.d/50-cloud-init.cfg
+++ tail -n 1
+++ jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("xenial"))) | .ID'
+++ cat images.json
++ image=55c04510-3be4-4e74-957d-2529125908f9
++ server_name=test-xenial-ipv6-dhcpv6-stateless
++ (( i=0 ))
++ (( i<20 ))
++ openstack server create --flavor m1.small --image 55c04510-3be4-4e74-957d-2529125908f9 --key-name rharper-bastion --nic net-id=rharper_admin_net --nic net-id=ipv6-dhcpv6-stateless test-xenial-ipv6-dhcpv6-stateless --wait
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2019-12-12T17:41:52.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | rharper_admin_net=10.5.0.23; ipv6-dhcpv6-stateless=fd39::1:f816:3eff:fe9b:d224                       |
+| adminPass                   | y2RFgas7ypBX                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2019-12-12T17:41:35Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 4a99d9de4a0b541e1955cf8cab5174e1978f0ffdc7586bba4de48adc                                             |
+| id                          | 1133c851-9f0d-445b-b6bf-9bcb58d46243                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20191204-disk1.img (55c04510-3be4-4e74-957d-2529125908f9) |
+| key_name                    | rharper-bastion                                                                                      |
+| name                        | test-xenial-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                    |
+| project_id                  | c0da606646434aae8a71570286de2d92                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2019-12-12T17:41:52Z                                                                                 |
+| user_id                     | dbe010c4224443f2836bb86320ce72dd                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
++ true
+++ awk '/test-xenial-ipv6-dhcpv6-stateless/ {print $6}'
+++ nova list
++ STATE=ACTIVE
++ case $STATE in
++ break
++ '[' ACTIVE = ERROR ']'
++ '[' ACTIVE = ACTIVE ']'
++ break
++ '[' ACTIVE '!=' ACTIVE ']'
++ VM_IP=test-xenial-ipv6-dhcpv6-stateless
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+......
+status: done
+time: Thu, 12 Dec 2019 17:42:18 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Current cloud-init version'
+Current cloud-init version
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.2-36-g059d049c-0ubuntu2~16.04.1
++ case $series in
++ echo 'Copying apply_network_config.cfg'
+Copying apply_network_config.cfg
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR apply_network_config.cfg ubuntu@test-xenial-ipv6-dhcpv6-stateless:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- sudo cp apply_network_config.cfg /etc/cloud/cloud.cfg.d/apply_network_config.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- sudo cat /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-dhcpv6-stateless closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+....
+status: done
+time: Thu, 12 Dec 2019 17:47:45 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ echo 'Networking config with apply_network_config=true'
+Networking config with apply_network_config=true
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by
+# the datasource.  Changes to it will not persist across an instance.
+# To disable cloud-init's network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 dhcp
+    mtu 8958
+    post-up route add -A inet6 default gw fd39:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd39:0:0:1::1 || true
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh ubuntu@test-xenial-ipv6-dhcpv6-stateless:.
++ egrep cloud-init
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless sudo bash ./setup_proposed.sh
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~16.04.1 [414 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) over (19.2-36-g059d049c-0ubuntu2~16.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- sudo cp /etc/network/interfaces.d/50-cloud-init.cfg /home/ubuntu/
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- sudo cloud-init clean --logs --reboot
+Connection to test-xenial-ipv6-dhcpv6-stateless closed by remote host.
++ sleep 10
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- cloud-init status --wait --long
+....
+status: done
+time: Thu, 12 Dec 2019 17:48:26 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- 'grep Trace /var/log/cloud-init*'
++ echo 'After upgrade Networking config (current -> proposed)'
+After upgrade Networking config (current -> proposed)
+++ basename /etc/network/interfaces.d/50-cloud-init.cfg
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- diff -u /home/ubuntu/50-cloud-init.cfg /etc/network/interfaces.d/50-cloud-init.cfg
+--- /home/ubuntu/50-cloud-init.cfg	2019-12-12 17:48:00.506238929 +0000
++++ /etc/network/interfaces.d/50-cloud-init.cfg	2019-12-12 17:48:19.112000000 +0000
+@@ -1,6 +1,6 @@
+-# This file is generated from information provided by
+-# the datasource.  Changes to it will not persist across an instance.
+-# To disable cloud-init's network configuration capabilities, write a file
++# This file is generated from information provided by the datasource.  Changes
++# to it will not persist across an instance reboot.  To disable cloud-init's
++# network configuration capabilities, write a file
+ # /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+ # network: {config: disabled}
+ auto lo
+@@ -11,7 +11,8 @@
+     mtu 8958
+
+ auto ens4
+-iface ens4 inet6 dhcp
++iface ens4 inet6 auto
++    dhcp 1
+     mtu 8958
+     post-up route add -A inet6 default gw fd39:0:0:1::1 || true
+     pre-down route del -A inet6 default gw fd39:0:0:1::1 || true
++ case $ipv6_net in
++ case $series in
++ echo 'Expect proposed to have '\''inet6 auto'\'' and '\''dhcp 1'\'''
+Expect proposed to have 'inet6 auto' and 'dhcp 1'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- grep 'inet6\ auto$' /etc/network/interfaces.d/50-cloud-init.cfg
+iface ens4 inet6 auto
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@test-xenial-ipv6-dhcpv6-stateless -- grep 'dhcp\ 1$' /etc/network/interfaces.d/50-cloud-init.cfg
+    dhcp 1
++ openstack server delete test-xenial-ipv6-dhcpv6-stateless
++ exit
 ### BEGIN bionic
 ### BEGIN disco
 ### BEGIN eoan
