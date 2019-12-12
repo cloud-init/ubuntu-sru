@@ -18,8 +18,8 @@
 set -x
  
 # local values defaults set by sru-create.py
-SRU_SERIES=${SRU_SERIES:-"xenial bionic disco eoan"}
-LP_USER=${LP_USER:-"%LP_USER%"}
+SRU_SERIES=${SRU_SERIES:-"xenial bionic"}
+LP_USER=${LP_USER:-"chad.smith"}
 
 # Provide USE_DEV_PPA=1 if we are SRU queue is still unapproved
 # This will use our ppa:cloud-init-dev/proposed
@@ -59,7 +59,9 @@ for series in $SRU_SERIES; do
     echo "### BEGIN $series"
     VM_IP=`launch-softlayer --image=os:$series -u sethostname.yaml | awk '/primary ip/{printf "root@%s", $NF}'`
     ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
+    sleep 30
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" $VM_IP -- cat /run/cloud-init/result.json
     ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init.log
     ssh "${sshopts[@]}" $VM_IP -- systemd-analyze
     ssh "${sshopts[@]}" $VM_IP -- systemd-analyze blame
@@ -67,17 +69,17 @@ for series in $SRU_SERIES; do
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
 
     scp "${sshopts[@]}" $PROPOSED_SCRIPT $VM_IP:.
-    ssh "${sshopts[@]}" $VM_IP -- sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+    ssh "${sshopts[@]}" $VM_IP -- bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
     ssh "${sshopts[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${sshopts[@]}" $VM_IP -- sudo hostname SRU-didnt-work
-    ssh "${sshopts[@]}" $VM_IP -- sudo cloud-init clean --logs --reboot
+    ssh "${sshopts[@]}" $VM_IP -- hostname SRU-didnt-work
+    ssh "${sshopts[@]}" $VM_IP -- cloud-init clean --logs --reboot
 
     sleep 60
 
     ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
     ssh "${sshopts[@]}" $VM_IP -- grep Trace /var/log/cloud-init\*
-    ssh "${sshopts[@]}" $VM_IP -- sudo cat /run/cloud-init/result.json
-    ssh "${sshopts[@]}" $VM_IP -- sudo systemd-analyze blame
+    ssh "${sshopts[@]}" $VM_IP -- cat /run/cloud-init/result.json
+    ssh "${sshopts[@]}" $VM_IP -- systemd-analyze blame
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze show
     ssh "${sshopts[@]}" $VM_IP -- cloud-init analyze blame
     ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
@@ -86,7 +88,8 @@ for series in $SRU_SERIES; do
     ssh "${sshopts[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
 
     echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
-    ssh "${sshopts[@]}" $VM_IP -- sudo reboot || true
+    ssh "${sshopts[@]}" $VM_IP -- reboot || true
+    sleep 30
     echo 'After reboot'
     ssh "${sshopts[@]}" $VM_IP -- cloud-init status --wait --long
     ssh "${sshopts[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
@@ -96,3 +99,984 @@ for series in $SRU_SERIES; do
     echo "### END $series"
 done
 
+
+### BEGIN SRU Verification output ###
+root@publishing:~# ./softlayer-sru-19.3.41.txt 2>&1 | tee softlayer-sru2.log
++ SRU_SERIES='xenial bionic'
++ LP_USER=chad.smith
++ '[' 0 -eq 0 ']'
++ PROPOSED_SCRIPT=setup_proposed.sh
++ cat
++ cat
++ cat
++ sshopts=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
++ for series in $SRU_SERIES
++ echo '### BEGIN xenial'
+### BEGIN xenial
+++ launch-softlayer --image=os:xenial -u sethostname.yaml
+++ awk '/primary ip/{printf "root@%s", $NF}'
+ [is_ready=True status=no-status]
+Destroy instance with:
+  slcli virtual cancel 94064060
++ VM_IP=root@75.126.0.219
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~16.04.1
++ sleep 300
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:19:25 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceIBMCloud [OS-Code/Live /dev/xvdh]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- grep Trace /var/log/cloud-init.log
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- systemd-analyze
+Startup finished in 5.571s (kernel) + 3min 5.289s (userspace) = 3min 10.860s
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- systemd-analyze blame
+          4.698s dev-xvda2.device
+          3.717s cloud-config.service
+          2.730s cloud-init-local.service
+          2.084s snapd.seeded.service
+          2.075s apparmor.service
+          1.670s pollinate.service
+          1.547s console-setup.service
+          1.370s xe-daemon.service
+          1.310s cloud-init.service
+          1.007s lxd-containers.service
+           985ms snapd.service
+           952ms lvm2-monitor.service
+           798ms cloud-final.service
+           712ms grub-common.service
+           645ms systemd-logind.service
+           576ms iscsid.service
+           574ms mdadm.service
+           511ms accounts-daemon.service
+           484ms systemd-remount-fs.service
+           455ms resolvconf.service
+           454ms systemd-modules-load.service
+           434ms sys-kernel-debug.mount
+           390ms rc-local.service
+           383ms kmod-static-nodes.service
+           365ms systemd-update-utmp.service
+           310ms systemd-journald.service
+           295ms keyboard-setup.service
+           269ms proc-xen.mount
+           254ms open-iscsi.service
+           230ms dev-hugepages.mount
+           229ms networking.service
+           219ms systemd-udev-trigger.service
+           213ms ondemand.service
+           201ms dev-mqueue.mount
+           190ms ufw.service
+           185ms systemd-journal-flush.service
+           175ms irqbalance.service
+           161ms lxd.socket
+           155ms systemd-timesyncd.service
+           135ms apport.service
+           131ms snapd.socket
+           125ms rsyslog.service
+           124ms polkitd.service
+           122ms systemd-tmpfiles-setup-dev.service
+           120ms systemd-sysctl.service
+           111ms systemd-random-seed.service
+            92ms systemd-udevd.service
+            86ms plymouth-read-write.service
+            85ms systemd-tmpfiles-setup.service
+            82ms systemd-machine-id-commit.service
+            74ms sys-fs-fuse-connections.mount
+            69ms plymouth-quit.service
+            65ms plymouth-quit-wait.service
+            48ms ssh.service
+            39ms systemd-update-utmp-runlevel.service
+            37ms user@0.service
+            32ms boot.mount
+            31ms setvtrgb.service
+            16ms systemd-user-sessions.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00600s +00.00000s
+|`->found local data from DataSourceIBMCloud @00.03300s +00.08400s
+Finished stage: (init-local) 00.28000 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @01.03900s +00.00400s
+|`->setting up datasource @01.13100s +00.00000s
+|`->reading and applying user-data @01.14000s +00.00900s
+|`->reading and applying vendor-data @01.14900s +00.00500s
+|`->activating datasource @01.19400s +00.00100s
+|`->config-migrator ran successfully @01.22300s +00.00100s
+|`->config-seed_random ran successfully @01.22400s +00.00100s
+|`->config-bootcmd ran successfully @01.22600s +00.00000s
+|`->config-write-files ran successfully @01.22600s +00.00100s
+|`->config-growpart ran successfully @01.22800s +00.13100s
+|`->config-resizefs ran successfully @01.36000s +00.05900s
+|`->config-disk_setup ran successfully @01.42000s +00.00100s
+|`->config-mounts ran successfully @01.42400s +00.12900s
+|`->config-set_hostname ran successfully @01.55400s +00.00600s
+|`->config-update_hostname ran successfully @01.56000s +00.00200s
+|`->config-update_etc_hosts ran successfully @01.56300s +00.00100s
+|`->config-ca-certs ran successfully @01.56400s +00.00100s
+|`->config-rsyslog ran successfully @01.56600s +00.00100s
+|`->config-users-groups ran successfully @01.56700s +00.04500s
+|`->config-ssh ran successfully @01.61300s +00.22200s
+Finished stage: (init-network) 00.81400 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.33700s +00.00100s
+|`->config-snap ran successfully @06.33800s +00.00100s
+|`->config-snap_config ran successfully @06.33900s +00.00100s
+|`->config-ssh-import-id ran successfully @06.34100s +00.91500s
+|`->config-locale ran successfully @07.25700s +01.52100s
+|`->config-set-passwords ran successfully @08.77800s +00.00200s
+|`->config-grub-dpkg ran successfully @08.78100s +00.51500s
+|`->config-apt-pipelining ran successfully @09.29600s +00.00200s
+|`->config-apt-configure ran successfully @09.29800s +00.16900s
+|`->config-ubuntu-advantage ran successfully @09.46700s +00.00200s
+|`->config-ntp ran successfully @09.46900s +00.00100s
+|`->config-timezone ran successfully @09.47000s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @09.47200s +00.00000s
+|`->config-runcmd ran successfully @09.47200s +00.00100s
+|`->config-byobu ran successfully @09.47300s +00.00100s
+Finished stage: (modules-config) 03.18000 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @10.00900s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @10.01200s +00.00000s
+|`->config-fan ran successfully @10.01300s +00.00100s
+|`->config-landscape ran successfully @10.01400s +00.00100s
+|`->config-lxd ran successfully @10.01500s +00.00100s
+|`->config-ubuntu-drivers ran successfully @10.01600s +00.00100s
+|`->config-puppet ran successfully @10.01800s +00.00000s
+|`->config-chef ran successfully @10.01900s +00.00100s
+|`->config-mcollective ran successfully @10.02000s +00.00100s
+|`->config-salt-minion ran successfully @10.02100s +00.00100s
+|`->config-rightscale_userdata ran successfully @10.02200s +00.00100s
+|`->config-scripts-vendor ran successfully @10.02300s +00.01500s
+|`->config-scripts-per-once ran successfully @10.03900s +00.00100s
+|`->config-scripts-per-boot ran successfully @10.04000s +00.00000s
+|`->config-scripts-per-instance ran successfully @10.04100s +00.00100s
+|`->config-scripts-user ran successfully @10.04200s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @10.04300s +00.06600s
+|`->config-keys-to-console ran successfully @10.10900s +00.13600s
+|`->config-phone-home ran successfully @10.24600s +00.00100s
+|`->config-final-message ran successfully @10.24800s +00.00500s
+|`->config-power-state-change ran successfully @10.25300s +00.00200s
+Finished stage: (modules-final) 00.27200 seconds
+
+Total Time: 4.54600 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init analyze blame
+-- Boot Record 01 --
+     01.52100s (modules-config/config-locale)
+     00.91500s (modules-config/config-ssh-import-id)
+     00.51500s (modules-config/config-grub-dpkg)
+     00.22200s (init-network/config-ssh)
+     00.16900s (modules-config/config-apt-configure)
+     00.13600s (modules-final/config-keys-to-console)
+     00.13100s (init-network/config-growpart)
+     00.12900s (init-network/config-mounts)
+     00.08400s (init-local/search-IBMCloud)
+     00.06600s (modules-final/config-ssh-authkey-fingerprints)
+     00.05900s (init-network/config-resizefs)
+     00.04500s (init-network/config-users-groups)
+     00.01500s (modules-final/config-scripts-vendor)
+     00.00900s (init-network/consume-user-data)
+     00.00600s (init-network/config-set_hostname)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/consume-vendor-data)
+     00.00400s (init-network/check-cache)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-final/config-power-state-change)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/config-update_hostname)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-package-update-upgrade-install)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh root@75.126.0.219:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- bash setup_proposed.sh
++ egrep cloud-init
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~16.04.1 [414 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) over (19.1-1-gbaa47854-0ubuntu1~16.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~16.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- hostname SRU-didnt-work
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init clean --logs --reboot
+Connection to 75.126.0.219 closed by remote host.
++ sleep 300
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:27:39 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- grep Trace '/var/log/cloud-init*'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceIBMCloud [OS-Code/Live /dev/xvdh]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- systemd-analyze blame
+          4.631s dev-xvda2.device
+          2.636s cloud-config.service
+          1.661s cloud-init-local.service
+          1.070s console-setup.service
+          1.035s cloud-init.service
+           871ms cloud-final.service
+           842ms systemd-update-utmp.service
+           800ms xe-daemon.service
+           762ms snapd.service
+           755ms lvm2-monitor.service
+           714ms lxd-containers.service
+           669ms iscsid.service
+           575ms systemd-logind.service
+           554ms accounts-daemon.service
+           517ms apparmor.service
+           468ms kmod-static-nodes.service
+           466ms ufw.service
+           434ms keyboard-setup.service
+           424ms grub-common.service
+           372ms dev-mqueue.mount
+           369ms mdadm.service
+           357ms systemd-remount-fs.service
+           285ms dev-hugepages.mount
+           281ms resolvconf.service
+           272ms systemd-modules-load.service
+           252ms proc-xen.mount
+           241ms sys-kernel-debug.mount
+           220ms networking.service
+           203ms ssh.service
+           202ms rc-local.service
+           196ms irqbalance.service
+           190ms ondemand.service
+           188ms apport.service
+           186ms dev-disk-by\x2dlabel-SWAP\x2dxvdb1.swap
+           180ms systemd-timesyncd.service
+           167ms systemd-journald.service
+           165ms systemd-udev-trigger.service
+           149ms systemd-journal-flush.service
+           116ms snapd.seeded.service
+           116ms open-iscsi.service
+           102ms rsyslog.service
+            99ms plymouth-quit.service
+            94ms plymouth-quit-wait.service
+            92ms systemd-sysctl.service
+            85ms polkitd.service
+            84ms systemd-tmpfiles-setup.service
+            81ms plymouth-read-write.service
+            79ms systemd-random-seed.service
+            71ms sys-fs-fuse-connections.mount
+            67ms systemd-udevd.service
+            60ms systemd-tmpfiles-setup-dev.service
+            58ms lxd.socket
+            58ms setvtrgb.service
+            56ms snapd.socket
+            35ms user@0.service
+            35ms systemd-update-utmp-runlevel.service
+            24ms systemd-user-sessions.service
+            17ms boot.mount
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00100s
+|`->found local data from DataSourceIBMCloud @00.02400s +00.08200s
+Finished stage: (init-local) 00.25800 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @01.00900s +00.00400s
+|`->setting up datasource @01.10100s +00.00100s
+|`->reading and applying user-data @01.11100s +00.00900s
+|`->reading and applying vendor-data @01.12000s +00.00500s
+|`->activating datasource @01.16400s +00.00200s
+|`->config-migrator ran successfully @01.20000s +00.00100s
+|`->config-seed_random ran successfully @01.20100s +00.00200s
+|`->config-bootcmd ran successfully @01.20300s +00.00100s
+|`->config-write-files ran successfully @01.20400s +00.00100s
+|`->config-growpart ran successfully @01.20600s +00.08900s
+|`->config-resizefs ran successfully @01.29600s +00.03300s
+|`->config-disk_setup ran successfully @01.32900s +00.00100s
+|`->config-mounts ran successfully @01.33100s +00.00600s
+|`->config-set_hostname ran successfully @01.33800s +00.00500s
+|`->config-update_hostname ran successfully @01.34400s +00.00100s
+|`->config-update_etc_hosts ran successfully @01.34600s +00.00000s
+|`->config-ca-certs ran successfully @01.34700s +00.00100s
+|`->config-rsyslog ran successfully @01.34800s +00.00100s
+|`->config-users-groups ran successfully @01.34900s +00.05700s
+|`->config-ssh ran successfully @01.40600s +00.13300s
+Finished stage: (init-network) 00.54800 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @04.32300s +00.00000s
+|`->config-snap ran successfully @04.32400s +00.00100s
+|`->config-snap_config ran successfully @04.32500s +00.00100s
+|`->config-ssh-import-id ran successfully @04.32600s +00.75800s
+|`->config-locale ran successfully @05.08400s +00.00200s
+|`->config-set-passwords ran successfully @05.08700s +00.00100s
+|`->config-grub-dpkg ran successfully @05.08800s +00.54200s
+|`->config-apt-pipelining ran successfully @05.63100s +00.00100s
+|`->config-apt-configure ran successfully @05.63300s +00.22100s
+|`->config-ubuntu-advantage ran successfully @05.85400s +00.00100s
+|`->config-ntp ran successfully @05.85600s +00.00100s
+|`->config-timezone ran successfully @05.85700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @05.85800s +00.00000s
+|`->config-runcmd ran successfully @05.85900s +00.00100s
+|`->config-byobu ran successfully @05.86000s +00.00100s
+Finished stage: (modules-config) 01.58500 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @06.40900s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @06.41100s +00.00100s
+|`->config-fan ran successfully @06.41300s +00.00100s
+|`->config-landscape ran successfully @06.41400s +00.00100s
+|`->config-lxd ran successfully @06.41500s +00.00100s
+|`->config-ubuntu-drivers ran successfully @06.41600s +00.00100s
+|`->config-puppet ran successfully @06.41800s +00.00000s
+|`->config-chef ran successfully @06.41900s +00.00100s
+|`->config-mcollective ran successfully @06.42000s +00.00100s
+|`->config-salt-minion ran successfully @06.42100s +00.00100s
+|`->config-rightscale_userdata ran successfully @06.42200s +00.00100s
+|`->config-scripts-vendor ran successfully @06.42400s +00.01400s
+|`->config-scripts-per-once ran successfully @06.43900s +00.00100s
+|`->config-scripts-per-boot ran successfully @06.44100s +00.00000s
+|`->config-scripts-per-instance ran successfully @06.44100s +00.00100s
+|`->config-scripts-user ran successfully @06.44200s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @06.44400s +00.10000s
+|`->config-keys-to-console ran successfully @06.54500s +00.16800s
+|`->config-phone-home ran successfully @06.71400s +00.00100s
+|`->config-final-message ran successfully @06.71600s +00.00700s
+|`->config-power-state-change ran successfully @06.72300s +00.00100s
+Finished stage: (modules-final) 00.34400 seconds
+
+Total Time: 2.73500 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.75800s (modules-config/config-ssh-import-id)
+     00.54200s (modules-config/config-grub-dpkg)
+     00.22100s (modules-config/config-apt-configure)
+     00.16800s (modules-final/config-keys-to-console)
+     00.13300s (init-network/config-ssh)
+     00.10000s (modules-final/config-ssh-authkey-fingerprints)
+     00.08900s (init-network/config-growpart)
+     00.08200s (init-local/search-IBMCloud)
+     00.05700s (init-network/config-users-groups)
+     00.03300s (init-network/config-resizefs)
+     00.01400s (modules-final/config-scripts-vendor)
+     00.00900s (init-network/consume-user-data)
+     00.00700s (modules-final/config-final-message)
+     00.00600s (init-network/config-mounts)
+     00.00500s (init-network/consume-vendor-data)
+     00.00500s (init-network/config-set_hostname)
+     00.00400s (init-network/check-cache)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-locale)
+     00.00200s (init-network/config-seed_random)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-set-passwords)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/setup-datasource)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/config-update_etc_hosts)
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- 'cloud-init query --format '\''cloud-region: {{cloud_name}}-{{region}}'\'''
+cloud-region: ibmcloud-None
++ echo 'Get cloud-id'
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-id
+ibmcloud
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- 'cloud-init query --format '\''cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'\'''
+WARNING: Ignoring jinja template for query commandline: 'dict object' has no attribute 'imds'
++ echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
+Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- reboot
+Connection to 75.126.0.219 closed by remote host.
++ true
++ sleep 300
++ echo 'After reboot'
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:32:46 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-12-11 23:27:33,129 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ echo 'Confirm no traceback after reboot LP: 1823084'
+Confirm no traceback after reboot LP: 1823084
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.219 -- 'grep '\''Trace'\'' /var/log/cloud-init.log'
++ echo '### END xenial'
+### END xenial
++ for series in $SRU_SERIES
++ echo '### BEGIN bionic'
+### BEGIN bionic
+++ launch-softlayer --image=os:bionic -u sethostname.yaml
+++ awk '/primary ip/{printf "root@%s", $NF}'
+ [is_ready=True status=PUBLISH_SERVER_DATA]
+Destroy instance with:
+  slcli virtual cancel 94064400
++ VM_IP=root@75.126.0.220
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- dpkg-query --show cloud-init
+cloud-init	19.1-1-gbaa47854-0ubuntu1~18.04.1
++ sleep 300
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:37:02 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceIBMCloud [OS-Code/Live /dev/xvdh]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- grep Trace /var/log/cloud-init.log
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- systemd-analyze
+Startup finished in 6.086s (kernel) + 21.597s (userspace) = 27.684s
+graphical.target reached after 18.421s in userspace
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- systemd-analyze blame
+          5.160s dev-xvda2.device
+          3.100s snapd.seeded.service
+          2.667s keyboard-setup.service
+          2.400s cloud-init-local.service
+          2.226s cloud-config.service
+          2.036s cloud-init.service
+          1.622s apparmor.service
+          1.598s pollinate.service
+          1.539s systemd-networkd-wait-online.service
+           966ms cloud-final.service
+           937ms xe-daemon.service
+           898ms networkd-dispatcher.service
+           868ms lxd-containers.service
+           766ms snapd.service
+           596ms systemd-udev-trigger.service
+           561ms apport.service
+           412ms grub-common.service
+           409ms systemd-modules-load.service
+           365ms accounts-daemon.service
+           329ms systemd-journald.service
+           308ms lvm2-monitor.service
+           284ms proc-xen.mount
+           278ms rsyslog.service
+           259ms systemd-logind.service
+           250ms systemd-remount-fs.service
+           234ms dev-mqueue.mount
+           217ms systemd-tmpfiles-setup-dev.service
+           195ms ebtables.service
+           189ms sys-kernel-debug.mount
+           184ms snapd.socket
+           178ms polkit.service
+           159ms systemd-timesyncd.service
+           156ms systemd-journal-flush.service
+           141ms dev-hugepages.mount
+           134ms lxd.socket
+           128ms ufw.service
+           115ms kmod-static-nodes.service
+           108ms systemd-udevd.service
+           107ms systemd-tmpfiles-setup.service
+           102ms systemd-machine-id-commit.service
+            99ms console-setup.service
+            91ms systemd-user-sessions.service
+            86ms ssh.service
+            81ms blk-availability.service
+            76ms systemd-sysctl.service
+            75ms plymouth-read-write.service
+            75ms systemd-resolved.service
+            73ms systemd-networkd.service
+            47ms setvtrgb.service
+            44ms user@0.service
+            41ms systemd-update-utmp.service
+            41ms sys-fs-fuse-connections.mount
+            38ms sys-kernel-config.mount
+            29ms plymouth-quit.service
+            26ms plymouth-quit-wait.service
+            23ms systemd-update-utmp-runlevel.service
+            19ms boot.mount
+            19ms systemd-random-seed.service
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00700s +00.00100s
+|`->found local data from DataSourceIBMCloud @00.04400s +00.09000s
+Finished stage: (init-local) 00.48700 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @02.80300s +00.01900s
+|`->setting up datasource @02.90200s +00.00000s
+|`->reading and applying user-data @02.91100s +00.01000s
+|`->reading and applying vendor-data @02.92100s +00.00500s
+|`->activating datasource @02.97600s +00.00100s
+|`->config-migrator ran successfully @03.04000s +00.00000s
+|`->config-seed_random ran successfully @03.04100s +00.00100s
+|`->config-bootcmd ran successfully @03.04200s +00.00100s
+|`->config-write-files ran successfully @03.04300s +00.01100s
+|`->config-growpart ran successfully @03.05400s +00.15200s
+|`->config-resizefs ran successfully @03.20700s +00.13500s
+|`->config-disk_setup ran successfully @03.34200s +00.00600s
+|`->config-mounts ran successfully @03.34800s +00.26000s
+|`->config-set_hostname ran successfully @03.60800s +00.00800s
+|`->config-update_hostname ran successfully @03.61700s +00.00100s
+|`->config-update_etc_hosts ran successfully @03.61800s +00.00200s
+|`->config-ca-certs ran successfully @03.62000s +00.00100s
+|`->config-rsyslog ran successfully @03.62100s +00.00100s
+|`->config-users-groups ran successfully @03.62200s +00.19100s
+|`->config-ssh ran successfully @03.81400s +00.32600s
+Finished stage: (init-network) 01.35700 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @09.45000s +00.00000s
+|`->config-snap ran successfully @09.45000s +00.00100s
+|`->config-snap_config ran successfully @09.45200s +00.00000s
+|`->config-ssh-import-id ran successfully @09.45300s +00.87700s
+|`->config-locale ran successfully @10.33100s +00.00200s
+|`->config-set-passwords ran successfully @10.33300s +00.00200s
+|`->config-grub-dpkg ran successfully @10.33600s +00.43500s
+|`->config-apt-pipelining ran successfully @10.77200s +00.00100s
+|`->config-apt-configure ran successfully @10.77400s +00.14700s
+|`->config-ubuntu-advantage ran successfully @10.92100s +00.00100s
+|`->config-ntp ran successfully @10.92300s +00.00100s
+|`->config-timezone ran successfully @10.92400s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @10.92500s +00.00000s
+|`->config-runcmd ran successfully @10.92600s +00.00000s
+|`->config-byobu ran successfully @10.92700s +00.00000s
+Finished stage: (modules-config) 01.51400 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @11.63300s +00.00100s
+|`->config-package-update-upgrade-install ran successfully @11.63500s +00.00100s
+|`->config-fan ran successfully @11.63600s +00.00100s
+|`->config-landscape ran successfully @11.63700s +00.00100s
+|`->config-lxd ran successfully @11.63800s +00.00100s
+|`->config-ubuntu-drivers ran successfully @11.63900s +00.00100s
+|`->config-puppet ran successfully @11.64000s +00.00100s
+|`->config-chef ran successfully @11.64100s +00.00100s
+|`->config-mcollective ran successfully @11.64200s +00.00100s
+|`->config-salt-minion ran successfully @11.64300s +00.00100s
+|`->config-rightscale_userdata ran successfully @11.64400s +00.00100s
+|`->config-scripts-vendor ran successfully @11.64600s +00.01600s
+|`->config-scripts-per-once ran successfully @11.66300s +00.00100s
+|`->config-scripts-per-boot ran successfully @11.66400s +00.00100s
+|`->config-scripts-per-instance ran successfully @11.66500s +00.00100s
+|`->config-scripts-user ran successfully @11.66600s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @11.66700s +00.06600s
+|`->config-keys-to-console ran successfully @11.73400s +00.13500s
+|`->config-phone-home ran successfully @11.87000s +00.00100s
+|`->config-final-message ran successfully @11.87200s +00.00600s
+|`->config-power-state-change ran successfully @11.87800s +00.00100s
+Finished stage: (modules-final) 00.27700 seconds
+
+Total Time: 3.63500 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.87700s (modules-config/config-ssh-import-id)
+     00.43500s (modules-config/config-grub-dpkg)
+     00.32600s (init-network/config-ssh)
+     00.26000s (init-network/config-mounts)
+     00.19100s (init-network/config-users-groups)
+     00.15200s (init-network/config-growpart)
+     00.14700s (modules-config/config-apt-configure)
+     00.13500s (modules-final/config-keys-to-console)
+     00.13500s (init-network/config-resizefs)
+     00.09000s (init-local/search-IBMCloud)
+     00.06600s (modules-final/config-ssh-authkey-fingerprints)
+     00.01900s (init-network/check-cache)
+     00.01600s (modules-final/config-scripts-vendor)
+     00.01100s (init-network/config-write-files)
+     00.01000s (init-network/consume-user-data)
+     00.00800s (init-network/config-set_hostname)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (init-network/config-disk_setup)
+     00.00500s (init-network/consume-vendor-data)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (modules-config/config-locale)
+     00.00200s (init-network/config-update_etc_hosts)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-snappy)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-network/activate-datasource)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-config/config-snap_config)
+     00.00000s (modules-config/config-runcmd)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-migrator)
+
+1 boot records analyzed
++ scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR setup_proposed.sh root@75.126.0.220:.
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- bash setup_proposed.sh
++ egrep cloud-init
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.3-41-gc4735dd3-0ubuntu1~18.04.1 [411 kB]
+Preparing to unpack .../cloud-init_19.3-41-gc4735dd3-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.3-41-gc4735dd3-0ubuntu1~18.04.1) over (19.1-1-gbaa47854-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.3-41-gc4735dd3-0ubuntu1~18.04.1) ...
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- dpkg-query --show cloud-init
+cloud-init	19.3-41-gc4735dd3-0ubuntu1~18.04.1
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- hostname SRU-didnt-work
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init clean --logs --reboot
+Connection to 75.126.0.220 closed by remote host.
++ sleep 300
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:43:55 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- grep Trace '/var/log/cloud-init*'
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cat /run/cloud-init/result.json
+{
+ "v1": {
+  "datasource": "DataSourceIBMCloud [OS-Code/Live /dev/xvdh]",
+  "errors": []
+ }
+}
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- systemd-analyze blame
+          5.039s dev-xvda2.device
+          2.811s keyboard-setup.service
+          2.609s cloud-config.service
+          2.483s cloud-init-local.service
+          1.706s cloud-init.service
+          1.634s systemd-networkd-wait-online.service
+           965ms cloud-final.service
+           930ms networkd-dispatcher.service
+           826ms snapd.service
+           705ms lxd-containers.service
+           679ms xe-daemon.service
+           523ms accounts-daemon.service
+           450ms systemd-udev-trigger.service
+           426ms systemd-journal-flush.service
+           416ms grub-common.service
+           402ms apparmor.service
+           395ms systemd-modules-load.service
+           360ms ssh.service
+           308ms systemd-logind.service
+           306ms apport.service
+           289ms lvm2-monitor.service
+           261ms proc-xen.mount
+           260ms dev-hugepages.mount
+           259ms ufw.service
+           258ms systemd-journald.service
+           258ms dev-mqueue.mount
+           256ms sys-kernel-debug.mount
+           255ms kmod-static-nodes.service
+           251ms blk-availability.service
+           234ms systemd-remount-fs.service
+           197ms lxd.socket
+           182ms polkit.service
+           166ms systemd-tmpfiles-setup.service
+           160ms rsyslog.service
+           158ms systemd-timesyncd.service
+           153ms systemd-udevd.service
+           130ms systemd-tmpfiles-setup-dev.service
+           125ms ebtables.service
+           110ms systemd-networkd.service
+            89ms systemd-resolved.service
+            83ms systemd-user-sessions.service
+            79ms console-setup.service
+            72ms snapd.socket
+            66ms snapd.seeded.service
+            57ms plymouth-quit.service
+            57ms systemd-sysctl.service
+            54ms plymouth-quit-wait.service
+            51ms systemd-random-seed.service
+            51ms plymouth-read-write.service
+            43ms user@0.service
+            43ms dev-disk-by\x2dlabel-SWAP\x2dxvdb1.swap
+            41ms setvtrgb.service
+            39ms sys-fs-fuse-connections.mount
+            38ms sys-kernel-config.mount
+            35ms systemd-update-utmp-runlevel.service
+            26ms systemd-update-utmp.service
+            19ms boot.mount
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init analyze show
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00500s +00.00100s
+|`->found local data from DataSourceIBMCloud @00.04800s +00.08600s
+Finished stage: (init-local) 00.67300 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @03.11100s +00.01900s
+|`->setting up datasource @03.23200s +00.00000s
+|`->reading and applying user-data @03.24300s +00.01000s
+|`->reading and applying vendor-data @03.25300s +00.00400s
+|`->activating datasource @03.29800s +00.00900s
+|`->config-migrator ran successfully @03.37100s +00.00100s
+|`->config-seed_random ran successfully @03.37200s +00.00200s
+|`->config-bootcmd ran successfully @03.37400s +00.00000s
+|`->config-write-files ran successfully @03.37400s +00.01000s
+|`->config-growpart ran successfully @03.38500s +00.14500s
+|`->config-resizefs ran successfully @03.53100s +00.12500s
+|`->config-disk_setup ran successfully @03.65600s +00.00100s
+|`->config-mounts ran successfully @03.65800s +00.02500s
+|`->config-set_hostname ran successfully @03.68400s +00.00500s
+|`->config-update_hostname ran successfully @03.69000s +00.00600s
+|`->config-update_etc_hosts ran successfully @03.69600s +00.00100s
+|`->config-ca-certs ran successfully @03.69700s +00.00100s
+|`->config-rsyslog ran successfully @03.69800s +00.00600s
+|`->config-users-groups ran successfully @03.70400s +00.06200s
+|`->config-ssh ran successfully @03.76600s +00.37300s
+Finished stage: (init-network) 01.04800 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @06.73100s +00.00000s
+|`->config-snap ran successfully @06.73200s +00.00000s
+|`->config-snap_config ran successfully @06.73300s +00.00100s
+|`->config-ssh-import-id ran successfully @06.73400s +00.92500s
+|`->config-locale ran successfully @07.65900s +00.00200s
+|`->config-set-passwords ran successfully @07.66100s +00.00300s
+|`->config-grub-dpkg ran successfully @07.66500s +00.43000s
+|`->config-apt-pipelining ran successfully @08.09600s +00.00100s
+|`->config-apt-configure ran successfully @08.09700s +00.18700s
+|`->config-ubuntu-advantage ran successfully @08.28500s +00.00100s
+|`->config-ntp ran successfully @08.28600s +00.00100s
+|`->config-timezone ran successfully @08.28700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @08.28800s +00.00000s
+|`->config-runcmd ran successfully @08.28900s +00.00100s
+|`->config-byobu ran successfully @08.29000s +00.00100s
+Finished stage: (modules-config) 01.58900 seconds
+
+Starting stage: modules-final
+|`->config-snappy ran successfully @09.00000s +00.00200s
+|`->config-package-update-upgrade-install ran successfully @09.00200s +00.00100s
+|`->config-fan ran successfully @09.00300s +00.00100s
+|`->config-landscape ran successfully @09.00400s +00.00100s
+|`->config-lxd ran successfully @09.00500s +00.00100s
+|`->config-ubuntu-drivers ran successfully @09.00600s +00.00100s
+|`->config-puppet ran successfully @09.00700s +00.00100s
+|`->config-chef ran successfully @09.00800s +00.00100s
+|`->config-mcollective ran successfully @09.00900s +00.00100s
+|`->config-salt-minion ran successfully @09.01000s +00.00100s
+|`->config-rightscale_userdata ran successfully @09.01100s +00.00100s
+|`->config-scripts-vendor ran successfully @09.01300s +00.02500s
+|`->config-scripts-per-once ran successfully @09.03900s +00.00100s
+|`->config-scripts-per-boot ran successfully @09.04000s +00.00000s
+|`->config-scripts-per-instance ran successfully @09.04100s +00.00000s
+|`->config-scripts-user ran successfully @09.04200s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @09.04300s +00.06500s
+|`->config-keys-to-console ran successfully @09.10900s +00.13000s
+|`->config-phone-home ran successfully @09.24000s +00.00100s
+|`->config-final-message ran successfully @09.24100s +00.00600s
+|`->config-power-state-change ran successfully @09.24800s +00.00100s
+Finished stage: (modules-final) 00.29100 seconds
+
+Total Time: 3.60100 seconds
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.92500s (modules-config/config-ssh-import-id)
+     00.43000s (modules-config/config-grub-dpkg)
+     00.37300s (init-network/config-ssh)
+     00.18700s (modules-config/config-apt-configure)
+     00.14500s (init-network/config-growpart)
+     00.13000s (modules-final/config-keys-to-console)
+     00.12500s (init-network/config-resizefs)
+     00.08600s (init-local/search-IBMCloud)
+     00.06500s (modules-final/config-ssh-authkey-fingerprints)
+     00.06200s (init-network/config-users-groups)
+     00.02500s (modules-final/config-scripts-vendor)
+     00.02500s (init-network/config-mounts)
+     00.01900s (init-network/check-cache)
+     00.01000s (init-network/consume-user-data)
+     00.01000s (init-network/config-write-files)
+     00.00900s (init-network/activate-datasource)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (init-network/config-update_hostname)
+     00.00600s (init-network/config-rsyslog)
+     00.00500s (init-network/config-set_hostname)
+     00.00400s (init-network/consume-vendor-data)
+     00.00300s (modules-config/config-set-passwords)
+     00.00200s (modules-final/config-snappy)
+     00.00200s (modules-config/config-locale)
+     00.00200s (init-network/config-seed_random)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap_config)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-final/config-scripts-per-instance)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-config/config-snap)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-bootcmd)
+
+1 boot records analyzed
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- 'cloud-init query --format '\''cloud-region: {{cloud_name}}-{{region}}'\'''
+cloud-region: ibmcloud-None
++ echo 'Get cloud-id'
+Get cloud-id
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-id
+ibmcloud
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- 'cloud-init query --format '\''cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'\'''
+WARNING: Ignoring jinja template for query commandline: 'dict object' has no attribute 'imds'
++ echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
+Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- reboot
+Connection to 75.126.0.220 closed by remote host.
++ true
++ sleep 300
++ echo 'After reboot'
+After reboot
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- cloud-init status --wait --long
+
+status: done
+time: Wed, 11 Dec 2019 23:49:08 +0000
+detail:
+DataSourceIBMCloud [OS-Code/Live /dev/xvdh]
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- 'grep '\''Update datasource'\'' /var/log/cloud-init.log'
+2019-12-11 23:43:46,111 - __init__.py[DEBUG]: Update datasource metadata and network config due to events: New instance first boot
++ echo 'Confirm no traceback after reboot LP: 1823084'
+Confirm no traceback after reboot LP: 1823084
++ ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.0.220 -- 'grep '\''Trace'\'' /var/log/cloud-init.log'
++ echo '### END bionic'
+### END bionic
+
+### END SRU Verification output ###
