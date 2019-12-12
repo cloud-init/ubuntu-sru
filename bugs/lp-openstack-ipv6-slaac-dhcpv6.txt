@@ -1,0 +1,211 @@
+=== Begin SRU Template ===
+
+[Impact]
+OpenStack ipv6 support for network configuration includes support for
+enabling SLAAC, DHCPv6 Stateless, and DHCPv6 Stateful configurations.
+The network configuration required on the guest OS varies by distro
+and release.  cloud-init now detects the various ipv6 configurations
+provided by openstack and renders the correct network configuration
+to enable each mode.  Users who upgrade to the newer cloud-init will
+have correctly configured SLAAC, DHCPv6 stateless and stateful configs.
+
+[Test Case]
+#!/bin/bash
+# Verify ipv6 network configuration support in Ubuntu
+#
+# bash required for arrays and $RANDOM built-ins
+#
+# LP: #1806015
+# LP: #1847517
+# LP: #1848690
+
+SRU_SERIES=${1:-"xenial bionic disco eoan"}
+
+# local values
+LP_USER="raharper"
+ADMIN_NET_ID="rharper_admin_net"
+SSH_KEY=rharper-bastion
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+cat > apply_network_config.cfg <<EOF
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+EOF
+
+IPV6_NETWORKS="ipv6-slaac ipv6-dhcpv6-stateful ipv6-dhcpv6-stateless"
+for ipv6_net in ${IPV6_NETWORKS}; do
+    if ! openstack network list | awk '{print $4}' | grep "^${ipv6_net}$"; then
+        echo "Creating ipv6 network: $ipv6_net"
+        openstack network create $ipv6_net
+        v6_mode=${ipv6_net#ipv6-}
+        subnet=${ipv6_net}-subnet
+        openstack subnet create \
+            --ip-version 6 \
+            --ipv6-ra-mode $v6_mode \
+            --ipv6-address-mode $v6_mode \
+            --subnet-range "fd${RANDOM:0:2}:0:0:1::/64" \
+            --network ${ipv6_net} ${subnet}
+        router=${ipv6_net}-router
+        openstack router create ${router}
+        openstack router add subnet ${router} ${subnet}
+    else
+        echo "Using existing ipv6 network: $ipv6_net"
+    fi
+done
+
+# query image ids
+if [ ! -e "images.json" ]; then
+    openstack image list --property architecture=x86_64 -f json > images.json
+fi
+
+# we iterate over each network-type and release
+for ipv6_net in ${IPV6_NETWORKS}; do
+    for series in $SRU_SERIES; do
+        echo "### BEGIN $series"
+        if [ "$series" = "xenial" ]; then
+          netcfg="/etc/network/interfaces.d/50-cloud-init.cfg"
+        else
+          netcfg="/etc/netplan/50-cloud-init.yaml"
+        fi
+
+        # Determine image, launch instance and attach IP address
+        image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$series'"))) | .ID' | tail -n 1)
+        server_name="test-$series-$ipv6_net"
+
+        # handle unhappy openstack
+        for ((i=0; i<20; i++)); do
+            openstack server create --flavor m1.small --image $image \
+                --key-name $SSH_KEY \
+                --nic net-id=$ADMIN_NET_ID \
+                --nic net-id=$ipv6_net \
+                $server_name --wait
+            while true; do
+                STATE=$(nova list | awk "/$server_name/ {print \$6}")
+                case $STATE in
+                    ACTIVE|ERROR) break;;
+                esac
+            done
+            if [ "${STATE}" = "ERROR" ]; then
+                openstack server delete test-$series-$ipv6_net
+                sleep 2
+                continue
+            elif [ "$STATE" = "ACTIVE" ]; then
+                break;
+            fi
+        done
+        if [ "$STATE" != "ACTIVE" ]; then
+            echo "Your openstack is not happy, cant launch images"
+            exit 1
+        fi
+        VM_IP=${server_name}
+        sleep 10  # Wait for the instance to boot
+        while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+            sleep 5
+        done
+
+        # Capture current state
+        echo "Current cloud-init version"
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+
+        # enable apply_network_config settings, already enabled on newer than bionic
+        case $series in
+            xenial|bionic)
+                echo "Copying apply_network_config.cfg"
+                scp "${sshopts[@]}" apply_network_config.cfg ubuntu@$VM_IP:.
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cp apply_network_config.cfg /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+
+                sleep 10  # Wait for the instance to boot
+                while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+                    sleep 5
+                done
+                ;;
+        esac
+
+        echo 'Networking config with apply_network_config=true'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg
+
+        # Upgrade to -proposed cloud-init and reboot
+        scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+        ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cp $netcfg /home/ubuntu/
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+
+        sleep 10  # Wait for the instance to actually go down
+        while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+            sleep 1
+        done
+
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+        echo 'After upgrade Networking config (current -> proposed)'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- diff -u /home/ubuntu/$(basename $netcfg) $netcfg
+        case $ipv6_net in
+          ipv6-slaac)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 auto' and 'dhcp 0'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ auto$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp 0$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+           ipv6-dhcpv6-stateful)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 dhcp' and 'accept_ra 1'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ dhcp$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'accept_ra\ 1$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true' and 'accept-ra: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'accept-ra:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+           ipv6-dhcpv6-stateless)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 auto' and 'dhcp 1'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ auto$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp\ 1$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+        esac
+        openstack server delete test-$series-$ipv6_net
+    done
+done
+
+
+[Regression Potential]
+Ubuntu Xenial and Bionic releases do not apply OpenStack network
+configuration and Disco and Eoan impacts are low since netplan
+and systemd-networkd already handled all 3 ipv6 modes already.
+
+=== End SRU Template ===
+=== BEGIN SRU Validation output ===
+### BEGIN xenial
+### BEGIN bionic
+### BEGIN disco
+### BEGIN eoan
