@@ -39,3 +39,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-19.3.41.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-19.3.41.txt) |
 | Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-19.3.41.txt) |
+| MAAS -proposed SRU test | [verification output](../manual/maas-sru-19.3.41.txt) |
