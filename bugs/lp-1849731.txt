@@ -1,0 +1,51 @@
+
+http://pad.lv/1849731
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1849731
+
+=== Begin cloud-init SRU Template ===
+[Impact]
+
+Users using a ConfigDrive within a lxd container currently see tracebacks in
+the cloud-init log.
+
+[Test Case]
+
+For cloud-init, the easiest way to demonstrate this is to create a lxc
+container and populate it with a '/config-drive'.
+
+lp1849731() {
+    release=$1
+    ref=$release-proposed
+    name=$release-lp1849731
+
+    # https://github.com/cloud-init/qa-scripts/blob/master/scripts/lxc-proposed-snapshot
+    lxc-proposed-snapshot --proposed --publish $release $ref
+    lxc init $ref $name
+
+    # populate a /config-drive with
+    # https://github.com/cloud-init/ubuntu-sru/blob/master/tools/make-configdrive-dir
+    # and push it to the container
+    make-configdrive-dir config-drive
+    lxc file push -prv config-drive/ $name/
+
+    lxc file pull $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg - |
+        sed 's/NoCloud, //' |
+        lxc file push - $name/etc/cloud/cloud.cfg.d/90_dpkg.cfg
+
+    lxc start $name
+
+    sleep 5
+    lxc exec $name -- cloud-init status --wait
+
+    echo -n "This should be 0: "
+    lxc exec $name -- grep -c Traceback /var/log/cloud-init.log
+}
+
+[Regression Potential]
+
+This modifies the ConfigDrive data source, specifically modifying the
+subplatform determination code.  This could cause regressions in ConfigDrive
+usage generally, or specifically for users who are depending on the previous
+(incorrect) subplatform behaviour.
+
+=== End cloud-init SRU Template ===
