@@ -1,0 +1,237 @@
+#!/bin/sh
+set -x
+# Manually deploy on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+ 
+# To be adapted to the SRU to test
+SRU_SERIES="xenial bionic disco"
+
+# local values
+# find region with az account list-locations -o table
+REGION="<specify your region name>"
+VNET_NAME="<specify your virtual network name>"
+NETWORK_SECURITY_GROUP="<specify your network security group>"
+NIC_NAME="<specify a preferred nic name>"
+RESOURCE_GROUP="<specify your resource group>"
+BOOT_DIAG="<specify your boot diagnostics group>"
+SSH_KEY="$HOME/.ssh/id_rsa.pub"
+
+
+ADVANCED_NIC_TESTS=true
+
+
+IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+
+if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; then
+    echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
+    read RESP
+    if [ "$RESP" = "y" ]; then
+        az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
+        az feature register --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network
+    else
+        echo "Skipping any advanced network tests because you opted to avoid registering IPv6 feature"
+        echo -n "Proceed without any advanced networking tests (y/n)? "
+        read OK
+        if [ "$OK" = "y" ]; then
+            ADVANCED_NIC_TESTS=false
+        else
+            echo "quit the test run"
+            exit 1
+        fi
+    fi
+    echo "Waiting for AllowIPv6VirtualNetwork feature registration"
+    while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
+        echo -n "."
+        sleep 5
+        IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+        IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+    done
+fi
+
+IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+echo "Waiting for Microsoft.Network IPv6 feature registration"
+while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
+    echo -n "."
+    sleep 5
+    IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+done
+
+
+cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+az group create --name $RESOURCE_GROUP --location $REGION
+
+if [ -n "${BOOT_DIAG}" ]; then
+    az storage account create \
+        --name $BOOT_DIAG \
+        --resource-group $RESOURCE_GROUP \
+        --location $REGION \
+        --sku Standard_RAGRS \
+        --kind StorageV2
+    BOOT_DIAG_ARG="--boot-diagnostics-storage ${BOOT_DIAG}"
+else
+    BOOT_DIAG_ARG=""
+fi
+
+az network vnet create \
+    --resource-group $RESOURCE_GROUP \
+    --name $VNET_NAME \
+    --address-prefixes "192.168.0.0/16" "ace:cab:deca::/48"
+
+az network nsg create \
+    --resource-group $RESOURCE_GROUP \
+    --name $NETWORK_SECURITY_GROUP
+
+az network vnet subnet create \
+    --name sruSubnet \
+    --resource-group $RESOURCE_GROUP \
+    --vnet-name $VNET_NAME \
+    --address-prefixes "192.168.0.0/24" "ace:cab:deca:deed::/64" \
+    --network-security-group $NETWORK_SECURITY_GROUP
+
+az network nsg rule create \
+    --resource-group $RESOURCE_GROUP \
+    --nsg-name $NETWORK_SECURITY_GROUP \
+    --name Allow-SSH-Internet \
+    --access Allow \
+    --protocol Tcp \
+    --direction Inbound \
+    --priority 100 \
+    --source-address-prefix "*" \
+    --source-port-range "*" \
+    --destination-address-prefix "*" \
+    --destination-port-range 22
+
+
+sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    netcfg="/etc/netplan/50-cloud-init.yaml"
+    case $series in
+        xenial) image_version=16.04-DAILY-LTS
+                netcfg="/etc/network/interfaces.d/50-cloud-init.cfg";;
+        bionic) image_version=18.04-DAILY-LTS;;
+        disco) image_version=19.04-DAILY;;
+        eoan) image_version=19.10-DAILY;;
+        *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+    esac
+    # Note: accelerated network requires bigger size than our default DS1
+    for nics in "" "--nics $NIC_NAME-$series ${NIC_NAME}2-$series --size Standard_DS2_v2"; do
+        if [ "" = "$nics" ]; then
+            echo "Creating standard network vm"
+            name=test-sru-$series
+        else
+            if [ $ADVANCED_NIC_TESTS = false ]; then
+                echo "Skipping advanced nic tests because ipv6 feature is disabled"
+                continue
+            fi
+            echo "Creating advanced network vm"
+            name=test-sru-$series-advanced
+            az network public-ip create \
+                --name sruPublicIP-IPv4-$series \
+                --resource-group $RESOURCE_GROUP \
+                --version IPv4
+            az network public-ip create \
+                --name sruPublicIP-IPv6-$series \
+                --resource-group $RESOURCE_GROUP \
+                --version IPv6
+            az network nic create \
+                --resource-group $RESOURCE_GROUP \
+                --name $NIC_NAME-$series \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+                --accelerated-networking true \
+                --private-ip-address-version IPv4 \
+                --public-ip-address sruPublicIP-IPv4-$series \
+                --network-security-group $NETWORK_SECURITY_GROUP
+            az network nic create \
+                --resource-group $RESOURCE_GROUP \
+                --name ${NIC_NAME}2-$series \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+                --accelerated-networking true \
+                --private-ip-address-version IPv4 \
+                --network-security-group $NETWORK_SECURITY_GROUP
+        fi
+        az vm create --name=$name \
+            --image=Canonical:UbuntuServer:$image_version:latest \
+            --admin-username=root --admin-username=ubuntu \
+            -g $RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+            $BOOT_DIAG_ARG \
+            --custom-data sethostname.yaml $nics
+        IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+
+        echo "Created $name: ubuntu@$IP"
+
+        ssh $sshopts $IP -- cloud-init status --wait --long
+        ssh $sshopts $IP -- dpkg-query --show cloud-init
+        ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+        ssh $sshopts $IP -- grep Trace /var/log/cloud-init.log
+        ssh $sshopts $IP -- systemd-analyze
+        ssh $sshopts $IP -- systemd-analyze blame
+        ssh $sshopts $IP -- cloud-init analyze show
+        ssh $sshopts $IP -- cloud-init analyze blame
+        echo 'Networking config'
+        ssh $sshopts $IP -- cat $netcfg
+
+        scp $sshopts setup_proposed.sh $IP:.
+        ssh $sshopts $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+        ssh $sshopts $IP -- dpkg-query --show cloud-init
+        ssh $sshopts $IP -- sudo hostname SRU-didnt-work
+        ssh $sshopts $IP -- sudo rm -f $netcfg
+        if [ "" = "$nics" ]; then
+            ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
+        else
+            echo "Shutting down instance and adding IPv6 config to nic"
+            # TODO: This is only done late because current published cloud-init
+            # TODO: does not support dual stack ipv6 yet
+            # TODO: move this higher inside "Creating advanced network vm"
+            # TODO: after this SRU completes
+            az vm stop --name=$name -g $RESOURCE_GROUP 
+            az network nic ip-config create \
+                --name $NIC_NAME-$series-IPv6Config \
+                --nic-name $NIC_NAME-$series \
+                --resource-group $RESOURCE_GROUP \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+                --private-ip-address-version IPv6
+            az vm start --name=$name -g $RESOURCE_GROUP 
+        fi
+        sleep 60
+
+        ssh $sshopts $IP -- cloud-init status --wait --long
+        ssh $sshopts $IP -- grep Trace /var/log/cloud-init\*
+        ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+        ssh $sshopts $IP -- sudo systemd-analyze blame
+        ssh $sshopts $IP -- cloud-init analyze show
+        ssh $sshopts $IP -- cloud-init analyze blame
+        echo 'After upgrade Networking config'
+        ssh $sshopts $IP -- cat $netcfg
+        ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+        echo 'Get cloud-id'
+        ssh $sshopts $IP -- cloud-id
+        ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+        echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to be Sytem Boot'
+        ssh $sshopts $IP -- sudo reboot || true
+        sleep 30
+        ssh $sshopts $IP -- cloud-init status --wait --long
+        echo 'After reboot'
+        ssh $sshopts $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    done
+    echo "### END $series"
+done
