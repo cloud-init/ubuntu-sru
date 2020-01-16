@@ -1,0 +1,98 @@
+# Manual GCE upgrade and clean install validation Xenial, Bionic, Cosmic
+ 
+# To be adapted to the SRU to test
+SRU_SERIES="xenial bionic disco"
+ZONE="us-central1-b"
+
+cat > sethostname.yaml << EOF
+## template: jinja
+#cloud-config
+ssh_import_id : [daniel-thewatkins]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+
+for release in $SRU_SERIES; do
+  echo "### BEGIN $release"
+
+  netcfg=/etc/netplan/50-cloud-init.yaml
+  case $release in
+      xenial) family=ubuntu-1604-lts
+              netcfg=/etc/network/interfaces.d/50-cloud-init.cfg;;
+      bionic) family=ubuntu-1804-lts;;
+      cosmic) family=ubuntu-1810;;
+      disco) family=ubuntu-1904;;
+      eoan) family=ubuntu-1910;;
+      *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+  esac
+
+  gcloud compute instances create $release-sru-test --image-family $family --image-project ubuntu-os-cloud-devel --metadata-from-file user-data=sethostname.yaml --zone=$ZONE;
+  VM_IP=$(gcloud compute instances list | grep $release-sru | awk '{printf "%s", $5}')
+
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  # Capture current state
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+  echo 'Networking config'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg
+
+  # Upgrade to -proposed cloud-init and reboot
+  scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+  ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo rm -f $netcfg
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+  ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
+
+  sleep 10  # Wait for the instance to actually go down
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- hostname
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+  echo 'After upgrade Networking config'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+  echo "Get cloud-id"
+  ssh "${sshopts[@]}" ubuntu@$VM_IP cloud-id
+
+  echo 'Validating whether metadata is being updated per boot LP:1819913'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'Update\ datasource' /var/log/cloud-init.log
+  ssh "${sshopts[@]}" ubuntu@$VM_IP sudo reboot || true
+
+  sleep 10
+  while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+      sleep 5
+  done
+
+  echo 'After reboot'
+  ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'Update\ datasource' /var/log/cloud-init.log
+done
+
+for release in $SRU_SERIES; do
+  gcloud compute instances delete --zone=$ZONE --quiet $release-sru-test
+done
