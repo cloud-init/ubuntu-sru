@@ -167,6 +167,13 @@ for series in $SRU_SERIES; do
                 --accelerated-networking true \
                 --private-ip-address-version IPv4 \
                 --network-security-group $NETWORK_SECURITY_GROUP
+            az network nic ip-config create \
+                --name $NIC_NAME-$series-IPv6Config \
+                --nic-name $NIC_NAME-$series \
+                --resource-group $RESOURCE_GROUP \
+                --vnet-name $VNET_NAME \
+                --subnet sruSubnet \
+                --private-ip-address-version IPv6
         fi
         az vm create --name=$name \
             --image=Canonical:UbuntuServer:$image_version:latest \
@@ -194,24 +201,7 @@ for series in $SRU_SERIES; do
         ssh $sshopts $IP -- dpkg-query --show cloud-init
         ssh $sshopts $IP -- sudo hostname SRU-didnt-work
         ssh $sshopts $IP -- sudo rm -f $netcfg
-        if [ "" = "$nics" ]; then
-            ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
-        else
-            echo "Shutting down instance and adding IPv6 config to nic"
-            # TODO: This is only done late because current published cloud-init
-            # TODO: does not support dual stack ipv6 yet
-            # TODO: move this higher inside "Creating advanced network vm"
-            # TODO: after this SRU completes
-            az vm stop --name=$name -g $RESOURCE_GROUP 
-            az network nic ip-config create \
-                --name $NIC_NAME-$series-IPv6Config \
-                --nic-name $NIC_NAME-$series \
-                --resource-group $RESOURCE_GROUP \
-                --vnet-name $VNET_NAME \
-                --subnet sruSubnet \
-                --private-ip-address-version IPv6
-            az vm start --name=$name -g $RESOURCE_GROUP 
-        fi
+        ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
         sleep 60
 
         ssh $sshopts $IP -- cloud-init status --wait --long
