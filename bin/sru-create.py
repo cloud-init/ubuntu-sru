@@ -8,7 +8,7 @@ import sys
 
 BUG_VERIFY_TMPL = "| [# {bugid}](http://pad.lv/{bugid}) | [verification output](../bugs/lp-{bugid}.txt) |"
 MANUAL_VERIFY_TMPL = "| {title} | [verification output](../manual/{versioned_file}) |"
-DEFAULT_SRU_SERIES='xenial,bionic,disco'
+DEFAULT_SRU_SERIES='xenial,bionic,eoan'
 
 def get_parser():
     parser = argparse.ArgumentParser()
@@ -31,7 +31,8 @@ def get_parser():
         dest='sruLPUser',
         help=('String of the launchpad user performing the sru.'
               ' An ssh-import-id <lp_user> is performed on the instance.'
-              ' Default: daniel-thewatkins'))
+              ' Default: daniel-thewatkins. Overridden with'
+              ' SRU_LP_USERNAME environment variable.'))
     parser.add_argument(
         '--bugs', default=[],  type=int, nargs='*',
         help=('Comma-delimited list of bug-ids fixed by the SRU.'
@@ -108,9 +109,13 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries, sruLPUser):
 def main():
     parser = get_parser()
     args = parser.parse_args()
+    if os.environ.get('SRU_LP_USERNAME'):
+       sruLPUser = os.environ.get('SRU_LP_USERNAME')
+    else:
+       sruLPUser = args.sruLPUser
     create_sru_docs(
         args.sruDate, args.sruVersion, args.sruBug, args.bugs, args.sruSeries,
-        args.sruLPUser)
+        sruLPUser)
     return 0
 
 if __name__ == '__main__':
