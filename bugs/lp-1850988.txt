@@ -12,9 +12,7 @@ would not have that subnet configured correctly.
 This test function will launch a lxd container with an affected configuration,
 and check that the static6 interface is configured as expected.
 
-(Note that it relies on manual inspection of the output for validation, and
-because the interfaces being configured don't actually have network
-connectivity, the "wait" step takes longer than usual.)
+(Note that it relies on manual inspection of the output for validation.)
 
 ```
 lp1850988() {
@@ -43,7 +41,10 @@ EOF
     lxc-proposed-snapshot --proposed --publish $release $ref
     lxc launch -c user.network-config="$(cat network.yaml)" -c volatile.eth0.hwaddr=$mac_address $ref $name
 
-    lxc exec $name -- cloud-init status --wait
+    # We use sleep instead of `cloud-init --wait` because our network
+    # configuration will block boot until the interfaces come up successfully
+    # (which they never will).
+    sleep 60
 
     echo -n "This should be 1: "
     lxc exec $name -- ip addr | grep -c 'inet6 2600::10/64'
