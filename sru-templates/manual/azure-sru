@@ -88,34 +88,52 @@ else
     BOOT_DIAG_ARG=""
 fi
 
-az network vnet create \
-    --resource-group $RESOURCE_GROUP \
-    --name $VNET_NAME \
-    --address-prefixes "192.168.0.0/16" "ace:cab:deca::/48"
 
 az network nsg create \
     --resource-group $RESOURCE_GROUP \
+    --location $REGION \
     --name $NETWORK_SECURITY_GROUP
+
+az network nsg rule create \
+    --name allowSSHIn  \
+    --nsg-name $NETWORK_SECURITY_GROUP  \
+    --resource-group $RESOURCE_GROUP  \
+    --priority 100  \
+    --description "Allow SSH In"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Inbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges 22
+
+az network nsg rule create \
+    --name allowAllOut  \
+    --resource-group $RESOURCE_GROUP \
+    --nsg-name $NETWORK_SECURITY_GROUP \
+    --priority 200  \
+    --description "Allow All Out"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Outbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges "*"
+
+az network vnet create \
+    --resource-group $RESOURCE_GROUP \
+    --location $REGION \
+    --name $VNET_NAME \
+    --address-prefixes "10.0.0.0/16" "ace:cab:deca::/48"
 
 az network vnet subnet create \
     --name sruSubnet \
     --resource-group $RESOURCE_GROUP \
     --vnet-name $VNET_NAME \
-    --address-prefixes "192.168.0.0/24" "ace:cab:deca:deed::/64" \
+    --address-prefixes "10.0.0.0/24" "ace:cab:deca:deed::/64" \
     --network-security-group $NETWORK_SECURITY_GROUP
-
-az network nsg rule create \
-    --resource-group $RESOURCE_GROUP \
-    --nsg-name $NETWORK_SECURITY_GROUP \
-    --name Allow-SSH-Internet \
-    --access Allow \
-    --protocol Tcp \
-    --direction Inbound \
-    --priority 100 \
-    --source-address-prefix "*" \
-    --source-port-range "*" \
-    --destination-address-prefix "*" \
-    --destination-port-range 22
 
 
 sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
@@ -142,38 +160,122 @@ for series in $SRU_SERIES; do
             fi
             echo "Creating advanced network vm"
             name=test-sru-$series-advanced
+            # Dual stack load balancer setup with only 1 dualstack/dual nic vm
+            # Create VM IP address
             az network public-ip create \
-                --name sruPublicIP-IPv4-$series \
+                --name vmPublicIP-IPv4-$series \
                 --resource-group $RESOURCE_GROUP \
+                --location $REGION \
+                --sku BASIC \
+                --allocation-method dynamic \
                 --version IPv4
+            # Create an IPV4 IP address for LB
             az network public-ip create \
-                --name sruPublicIP-IPv6-$series \
-                --resource-group $RESOURCE_GROUP \
+                --name lbPublicIP_v4_$series  \
+                --resource-group $RESOURCE_GROUP  \
+                --location $REGION  \
+                --sku BASIC  \
+                --allocation-method dynamic  \
+                --version IPv4
+
+            # Create an IPV6 IP address for LB
+            az network public-ip create \
+                --name lbPublicIP_v6_$series  \
+                --resource-group $RESOURCE_GROUP  \
+                --location $REGION \
+                --sku BASIC  \
+                --allocation-method dynamic  \
                 --version IPv6
-            az network nic create \
+
+            # Create LB
+            az network lb create \
+                --name dsLB_$series  \
                 --resource-group $RESOURCE_GROUP \
+                --sku Basic \
+                --location $REGION \
+                --frontend-ip-name dsLbFrontEnd_v4_$series  \
+                --public-ip-address lbPublicIP_v4_$series  \
+                --backend-pool-name dsLbBackEndPool_v4_$series
+
+            # Create LB ipv6 frontend
+            az network lb frontend-ip create \
+                --lb-name dsLB_$series  \
+                --name dsLbFrontEnd_v6_$series  \
+                --resource-group $RESOURCE_GROUP  \
+                --public-ip-address lbPublicIP_v6_$series
+
+            # Create LB ipv6 backend
+            az network lb address-pool create \
+                --lb-name dsLB_$series  \
+                --name dsLbBackEndPool_v6_$series  \
+                --resource-group $RESOURCE_GROUP
+
+            # Create LB health probe for ssh port
+            az network lb probe create -g $RESOURCE_GROUP  \
+                --lb-name dsLB_$series -n dsProbe_$series --protocol tcp \
+                --port 22
+
+            az network lb rule create \
+                --lb-name dsLB_$series  \
+                --name dsLBrule_v4_$series  \
+                --resource-group $RESOURCE_GROUP  \
+                --frontend-ip-name dsLbFrontEnd_v4_$series  \
+                --protocol Tcp  \
+                --frontend-port 22  \
+                --backend-port 22  \
+                --probe-name dsProbe_$series \
+                --backend-pool-name dsLbBackEndPool_v4_$series
+
+            az network lb rule create \
+                --lb-name dsLB_$series  \
+                --name dsLBrule_v6_$series  \
+                --resource-group $RESOURCE_GROUP  \
+                --frontend-ip-name dsLbFrontEnd_v6_$series  \
+                --protocol Tcp  \
+                --frontend-port 22  \
+                --backend-port 22  \
+                --probe-name dsProbe_$series \
+                --backend-pool-name dsLbBackEndPool_v6_$series
+
+            az vm availability-set create \
+                --name dsAVset_$series  \
+                --resource-group $RESOURCE_GROUP \
+                --location $REGION \
+                --platform-fault-domain-count 2  \
+                --platform-update-domain-count 2
+
+            az network nic create \
                 --name $NIC_NAME-$series \
-                --vnet-name $VNET_NAME \
-                --subnet sruSubnet \
-                --accelerated-networking true \
-                --private-ip-address-version IPv4 \
-                --public-ip-address sruPublicIP-IPv4-$series \
-                --network-security-group $NETWORK_SECURITY_GROUP
-            az network nic create \
                 --resource-group $RESOURCE_GROUP \
-                --name ${NIC_NAME}2-$series \
+                --network-security-group $NETWORK_SECURITY_GROUP \
                 --vnet-name $VNET_NAME \
+                 --accelerated-networking true \
                 --subnet sruSubnet \
-                --accelerated-networking true \
                 --private-ip-address-version IPv4 \
-                --network-security-group $NETWORK_SECURITY_GROUP
+                 --lb-address-pools dsLbBackEndPool_v4_$series  \
+                --lb-name dsLB_$series  \
+                --public-ip-address vmPublicIP-IPv4-$series
+
+            az network nic create \
+                --name ${NIC_NAME}2-$series \
+                --resource-group $RESOURCE_GROUP \
+                --network-security-group $NETWORK_SECURITY_GROUP \
+                --vnet-name $VNET_NAME \
+                --accelerated-networking true \
+                --subnet sruSubnet \
+                --private-ip-address-version IPv4
+
+            # Add IPv6 on primary nic
             az network nic ip-config create \
-                --name $NIC_NAME-$series-IPv6Config \
+                --name $NIC_NAME-$series-v6 \
                 --nic-name $NIC_NAME-$series \
                 --resource-group $RESOURCE_GROUP \
                 --vnet-name $VNET_NAME \
                 --subnet sruSubnet \
+                --lb-address-pools dsLbBackEndPool_v6_$series  \
+                --lb-name dsLB_$series \
                 --private-ip-address-version IPv6
+
         fi
         az vm create --name=$name \
             --image=Canonical:UbuntuServer:$image_version:latest \
@@ -193,8 +295,13 @@ for series in $SRU_SERIES; do
         ssh $sshopts $IP -- systemd-analyze blame
         ssh $sshopts $IP -- cloud-init analyze show
         ssh $sshopts $IP -- cloud-init analyze blame
-        echo 'Networking config'
-        ssh $sshopts $IP -- cat $netcfg
+        echo 'Writing networking config: previous-network.out'
+        ssh $sshopts $IP -- cat $netcfg > previous-network.out
+        ssh $sshopts $IP -- ip -4 route >> previous-network.out
+        ssh $sshopts $IP -- ip -4 addr >> previous-network.out
+        ssh $sshopts $IP -- ip -6 route >> previous-network.out
+        ssh $sshopts $IP -- ip -6 addr >> previous-network.out
+        ssh $sshopts $IP -- grep DHCP /var/log/syslog >> previous-network.out
 
         scp $sshopts setup_proposed.sh $IP:.
         ssh $sshopts $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
@@ -210,8 +317,16 @@ for series in $SRU_SERIES; do
         ssh $sshopts $IP -- sudo systemd-analyze blame
         ssh $sshopts $IP -- cloud-init analyze show
         ssh $sshopts $IP -- cloud-init analyze blame
-        echo 'After upgrade Networking config'
-        ssh $sshopts $IP -- cat $netcfg
+        echo 'After upgrade write network config: upgrade-network.out'
+        ssh $sshopts $IP -- cat $netcfg > upgrade-network.out
+        ssh $sshopts $IP -- ip -4 route >> upgrade-network.out
+        ssh $sshopts $IP -- ip -4 addr >> upgrade-network.out
+        ssh $sshopts $IP -- ip -6 route >> upgrade-network.out
+        ssh $sshopts $IP -- ip -6 addr >> upgrade-network.out
+        ssh $sshopts $IP -- grep DHCP /var/log/syslog >> upgrade-network.out
+        echo '------- Diff previous-network to post-upgrade-network ------'
+        diff -urN previous-network.out upgrade-network.out
+        echo '------- Diff previous-network to post-upgrade-network ------'
         ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
         echo 'Get cloud-id'
         ssh $sshopts $IP -- cloud-id
