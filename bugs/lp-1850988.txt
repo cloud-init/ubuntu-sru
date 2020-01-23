@@ -4,32 +4,63 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1850988
 === Begin SRU Template ===
 [Impact]
 
+Users passing a network configuration that includes a "static6" type subnet
+would not have that subnet configured correctly.
+
 [Test Case]
+
+This test function will launch a lxd container with an affected configuration,
+and check that the static6 interface is configured as expected.
+
+(Note that it relies on manual inspection of the output for validation, and
+because the interfaces being configured don't actually have network
+connectivity, the "wait" step takes longer than usual.)
+
+```
+lp1850988() {
+    release=$1
+    ref=$release-proposed
+    name=$release-lp1850988
+
+    mac_address="00:50:56:89:b7:48"
+    cat > network.yaml << EOF
+version: 1
+config:
+    - subnets:
+        - control: auto
+          netmask: 255.255.255.0
+          type: static
+          address: 1.1.1.4
+        - netmask: 64
+          type: static6
+          address: 2600::10
+      type: physical
+      name: ens192
+      mac_address: $mac_address
+EOF
+
+    # https://github.com/cloud-init/qa-scripts/blob/master/scripts/lxc-proposed-snapshot
+    lxc-proposed-snapshot --proposed --publish $release $ref
+    lxc launch -c user.network-config="$(cat network.yaml)" -c volatile.eth0.hwaddr=$mac_address $ref $name
+
+    lxc exec $name -- cloud-init status --wait
+
+    echo -n "This should be 1: "
+    lxc exec $name -- ip addr | grep -c 'inet6 2600::10/64'
+}
+```
 
 [Regression Potential]
 
+The change effectively expands checks for "static" to include "static6" also,
+so there are no significantly new code paths.
+
+The biggest regression risk is for users who unknowingly have configuration
+that is affected by this bug; they will see a change in behaviour (specifically
+their network configuration) on their next boot.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
-
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
-EOF
-
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series
-   ref=$series-proposed
-   lxc delete test-$series --force 2> /dev/null
-   lxc init  test-$series
-   lxc config set test-$series user.user-data - < some.yaml
-   lxc start test-$series
-   lxc exec test-$series -- cloud-init status --wait --long
-
-   # Add specific tests
-   echo '=== END ' $series
-done
-
+  https://github.com/canonical/cloud-init/commit/dacdd30080bd8183d1f1c1dc9dbcbc8448301529
 
 === End SRU Template ===
