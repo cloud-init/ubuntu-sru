@@ -4,32 +4,76 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1852496
 === Begin SRU Template ===
 [Impact]
 
+cloud-init will crash for users passing empty configuration to the NoCloud data
+source, or users running on platforms that pass empty configuration to the
+NoCloud data source, meaning that most of cloud-init's behaviour will not be
+executed.
+
 [Test Case]
+
+In addition to the original reported traceback, we can also trigger this with
+the `net-convert` development tooling:
+
+```
+# cat in.yaml
+version: 1
+config: []
+# cloud-init devel net-convert -p in.yaml -k yaml -d out -D ubuntu -O netplan
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 9, in <module>
+    load_entry_point('cloud-init==19.3', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2539, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/devel/net_convert.py", line 97, in handle_args
+    raise RuntimeError("No valid network_state object created from"
+RuntimeError: No valid network_state object created frominput data
+```
+
+Therefore this gives us this testcase:
+
+```
+lp1852496() {
+    release=$1
+    name=$release-lp1852496
+
+    cat >> lp1852496.yaml << EOF
+version: 1
+config: []
+EOF
+
+    lxc launch ubuntu:$release $name
+
+    lxc exec $name -- cloud-init status --wait
+
+    lxc file push lp1852496.yaml $name/tmp/
+
+    echo "This should traceback: "
+    lxc exec $name -- cloud-init devel net-convert -p /tmp/lp1852496.yaml -k yaml -d out -D ubuntu -O netplan
+
+    echo "deb http://archive.ubuntu.com/ubuntu $release-proposed main" | lxc exec $name -- tee /etc/apt/sources.list.d/proposed.list
+    lxc exec $name -- apt-get update -q
+    lxc exec $name -- apt-get install -qy cloud-init
+
+    echo "This should complete without traceback: "
+    lxc exec $name -- cloud-init devel net-convert -p /tmp/lp1852496.yaml -k yaml -d out -D ubuntu -O netplan
+}
+```
 
 [Regression Potential]
 
+There is limited regression potential, as the current case causes a traceback.
+Some users may see cloud-init complete successfully for the first time, which
+may cause the behaviour they observe to change.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
+  https://github.com/canonical/cloud-init/commit/34ec440c1ad61c23c34b46f1798813d0f3ada952
 
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
-EOF
+=== End SRU Template ===
 
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series
-   ref=$series-proposed
-   lxc delete test-$series --force 2> /dev/null
-   lxc init  test-$series
-   lxc config set test-$series user.user-data - < some.yaml
-   lxc start test-$series
-   lxc exec test-$series -- cloud-init status --wait --long
 
-   # Add specific tests
-   echo '=== END ' $series
-done
 
 
 === End SRU Template ===
