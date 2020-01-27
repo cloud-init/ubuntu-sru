@@ -4,32 +4,305 @@ https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1852496
 === Begin SRU Template ===
 [Impact]
 
+cloud-init will crash for users passing empty configuration to the NoCloud data
+source, or users running on platforms that pass empty configuration to the
+NoCloud data source, meaning that most of cloud-init's behaviour will not be
+executed.
+
 [Test Case]
+
+In addition to the original reported traceback, we can also trigger this with
+the `net-convert` development tooling:
+
+```
+# cat in.yaml
+version: 1
+config: []
+# cloud-init devel net-convert -p in.yaml -k yaml -d out -D ubuntu -O netplan
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 9, in <module>
+    load_entry_point('cloud-init==19.3', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2539, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/devel/net_convert.py", line 97, in handle_args
+    raise RuntimeError("No valid network_state object created from"
+RuntimeError: No valid network_state object created frominput data
+```
+
+Therefore this gives us this testcase:
+
+```
+lp1852496() {
+    release=$1
+    name=$release-lp1852496
+
+    cat >> lp1852496.yaml << EOF
+version: 1
+config: []
+EOF
+
+    lxc launch ubuntu:$release $name
+
+    lxc exec $name -- cloud-init status --wait
+
+    lxc file push lp1852496.yaml $name/tmp/
+
+    echo "This should traceback: "
+    lxc exec $name -- cloud-init devel net-convert -p /tmp/lp1852496.yaml -k yaml -d out -D ubuntu -O netplan
+
+    echo "deb http://archive.ubuntu.com/ubuntu $release-proposed main" | lxc exec $name -- tee /etc/apt/sources.list.d/proposed.list
+    lxc exec $name -- apt-get update -q
+    lxc exec $name -- apt-get install -qy cloud-init
+
+    echo "This should complete without traceback: "
+    lxc exec $name -- cloud-init devel net-convert -p /tmp/lp1852496.yaml -k yaml -d out -D ubuntu -O netplan
+}
+```
 
 [Regression Potential]
 
+There is limited regression potential, as the current case causes a traceback.
+Some users may see cloud-init complete successfully for the first time, which
+may cause the behaviour they observe to change.
+
 [Other Info]
 Upstream commit at
-  https://git.launchpad.net/cloud-init/commit/?id=XXXXXXXXXX
-
-cat > some.yaml <<EOF
-#cloud-config
-hostname: sru-test
-EOF
-
-# Perform individual bug tests using lxd for speed where possible
-for series in xenial bionic cosmic disco; do
-   echo '=== BEGIN ' $series
-   ref=$series-proposed
-   lxc delete test-$series --force 2> /dev/null
-   lxc init  test-$series
-   lxc config set test-$series user.user-data - < some.yaml
-   lxc start test-$series
-   lxc exec test-$series -- cloud-init status --wait --long
-
-   # Add specific tests
-   echo '=== END ' $series
-done
-
+  https://github.com/canonical/cloud-init/commit/34ec440c1ad61c23c34b46f1798813d0f3ada952
 
 === End SRU Template ===
+
+=== Verification Output ===
+
+==== xenial ====
+
+Creating xenial-lp1852496
+Starting xenial-lp1852496
+.................
+status: done
+This should traceback:
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 9, in <module>
+    load_entry_point('cloud-init==19.3', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2539, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/devel/net_convert.py", line 97, in handle_args
+    raise RuntimeError("No valid network_state object created from"
+RuntimeError: No valid network_state object created frominput data
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [810 kB]
+Get:8 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [310 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [476 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [195 kB]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [5728 B]
+Get:13 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2708 B]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1091 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [419 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [780 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [327 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.8 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8468 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [51.9 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [21.1 kB]
+Fetched 17.3 MB in 3s (4738 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 25 not upgraded.
+Need to get 413 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~16.04.1 [413 kB]
+Fetched 413 kB in 0s (5636 kB/s)
+Preconfiguring packages ...
+(Reading database ... 25749 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) over (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+This should complete without traceback:
+Read input format 'yaml' from '/tmp/lp1852496.yaml'.
+Wrote output format 'netplan' to 'out/'
+
+==== bionic ====
+
+Creating bionic-lp1852496
+Starting bionic-lp1852496
+.....................
+status: done
+This should traceback:
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 11, in <module>
+    load_entry_point('cloud-init==19.3', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2539, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/devel/net_convert.py", line 97, in handle_args
+    raise RuntimeError("No valid network_state object created from"
+RuntimeError: No valid network_state object created frominput data
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [611 kB]
+Get:8 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [199 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/restricted amd64 Packages [18.4 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/restricted Translation-en [5408 B]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [634 kB]
+Get:13 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [213 kB]
+Get:14 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [6116 B]
+Get:15 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2600 B]
+Get:16 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [833 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [292 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/restricted amd64 Packages [27.4 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/restricted Translation-en [7356 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1044 kB]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [322 kB]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [9500 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [4540 B]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [2512 B]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [1644 B]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [4032 B]
+Get:29 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [1900 B]
+Get:30 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [117 kB]
+Get:31 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [45.5 kB]
+Fetched 18.7 MB in 4s (4653 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 40 not upgraded.
+Need to get 409 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~18.04.1 [409 kB]
+Fetched 409 kB in 0s (5119 kB/s)
+Preconfiguring packages ...
+(Reading database ... 28654 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) over (19.3-41-gc4735dd3-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+This should complete without traceback:
+Read input format 'yaml' from '/tmp/lp1852496.yaml'.
+Wrote output format 'netplan' to 'out/'
+
+==== eoan ====
+
+Creating eoan-lp1852496
+Starting eoan-lp1852496
+.............................................................................
+status: done
+This should traceback:
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 11, in <module>
+    load_entry_point('cloud-init==19.3', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2539, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/devel/net_convert.py", line 97, in handle_args
+    raise RuntimeError("No valid network_state object created from"
+RuntimeError: No valid network_state object created frominput data
+deb http://archive.ubuntu.com/ubuntu eoan-proposed main
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [122 kB]
+Get:8 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [45.0 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/restricted amd64 Packages [7924 B]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/restricted Translation-en [1440 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [56.2 kB]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [30.4 kB]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [2072 B]
+Get:15 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1176 B]
+Get:16 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:17 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:21 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [188 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [71.4 kB]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [90.0 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [46.3 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [2556 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [1176 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [632 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [112 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [108 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [2936 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1324 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [188 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [33.9 kB]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [16.6 kB]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1308 B]
+Fetched 15.7 MB in 3s (4723 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 45 not upgraded.
+Need to get 405 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~19.10.1 [405 kB]
+Fetched 405 kB in 0s (5246 kB/s)
+Preconfiguring packages ...
+(Reading database ... 30037 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) over (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+This should complete without traceback:
+Read input format 'yaml' from '/tmp/lp1852496.yaml'.
+Wrote output format 'netplan' to 'out/'
