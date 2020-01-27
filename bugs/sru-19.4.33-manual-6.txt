@@ -1,0 +1,326 @@
+=== Begin SRU Template ===
+[Impact]
+Validate that growpart behavior is still honored on Ubuntu without Tracebacks.
+
+Failure to resize partitions could result in space constraints on VMs at
+runtime.
+
+
+[Test Case]
+
+1. Setup multipass local.driver=libvirt so we can manage image resizing via virsh/qemu-image
+2. Deploy a multipass vm
+3. Upgrade cloud-init to -proposed
+4. Stop VM
+5. Resize image adding 5Gig
+6. Restart VM
+7. Make sure no Tracebacks and  '/' resized: changed (/dev/vda) in cloud-init.log
+
+#!/bin/sh
+set -x
+
+
+sudo multipass local.driver=libvirt
+ 
+# To be adapted to the SRU to test
+SRU_SERIES="xenial bionic eoan"
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    multipass launch daily:$series -n test-$series
+    multipass copy-files setup_proposed.sh test-$series:.
+    multipass exec test-$series sudo bash ./setup_proposed.sh
+    multipass exec test-$series sudo rm /var/log/cloud-init.log
+    multipass stop test-$series
+    DISK_IMG=`virsh domblklist test-$series | awk '/img/{print $2}'`
+    sleep 15
+    sudo qemu-img resize $DISK_IMG +5G
+    multipass start test-$series
+    sleep 20
+    multipass exec test-$series -- cloud-init status --wait --long
+    multipass exec test-$series egrep 'growpart|Trace' /var/log/cloud-init.log
+    echo "### END $series"
+done
+
+[Regression Potential]
+Minimal changes here to Ubuntu code path, just a regex difference. If we don't
+see a Trace during the resize attempt regression is unlikely.
+
+[Other Info]
+Upstream commit at 
+https://git.launchpad.net/cloud-init/commit/?id=bb4131a2
+
+
+====== BEGIN SRU verification logs =======
++ sudo multipass local.driver=libvirt
+Error: Unknown Command 'local.driver=libvirt' (try "multipass help")
++ SRU_SERIES=xenial bionic eoan
++ cat
++ echo ### BEGIN xenial
+### BEGIN xenial
++ multipass launch daily:xenial -n test-xenial
+Launched: test-xenial
++ multipass copy-files setup_proposed.sh test-xenial:.
++ multipass exec test-xenial sudo bash ./setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [810 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7,532 kB]
+Get:8 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4,354 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [310 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [476 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [195 kB]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [5,728 B]
+Get:13 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2,708 B]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1,096 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [420 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [780 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [327 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.8 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8,468 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7,280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4,456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8,064 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4,328 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [52.5 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [21.6 kB]
+Fetched 17.3 MB in 8s (2,092 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 38 not upgraded.
+Need to get 413 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~16.04.1 [413 kB]
+Fetched 413 kB in 0s (432 kB/s)
+Preconfiguring packages ...
+(Reading database ... 54249 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) over (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ multipass exec test-xenial sudo rm /var/log/cloud-init.log
++ multipass stop test-xenial
++ + virsh domblklist test-xenial
+awk /img/{print $2}
++ DISK_IMG=/var/snap/multipass/common/data/multipassd/vault/instances/test-xenial/xenial-server-cloudimg-amd64-disk1.img
++ sleep 15
++ sudo qemu-img resize /var/snap/multipass/common/data/multipassd/vault/instances/test-xenial/xenial-server-cloudimg-amd64-disk1.img +5G
+Image resized.
++ multipass start test-xenial
++ sleep 20
++ multipass exec test-xenial -- cloud-init status --wait --long
+
+status: done
+time: Mon, 27 Jan 2020 21:21:14 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
++ multipass exec test-xenial egrep growpart|Trace /var/log/cloud-init.log
+2020-01-27 21:21:13,105 - stages.py[DEBUG]: Running module growpart (<module 'cloudinit.config.cc_growpart' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_growpart.py'>) with frequency always
+2020-01-27 21:21:13,106 - handlers.py[DEBUG]: start: init-network/config-growpart: running config-growpart with frequency always
+2020-01-27 21:21:13,106 - helpers.py[DEBUG]: Running config-growpart using lock (<cloudinit.helpers.DummyLock object at 0x7f2ea76e1828>)
+2020-01-27 21:21:13,106 - util.py[DEBUG]: Running command ['growpart', '--help'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:21:13,114 - util.py[DEBUG]: Running command ['growpart', '--dry-run', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:21:13,184 - util.py[DEBUG]: Running command ['growpart', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:21:13,248 - cc_growpart.py[INFO]: '/' resized: changed (/dev/vda, 1) from 5367643648 to 10736352768
+2020-01-27 21:21:13,248 - handlers.py[DEBUG]: finish: init-network/config-growpart: SUCCESS: config-growpart ran successfully
++ echo ### END xenial
+### END xenial
++ echo ### BEGIN bionic
+### BEGIN bionic
++ multipass launch daily:bionic -n test-bionic
+Launched: test-bionic
++ multipass copy-files setup_proposed.sh test-bionic:.
++ multipass exec test-bionic sudo bash ./setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [611 kB]
+Get:5 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [200 kB]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [634 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [213 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [6116 B]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2600 B]
+Get:11 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [838 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [294 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/restricted amd64 Packages [28.4 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/restricted Translation-en [7540 B]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1045 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [323 kB]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [9516 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [4540 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [2512 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [1644 B]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [4032 B]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [1900 B]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [122 kB]
+Get:29 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [47.9 kB]
+Fetched 18.7 MB in 6s (3057 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  grub-pc-bin
+Use 'sudo apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 44 not upgraded.
+Need to get 409 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~18.04.1 [409 kB]
+Fetched 409 kB in 1s (434 kB/s)
+Preconfiguring packages ...
+(Reading database ... 60037 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) over (19.3-41-gc4735dd3-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
++ multipass exec test-bionic sudo rm /var/log/cloud-init.log
++ multipass stop test-bionic
++ virsh domblklist test-bionic
++ awk /img/{print $2}
++ DISK_IMG=/var/snap/multipass/common/data/multipassd/vault/instances/test-bionic/bionic-server-cloudimg-amd64.img
++ sleep 15
++ sudo qemu-img resize /var/snap/multipass/common/data/multipassd/vault/instances/test-bionic/bionic-server-cloudimg-amd64.img +5G
+Image resized.
++ multipass start test-bionic
++ sleep 20
++ multipass exec test-bionic -- cloud-init status --wait --long
+
+status: done
+time: Mon, 27 Jan 2020 21:22:59 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
++ multipass exec test-bionic egrep growpart|Trace /var/log/cloud-init.log
+2020-01-27 21:22:57,244 - stages.py[DEBUG]: Running module growpart (<module 'cloudinit.config.cc_growpart' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_growpart.py'>) with frequency always
+2020-01-27 21:22:57,246 - handlers.py[DEBUG]: start: init-network/config-growpart: running config-growpart with frequency always
+2020-01-27 21:22:57,246 - helpers.py[DEBUG]: Running config-growpart using lock (<cloudinit.helpers.DummyLock object at 0x7feff5165438>)
+2020-01-27 21:22:57,246 - util.py[DEBUG]: Running command ['growpart', '--help'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:22:57,267 - util.py[DEBUG]: Running command ['growpart', '--dry-run', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:22:57,350 - util.py[DEBUG]: Running command ['growpart', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:22:57,429 - cc_growpart.py[INFO]: '/' resized: changed (/dev/vda, 1) from 5252300288 to 10621009408
+2020-01-27 21:22:57,429 - handlers.py[DEBUG]: finish: init-network/config-growpart: SUCCESS: config-growpart ran successfully
++ echo ### END bionic
+### END bionic
++ echo ### BEGIN eoan
+### BEGIN eoan
++ multipass launch daily:eoan -n test-eoan
+Launched: test-eoan
++ multipass copy-files setup_proposed.sh test-eoan:.
++ multipass exec test-eoan sudo bash ./setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu eoan-proposed main
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [122 kB]
+Get:5 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [56.2 kB]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [30.4 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [2072 B]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1176 B]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:11 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:12 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:13 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:14 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:19 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [191 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [72.3 kB]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/restricted amd64 Packages [8728 B]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/restricted Translation-en [1512 B]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [90.1 kB]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [46.4 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [2556 B]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [1176 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [632 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [112 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [108 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [2936 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1324 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [188 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [38.9 kB]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [19.2 kB]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1308 B]
+Fetched 15.6 MB in 6s (2737 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 38 not upgraded.
+Need to get 405 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~19.10.1 [405 kB]
+Fetched 405 kB in 1s (434 kB/s)
+Preconfiguring packages ...
+(Reading database ... 61894 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) over (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
++ multipass exec test-eoan sudo rm /var/log/cloud-init.log
++ multipass stop test-eoan
++ virsh domblklist test-eoan
++ awk /img/{print $2}
++ DISK_IMG=/var/snap/multipass/common/data/multipassd/vault/instances/test-eoan/eoan-server-cloudimg-amd64.img
++ sleep 15
++ sudo qemu-img resize /var/snap/multipass/common/data/multipassd/vault/instances/test-eoan/eoan-server-cloudimg-amd64.img +5G
+Image resized.
++ multipass start test-eoan
++ sleep 20
++ multipass exec test-eoan -- cloud-init status --wait --long
+
+status: done
+time: Mon, 27 Jan 2020 21:26:58 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
++ multipass exec test-eoan egrep growpart|Trace /var/log/cloud-init.log
+2020-01-27 21:26:54,535 - stages.py[DEBUG]: Running module growpart (<module 'cloudinit.config.cc_growpart' from '/usr/lib/python3/dist-packages/cloudinit/config/cc_growpart.py'>) with frequency always
+2020-01-27 21:26:54,535 - handlers.py[DEBUG]: start: init-network/config-growpart: running config-growpart with frequency always
+2020-01-27 21:26:54,535 - helpers.py[DEBUG]: Running config-growpart using lock (<cloudinit.helpers.DummyLock object at 0x7f0736dd85d0>)
+2020-01-27 21:26:54,535 - util.py[DEBUG]: Running command ['growpart', '--help'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:26:54,561 - util.py[DEBUG]: Running command ['growpart', '--dry-run', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:26:54,640 - util.py[DEBUG]: Running command ['growpart', '/dev/vda', '1'] with allowed return codes [0] (shell=False, capture=True)
+2020-01-27 21:26:54,971 - cc_growpart.py[INFO]: '/' resized: changed (/dev/vda, 1) from 5252300288 to 10621009408
+2020-01-27 21:26:54,971 - handlers.py[DEBUG]: finish: init-network/config-growpart: SUCCESS: config-growpart ran successfully
++ echo ### END eoan
+### END eoan
+====== END SRU verification logs =======
