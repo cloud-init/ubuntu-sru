@@ -1,7 +1,7 @@
 === Begin SRU Template ===
 [Impact]
 Images which configure multiple ssh authorized key files for users via
-setting AuthorizedKeysFiles = <file1> <file2> would result in the creation of
+setting AuthorizedKeysFile = <file1> <file2> would result in the creation of
 of an empty .ssh/ subdirectory.
 
 In this scenario, old/broken cloud-init would emit and empty
@@ -16,7 +16,7 @@ The resulting set of keys is written into <file1>, which on Ubuntu is
 .ssh/authorized_keys
 
 [Test Case]
-Create an lxc instance with AuthorizedKeyFiles configured for mulitple files:
+Create an lxc instance with `AuthorizedKeysFile` configured for multiple files:
 
 AuthorizedKeysFile  %h/.ssh/authorized_keys /default_keys
 
@@ -55,7 +55,6 @@ apt-get update -q
 apt-get install -qy cloud-init
 EOF
 
-
 for series in $SRU_SERIES; do
   lxc launch ubuntu-daily:$series test-$series -c user.user-data="$(cat importme.yaml)"
   sleep 5
@@ -63,7 +62,7 @@ for series in $SRU_SERIES; do
   lxc file push setup_proposed.sh setup_ssh_multi_keys.sh test-$series/
   lxc exec test-$series -- bash /setup_ssh_multi_keys.sh
   lxc exec test-$series -- cloud-init clean --logs --reboot
-  sleep 5
+  sleep 10
   lxc exec test-$series -- cloud-init status --wait --long
   echo '--- Expect funky subdir in .ssh ---'
   lxc exec test-$series -- find /home/ubuntu/.ssh
@@ -72,7 +71,7 @@ for series in $SRU_SERIES; do
   lxc exec test-$series -- bash /setup_proposed.sh | grep cloud-init
   lxc exec test-$series -- bash /setup_ssh_multi_keys.sh
   lxc exec test-$series -- cloud-init clean --logs --reboot
-  sleep 5
+  sleep 10
   lxc exec test-$series -- cloud-init status --wait --long
   echo '--- Expect only authorized_keys file in .ssh ---'
   lxc exec test-$series -- find /home/ubuntu/.ssh
@@ -102,19 +101,19 @@ Creating test-xenial
 Starting test-xenial
 + sleep 5
 + lxc exec test-xenial -- cloud-init status --wait --long
-..........
+........
 status: done
-time: Mon, 27 Jan 2020 23:53:53 +0000
+time: Tue, 28 Jan 2020 18:18:52 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc file push setup_proposed.sh setup_ssh_multi_keys.sh test-xenial/
 + lxc exec test-xenial -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-xenial -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-xenial -- cloud-init status --wait --long
 
 status: done
-time: Mon, 27 Jan 2020 23:54:01 +0000
+time: Tue, 28 Jan 2020 18:19:00 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + echo --- Expect funky subdir in .ssh ---
@@ -122,7 +121,7 @@ DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-xenial -- find /home/ubuntu/.ssh
 /home/ubuntu/.ssh
 /home/ubuntu/.ssh/authorized_keys
-/home/ubuntu/.ssh/authorized_keys
+/home/ubuntu/.ssh/authorized_keys 
 /home/ubuntu/.ssh/authorized_keys /default_keys
 + echo --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
 --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
@@ -132,8 +131,8 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/
 
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDvl3VfPjVXsXBsm6r2J+UneIMr4ZOJhQlXuBWTwzexbd/XugB3k5EXA18yyqjEVT+bApVwlxATY66drVUPBuZ2JMU1HuLOKhG6toZd7j042oV5b2TEvg0es9qxs9mtGzvMPf3mB3tBVY/ESall023M+J5JjGGSO4J3zM/9c+P3Hs7xyCjAoySZDN2VZzscPgSGZzck8xtyO39uPfscKXi9LJkkhDDG6SVWie5OeM8TxyH2W2eNDKeXid/qgdIxqRLSYiNnWpt9htI0SzahnFYtsw9VLkij+0cM29lBIGUr5AehN2Y6jetxODR3pZt4YqOiyC6D5NaEsVGKOb0zjIBBCso6mIseejlOwocSYUH21YnLDS2Mu31bHRmPjpRvMVTOFtnS2OkfOxYTyMNFZ5PH/a0/t3DGxZZqz74F+APxG1X0vsgSFA9yYzbBaY3fr3vNAEYsRMTeBIjF6Gx6QmX3/kw5KBid4t8qQCV4Z1l8UmWZu4qFYxV/Z0IYPZazgYy/1W0qfRm5AdvpDdH9XArIokwqe1E2Djp5/xWp4Z9dAINmfJvNZxiDJk7gQz+Hdka/1U/f3wQSds9OAjF+a94Lj+F9CmMrhpVEZG5OL8ysK4iwSOsDhW7iLeZw5AO7cVhDUWj53/p2FP4+zxin/tYkDhNTJF0Nhc2uLMLxRCOGrQ== csmith@uptown # ssh-import-id lp:chad.smith
 
-+ lxc exec test-xenial -- bash /setup_proposed.sh
-+ grep cloud-init
++ + greplxc cloud-init exec
+ test-xenial -- bash /setup_proposed.sh
   cloud-init
 Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~16.04.1 [413 kB]
 dpkg-preconfigure: unable to re-open stdin: No such file or directory
@@ -143,9 +142,14 @@ Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
 Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
 + lxc exec test-xenial -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-xenial -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-xenial -- cloud-init status --wait --long
-...................+ echo --- Expect only authorized_keys file in .ssh ---
+
+status: done
+time: Tue, 28 Jan 2020 18:19:26 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo --- Expect only authorized_keys file in .ssh ---
 --- Expect only authorized_keys file in .ssh ---
 + lxc exec test-xenial -- find /home/ubuntu/.ssh
 /home/ubuntu/.ssh
@@ -154,6 +158,11 @@ Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.dis
 --- Expect chad.smith, localkey and defaultkey in authorized_keys ---
 + lxc exec test-xenial -- cat /home/ubuntu/.ssh/authorized_keys
 ssh-rsa localkey
+ssh-rsa defaultkey
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB csmith@fringe # ssh-import-id lp:chad.smith
+
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDvl3VfPjVXsXBsm6r2J+UneIMr4ZOJhQlXuBWTwzexbd/XugB3k5EXA18yyqjEVT+bApVwlxATY66drVUPBuZ2JMU1HuLOKhG6toZd7j042oV5b2TEvg0es9qxs9mtGzvMPf3mB3tBVY/ESall023M+J5JjGGSO4J3zM/9c+P3Hs7xyCjAoySZDN2VZzscPgSGZzck8xtyO39uPfscKXi9LJkkhDDG6SVWie5OeM8TxyH2W2eNDKeXid/qgdIxqRLSYiNnWpt9htI0SzahnFYtsw9VLkij+0cM29lBIGUr5AehN2Y6jetxODR3pZt4YqOiyC6D5NaEsVGKOb0zjIBBCso6mIseejlOwocSYUH21YnLDS2Mu31bHRmPjpRvMVTOFtnS2OkfOxYTyMNFZ5PH/a0/t3DGxZZqz74F+APxG1X0vsgSFA9yYzbBaY3fr3vNAEYsRMTeBIjF6Gx6QmX3/kw5KBid4t8qQCV4Z1l8UmWZu4qFYxV/Z0IYPZazgYy/1W0qfRm5AdvpDdH9XArIokwqe1E2Djp5/xWp4Z9dAINmfJvNZxiDJk7gQz+Hdka/1U/f3wQSds9OAjF+a94Lj+F9CmMrhpVEZG5OL8ysK4iwSOsDhW7iLeZw5AO7cVhDUWj53/p2FP4+zxin/tYkDhNTJF0Nhc2uLMLxRCOGrQ== csmith@uptown # ssh-import-id lp:chad.smith
+
 + cat importme.yaml
 + lxc launch ubuntu-daily:bionic test-bionic -c user.user-data=## template: jinja
 #cloud-config
@@ -162,19 +171,19 @@ Creating test-bionic
 Starting test-bionic
 + sleep 5
 + lxc exec test-bionic -- cloud-init status --wait --long
-.....................
+..............
 status: done
-time: Mon, 27 Jan 2020 23:55:40 +0000
+time: Tue, 28 Jan 2020 18:19:44 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc file push setup_proposed.sh setup_ssh_multi_keys.sh test-bionic/
 + lxc exec test-bionic -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-bionic -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-bionic -- cloud-init status --wait --long
-..................
+
 status: done
-time: Mon, 27 Jan 2020 23:55:51 +0000
+time: Tue, 28 Jan 2020 18:19:54 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + echo --- Expect funky subdir in .ssh ---
@@ -182,7 +191,7 @@ DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-bionic -- find /home/ubuntu/.ssh
 /home/ubuntu/.ssh
 /home/ubuntu/.ssh/authorized_keys
-/home/ubuntu/.ssh/authorized_keys
+/home/ubuntu/.ssh/authorized_keys 
 /home/ubuntu/.ssh/authorized_keys /default_keys
 + echo --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
 --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
@@ -192,8 +201,8 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/
 
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDvl3VfPjVXsXBsm6r2J+UneIMr4ZOJhQlXuBWTwzexbd/XugB3k5EXA18yyqjEVT+bApVwlxATY66drVUPBuZ2JMU1HuLOKhG6toZd7j042oV5b2TEvg0es9qxs9mtGzvMPf3mB3tBVY/ESall023M+J5JjGGSO4J3zM/9c+P3Hs7xyCjAoySZDN2VZzscPgSGZzck8xtyO39uPfscKXi9LJkkhDDG6SVWie5OeM8TxyH2W2eNDKeXid/qgdIxqRLSYiNnWpt9htI0SzahnFYtsw9VLkij+0cM29lBIGUr5AehN2Y6jetxODR3pZt4YqOiyC6D5NaEsVGKOb0zjIBBCso6mIseejlOwocSYUH21YnLDS2Mu31bHRmPjpRvMVTOFtnS2OkfOxYTyMNFZ5PH/a0/t3DGxZZqz74F+APxG1X0vsgSFA9yYzbBaY3fr3vNAEYsRMTeBIjF6Gx6QmX3/kw5KBid4t8qQCV4Z1l8UmWZu4qFYxV/Z0IYPZazgYy/1W0qfRm5AdvpDdH9XArIokwqe1E2Djp5/xWp4Z9dAINmfJvNZxiDJk7gQz+Hdka/1U/f3wQSds9OAjF+a94Lj+F9CmMrhpVEZG5OL8ysK4iwSOsDhW7iLeZw5AO7cVhDUWj53/p2FP4+zxin/tYkDhNTJF0Nhc2uLMLxRCOGrQ== csmith@uptown # ssh-import-id lp:chad.smith
 
-+ + grep cloud-init
-lxc exec test-bionic -- bash /setup_proposed.sh
++ lxc exec test-bionic -- bash /setup_proposed.sh
++ grep cloud-init
   cloud-init
 Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~18.04.1 [409 kB]
 dpkg-preconfigure: unable to re-open stdin: No such file or directory
@@ -202,11 +211,11 @@ Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) over (19.3-41-gc4735dd
 Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
 + lxc exec test-bionic -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-bionic -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-bionic -- cloud-init status --wait --long
-..............
+
 status: done
-time: Mon, 27 Jan 2020 23:56:34 +0000
+time: Tue, 28 Jan 2020 18:20:22 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + echo --- Expect only authorized_keys file in .ssh ---
@@ -231,19 +240,19 @@ Creating test-eoan
 Starting test-eoan
 + sleep 5
 + lxc exec test-eoan -- cloud-init status --wait --long
-.....................................................................
+.........................................................
 status: done
-time: Mon, 27 Jan 2020 23:57:01 +0000
+time: Tue, 28 Jan 2020 18:20:46 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc file push setup_proposed.sh setup_ssh_multi_keys.sh test-eoan/
 + lxc exec test-eoan -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-eoan -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-eoan -- cloud-init status --wait --long
-...................
+
 status: done
-time: Mon, 27 Jan 2020 23:57:12 +0000
+time: Tue, 28 Jan 2020 18:20:56 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + echo --- Expect funky subdir in .ssh ---
@@ -251,7 +260,7 @@ DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-eoan -- find /home/ubuntu/.ssh
 /home/ubuntu/.ssh
 /home/ubuntu/.ssh/authorized_keys
-/home/ubuntu/.ssh/authorized_keys
+/home/ubuntu/.ssh/authorized_keys 
 /home/ubuntu/.ssh/authorized_keys /default_keys
 + echo --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
 --- Expect only chad.smith and localkey in .ssh/authorized_keys ---
@@ -261,8 +270,8 @@ ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/
 
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDvl3VfPjVXsXBsm6r2J+UneIMr4ZOJhQlXuBWTwzexbd/XugB3k5EXA18yyqjEVT+bApVwlxATY66drVUPBuZ2JMU1HuLOKhG6toZd7j042oV5b2TEvg0es9qxs9mtGzvMPf3mB3tBVY/ESall023M+J5JjGGSO4J3zM/9c+P3Hs7xyCjAoySZDN2VZzscPgSGZzck8xtyO39uPfscKXi9LJkkhDDG6SVWie5OeM8TxyH2W2eNDKeXid/qgdIxqRLSYiNnWpt9htI0SzahnFYtsw9VLkij+0cM29lBIGUr5AehN2Y6jetxODR3pZt4YqOiyC6D5NaEsVGKOb0zjIBBCso6mIseejlOwocSYUH21YnLDS2Mu31bHRmPjpRvMVTOFtnS2OkfOxYTyMNFZ5PH/a0/t3DGxZZqz74F+APxG1X0vsgSFA9yYzbBaY3fr3vNAEYsRMTeBIjF6Gx6QmX3/kw5KBid4t8qQCV4Z1l8UmWZu4qFYxV/Z0IYPZazgYy/1W0qfRm5AdvpDdH9XArIokwqe1E2Djp5/xWp4Z9dAINmfJvNZxiDJk7gQz+Hdka/1U/f3wQSds9OAjF+a94Lj+F9CmMrhpVEZG5OL8ysK4iwSOsDhW7iLeZw5AO7cVhDUWj53/p2FP4+zxin/tYkDhNTJF0Nhc2uLMLxRCOGrQ== csmith@uptown # ssh-import-id lp:chad.smith
 
-+ lxc exec test-eoan -- bash /setup_proposed.sh
-+ grep cloud-init
++ lxc exec test-eoan --+  bash /setup_proposed.sh
+grep cloud-init
   cloud-init
 Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~19.10.1 [405 kB]
 dpkg-preconfigure: unable to re-open stdin: No such file or directory
@@ -271,11 +280,11 @@ Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) over (19.3-41-gc4735dd
 Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
 + lxc exec test-eoan -- bash /setup_ssh_multi_keys.sh
 + lxc exec test-eoan -- cloud-init clean --logs --reboot
-+ sleep 5
++ sleep 10
 + lxc exec test-eoan -- cloud-init status --wait --long
-...................
+
 status: done
-time: Mon, 27 Jan 2020 23:57:41 +0000
+time: Tue, 28 Jan 2020 18:21:25 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + echo --- Expect only authorized_keys file in .ssh ---
@@ -291,6 +300,5 @@ ssh-rsa defaultkey
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB csmith@fringe # ssh-import-id lp:chad.smith
 
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDvl3VfPjVXsXBsm6r2J+UneIMr4ZOJhQlXuBWTwzexbd/XugB3k5EXA18yyqjEVT+bApVwlxATY66drVUPBuZ2JMU1HuLOKhG6toZd7j042oV5b2TEvg0es9qxs9mtGzvMPf3mB3tBVY/ESall023M+J5JjGGSO4J3zM/9c+P3Hs7xyCjAoySZDN2VZzscPgSGZzck8xtyO39uPfscKXi9LJkkhDDG6SVWie5OeM8TxyH2W2eNDKeXid/qgdIxqRLSYiNnWpt9htI0SzahnFYtsw9VLkij+0cM29lBIGUr5AehN2Y6jetxODR3pZt4YqOiyC6D5NaEsVGKOb0zjIBBCso6mIseejlOwocSYUH21YnLDS2Mu31bHRmPjpRvMVTOFtnS2OkfOxYTyMNFZ5PH/a0/t3DGxZZqz74F+APxG1X0vsgSFA9yYzbBaY3fr3vNAEYsRMTeBIjF6Gx6QmX3/kw5KBid4t8qQCV4Z1l8UmWZu4qFYxV/Z0IYPZazgYy/1W0qfRm5AdvpDdH9XArIokwqe1E2Djp5/xWp4Z9dAINmfJvNZxiDJk7gQz+Hdka/1U/f3wQSds9OAjF+a94Lj+F9CmMrhpVEZG5OL8ysK4iwSOsDhW7iLeZw5AO7cVhDUWj53/p2FP4+zxin/tYkDhNTJF0Nhc2uLMLxRCOGrQ== csmith@uptown # ssh-import-id lp:chad.smith
-
 
 ====== END SRU verification logs =======
