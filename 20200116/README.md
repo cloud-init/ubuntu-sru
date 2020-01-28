@@ -17,7 +17,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | SRU manual #2 [# 1850988](http://pad.lv/1850988) | [verification output](../bugs/lp-1850988.txt) |
 | SRU manual #3 [# 1852496](http://pad.lv/1852496) | [verification output](../bugs/lp-1852496.txt) |
 | SRU Manual #4 | [verification output](../bugs/sru-19.4.33-manual-4.txt) |
-| SRU Manual #5 | [verification output](../bugs/sru-19.4.33-manual-5.txt) |
+| SRU Manual #5 | [verification output](../bugs/b59870ca.txt) |
 | SRU Manual #6 | [verification output](../bugs/sru-19.4.33-manual-6.txt) |
 | Manual openstack test | [verification output](../manual/openstack-sru-19.4.33.txt) |
 | Manual oracle test | [verification output](../manual/oracle-sru-19.4.33.txt) |
