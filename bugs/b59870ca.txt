@@ -1,0 +1,368 @@
+# Verification Script
+
+https://github.com/canonical/cloud-init/commit/b59870ca3d8993612452a7b90687e2ed4ad0572a
+
+bug_b59870ca () {
+    release=$1
+    name=test-sru-$release
+    case $release in
+        xenial) image_version="16.04-DAILY-LTS" ;;
+        bionic) image_version="18.04-DAILY-LTS" ;;
+        eoan) image_version="19.10-DAILY" ;;
+        *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+    esac
+
+    cat << EOF > swap.yaml
+#cloud-config
+disk_setup:
+  ephemeral0:
+      table_type: mbr
+      layout: [100]
+      overwrite: True
+fs_setup:
+  - device: ephemeral0.1
+    filesystem: swap
+    overwrite: True
+mounts:
+  - ["ephemeral0.1", "none", "swap", "sw", "0", "0"]
+EOF
+
+    az vm create --name=$name --image="Canonical:UbuntuServer:$image_version:latest" -g xx16resourcegroup --admin-username=ubuntu --custom-data swap.yaml
+    ip=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+
+    sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+    ssh "${sshopts[@]}" $ip -- cloud-init status --wait
+
+    echo "Expect a traceback on the old cloud-init version: "
+    ssh "${sshopts[@]}" $ip -- grep Trace /var/log/cloud-init.log
+    echo -n "Expect there to be no swap configured (this will be 0): "
+    ssh "${sshopts[@]}" $ip -- swapon --show --noheadings | wc -l
+
+    # Upgrade to the new cloud-init version
+    echo deb http://archive.ubuntu.com/ubuntu $release-proposed main | ssh "${sshopts[@]}" $ip -- sudo tee /etc/apt/sources.list.d/proposed.list
+    ssh "${sshopts[@]}" $ip -- sudo apt-get update -q
+    ssh "${sshopts[@]}" $ip -- sudo apt-get install -qy cloud-init
+
+    # Reboot with new cloud-init version (and wait for instance to come back up)
+    ssh "${sshopts[@]}" $ip -- sudo cloud-init clean --logs --reboot
+
+    sleep 20
+    while ! ssh "${sshopts[@]}" $ip -- cloud-init status --wait; do
+        sleep 5
+    done
+
+    echo -n "Expect no tracebacks on the new cloud-init version (this should be 0): "
+    ssh "${sshopts[@]}" $ip -- grep -c Trace /var/log/cloud-init.log
+    echo -n "Expect there to be swap configured (this should be 1): "
+    ssh "${sshopts[@]}" $ip -- swapon --show --noheadings | wc -l
+}
+
+# Verification Output
+
+## xenial
+
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/test-sru-xenial",
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-D8-BD-2E",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.55",
+  "publicIpAddress": "104.41.207.145",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+
+status: done
+Expect a traceback on the old cloud-init version: 
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Expect there to be no swap configured (this will be 0): 0
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Hit:1 http://azure.archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://azure.archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:4 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:5 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1098 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [421 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [781 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [327 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [16.8 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8468 B]
+Get:16 http://azure.archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:17 http://azure.archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:18 http://azure.archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:19 http://azure.archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [28.6 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [11.9 kB]
+Get:22 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [814 kB]
+Get:23 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [311 kB]
+Get:24 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [477 kB]
+Get:25 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [196 kB]
+Get:26 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [5728 B]
+Get:27 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2708 B]
+Fetched 17.2 MB in 3s (4556 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  grub-pc-bin
+Use 'sudo apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 34 not upgraded.
+Need to get 413 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~16.04.1 [413 kB]
+perl: warning: Setting locale failed.
+perl: warning: Please check that your locale settings:
+	LANGUAGE = (unset),
+	LC_ALL = (unset),
+	LC_CTYPE = "en_CA.UTF-8",
+	LANG = "en_US.UTF-8"
+    are supported and installed on your system.
+perl: warning: Falling back to a fallback locale ("en_US.UTF-8").
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 413 kB in 0s (2552 kB/s)
+(Reading database ... 53897 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) over (19.3-41-gc4735dd3-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Connection to 104.41.207.145 closed by remote host.
+ssh: connect to host 104.41.207.145 port 22: Connection refused
+
+status: done
+Expect no tracebacks on the new cloud-init version (this should be 0): 0
+Expect there to be swap configured (this should be 1): 1
+
+## bionic
+
+{
+  "fqdns": "",
+  "id": "/subscriptions/9a37cc2c-dc4a-4097-84dd-45dd2b8cbc63/resourceGroups/xx16resourcegroup/providers/Microsoft.Compute/virtualMachines/test-sru-bionic",
+  "location": "northeurope",
+  "macAddress": "00-0D-3A-D8-B7-C6",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.56",
+  "publicIpAddress": "104.41.206.31",
+  "resourceGroup": "xx16resourcegroup",
+  "zones": ""
+}
+
+status: done
+Expect a traceback on the old cloud-init version: 
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Expect there to be no swap configured (this will be 0): 0
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Hit:1 http://azure.archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://azure.archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:5 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [844 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [295 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu bionic-updates/restricted amd64 Packages [29.3 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu bionic-updates/restricted Translation-en [7764 B]
+Get:14 http://azure.archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1045 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [323 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [9516 B]
+Get:17 http://azure.archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [4540 B]
+Get:18 http://azure.archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [2512 B]
+Get:19 http://azure.archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [1644 B]
+Get:20 http://azure.archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [4032 B]
+Get:21 http://azure.archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [1900 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [89.9 kB]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [33.7 kB]
+Get:24 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [619 kB]
+Get:25 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [202 kB]
+Get:26 http://security.ubuntu.com/ubuntu bionic-security/restricted amd64 Packages [19.5 kB]
+Get:27 http://security.ubuntu.com/ubuntu bionic-security/restricted Translation-en [5632 B]
+Get:28 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [635 kB]
+Get:29 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [214 kB]
+Get:30 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [6116 B]
+Get:31 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2600 B]
+Fetched 18.7 MB in 5s (4060 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages were automatically installed and are no longer required:
+  grub-pc-bin linux-headers-4.15.0-74
+Use 'sudo apt autoremove' to remove them.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 50 not upgraded.
+Need to get 409 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~18.04.1 [409 kB]
+perl: warning: Setting locale failed.
+perl: warning: Please check that your locale settings:
+	LANGUAGE = (unset),
+	LC_ALL = (unset),
+	LC_CTYPE = "en_CA.UTF-8",
+	LANG = "C.UTF-8"
+    are supported and installed on your system.
+perl: warning: Falling back to a fallback locale ("C.UTF-8").
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 409 kB in 0s (4384 kB/s)
+(Reading database ... 74444 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) over (19.3-41-gc4735dd3-0ubuntu1~18.04.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Connection to 104.41.206.31 closed by remote host.
+ssh: connect to host 104.41.206.31 port 22: Connection refused
+
+status: done
+Expect no tracebacks on the new cloud-init version (this should be 0): 0
+Expect there to be swap configured (this should be 1): 1
+
+## eoan
+
+Deployment failed. Correlation ID: c5f4ae5a-960d-4a88-8985-ee30072124b1. {
+  "error": {
+    "code": "ResourceNotFound",
+    "message": "The Resource 'Microsoft.Compute/virtualMachines/test-sru-eoan' under resource group 'xx16resourcegroup' was not found."
+  }
+}
+.........................................
+status: done
+Expect a traceback on the old cloud-init version: 
+Traceback (most recent call last):
+Traceback (most recent call last):
+Traceback (most recent call last):
+Expect there to be no swap configured (this will be 0): 0
+deb http://archive.ubuntu.com/ubuntu eoan-proposed main
+Hit:1 http://azure.archive.ubuntu.com/ubuntu eoan InRelease
+Get:2 http://azure.archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:3 http://azure.archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:4 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:5 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Get:6 http://azure.archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:7 http://azure.archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:8 http://azure.archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:9 http://azure.archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:12 http://azure.archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [193 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [73.0 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu eoan-updates/restricted amd64 Packages [8728 B]
+Get:15 http://azure.archive.ubuntu.com/ubuntu eoan-updates/restricted Translation-en [1512 B]
+Get:16 http://azure.archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [90.6 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [46.7 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [2556 B]
+Get:19 http://azure.archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [1176 B]
+Get:20 http://azure.archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [632 B]
+Get:21 http://azure.archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [112 B]
+Get:22 http://azure.archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [108 B]
+Get:23 http://azure.archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:24 http://azure.archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [2936 B]
+Get:25 http://azure.archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1324 B]
+Get:26 http://azure.archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [188 B]
+Get:27 http://azure.archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [32.8 kB]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [15.4 kB]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1308 B]
+Get:31 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [127 kB]
+Get:32 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [46.6 kB]
+Get:33 http://security.ubuntu.com/ubuntu eoan-security/restricted amd64 Packages [8728 B]
+Get:34 http://security.ubuntu.com/ubuntu eoan-security/restricted Translation-en [1512 B]
+Get:35 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [56.7 kB]
+Get:36 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [30.9 kB]
+Get:37 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [2072 B]
+Get:38 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1176 B]
+Get:39 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:40 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.7 MB in 4s (3964 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 44 not upgraded.
+Need to get 405 kB of archives.
+After this operation, 13.3 kB disk space will be freed.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 19.4-33-gbb4131a2-0ubuntu1~19.10.1 [405 kB]
+perl: warning: Setting locale failed.
+perl: warning: Please check that your locale settings:
+	LANGUAGE = (unset),
+	LC_ALL = (unset),
+	LC_CTYPE = "en_CA.UTF-8",
+	LANG = "C.UTF-8"
+    are supported and installed on your system.
+perl: warning: Falling back to a fallback locale ("C.UTF-8").
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+debconf: unable to initialize frontend: Readline
+debconf: (This frontend requires a controlling tty.)
+debconf: falling back to frontend: Teletype
+dpkg-preconfigure: unable to re-open stdin: 
+Fetched 405 kB in 0s (3778 kB/s)
+(Reading database ... 56750 files and directories currently installed.)
+Preparing to unpack .../cloud-init_19.4-33-gbb4131a2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) over (19.3-41-gc4735dd3-0ubuntu1~19.10.1) ...
+Setting up cloud-init (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/README ...
+locale: Cannot set LC_CTYPE to default locale: No such file or directory
+locale: Cannot set LC_ALL to default locale: No such file or directory
+debconf: unable to initialize frontend: Dialog
+debconf: (Dialog frontend will not work on a dumb terminal, an emacs shell buffer, or without a controlling terminal.)
+debconf: falling back to frontend: Readline
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+Connection to 137.135.141.149 closed by remote host.
+ssh: connect to host 137.135.141.149 port 22: Connection refused
+
+status: done
+Expect no tracebacks on the new cloud-init version (this should be 0): 0
+Expect there to be swap configured (this should be 1): 1
