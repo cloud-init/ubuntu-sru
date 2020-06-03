@@ -1,0 +1,186 @@
+=== Begin SRU Template ===
+[Impact]
+When a user is configuring a snapd service, we must ensure the provided yaml conforms to
+our expected schema. Furthermore, we should also verify if the new properties added to the
+schema are not breaking past snap configs.
+
+[Test Case]
+
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+# Check if necessary scripts are found
+if ! which lxc-proposed-snapshot >/dev/null; then
+	echo "Cannot find lxc-proposd-snapshot, get from qa-scripts repo";
+	return 1
+fi
+
+cat > snap.yaml << EOF
+#cloud-config
+snap:
+  assertions:
+    00: |
+      signed_assertion_blob_here
+    02: |
+      signed_assertion_blob_here
+  commands:
+    00: snap create-user --sudoer --known <snap-user>@mydomain.com
+    01: ['snap', 'install', 'canonical-livepatch']
+    02: canonical-livepatch enable <AUTH_TOKEN>
+EOF
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   lxc delete $name --force 2> /dev/null
+   lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish $SERIES $ref | egrep "Creating|cloud-init"
+   lxc launch $ref $name
+   lxc file push snap.yaml $name/var/tmp/
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- cloud-init status --wait --long
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/snap.yaml || echo "FAILURE"
+done
+```
+
+[Regression Potential]
+
+Some users may rely on old snap config that do not follow the enforced pattern in this schema.
+However, as far as I can see, this can be mitigated by the users adapting their snap configuration
+to follow that pattern. Because this can be easily solvable, we this is an acceptable risk to take.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
++ which lxc-proposed-snapshot
++ cat
++ echo === BEGIN  bionic
+=== BEGIN  bionic
++ ref=bionic-proposed
++ name=test-bionic
++ lxc delete test-bionic --force
++ lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish bionic bionic-proposed
++ egrep Creating|cloud-init
+Creating bionic-proposed-2166513133
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease [15.9 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 Packages [660 B]
+Get:8 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main Translation-en [248 B]
+Hit:2 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease
+  cloud-init
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~18.04.1 [467 kB]
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) ...
++ lxc launch bionic-proposed test-bionic
+Creating test-bionic
+Starting test-bionic
++ lxc file push snap.yaml test-bionic/var/tmp/
++ lxc file push setup_dev_proposed.sh test-bionic/var/tmp/
++ lxc exec test-bionic -- cloud-init status --wait --long
+...................................
+status: done
+time: Wed, 03 Jun 2020 14:31:32 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/snap.yaml
+Valid cloud-config file /var/tmp/snap.yaml
++ echo === BEGIN  eoan
+=== BEGIN  eoan
++ ref=eoan-proposed
++ name=test-eoan
++ lxc delete test-eoan --force
++ lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish eoan eoan-proposed
++ egrep Creating|cloud-init
+Creating eoan-proposed-1196023065
+Get:2 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease [15.9 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 Packages [648 B]
+Get:9 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main Translation-en [248 B]
+Hit:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease
+  cloud-init
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~19.10.1 [469 kB]
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) ...
++ lxc launch eoan-proposed test-eoan
+Creating test-eoan
+Starting test-eoan
++ lxc file push snap.yaml test-eoan/var/tmp/
++ lxc file push setup_dev_proposed.sh test-eoan/var/tmp/
++ lxc exec test-eoan -- cloud-init status --wait --long
+...........................................................................................................
+status: done
+time: Wed, 03 Jun 2020 14:33:44 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/snap.yaml
+Valid cloud-config file /var/tmp/snap.yaml
++ echo === BEGIN  focal
+=== BEGIN  focal
++ ref=focal-proposed
++ name=test-focal
++ lxc delete test-focal --force
++ lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish focal focal-proposed
++ egrep Creating|cloud-init
+Creating focal-proposed-3216624294
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal InRelease [18.0 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main amd64 Packages [656 B]
+Get:11 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main Translation-en [604 B]
+Hit:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal InRelease
+  cloud-init
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~20.04.1 [470 kB]
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~20.04.1) ...
++ lxc launch focal-proposed test-focal
+Creating test-focal
+Starting test-focal
++ lxc file push snap.yaml test-focal/var/tmp/
++ lxc file push setup_dev_proposed.sh test-focal/var/tmp/
++ lxc exec test-focal -- cloud-init status --wait --long
+.......................................................................................
+status: done
+time: Wed, 03 Jun 2020 14:35:56 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/snap.yaml
+Valid cloud-config file /var/tmp/snap.yaml
++ echo === BEGIN  xenial
+=== BEGIN  xenial
++ ref=xenial-proposed
++ name=test-xenial
++ lxc delete test-xenial --force
++ lxc-proposed-snapshot+  --add-archive ppa:~cloud-init-dev/proposed --publish xenial xenial-proposed
+egrep Creating|cloud-init
+Creating xenial-proposed-9219426
+gpg: keyring `/tmp/tmpyd9dblmk/secring.gpg' created
+gpg: keyring `/tmp/tmpyd9dblmk/pubring.gpg' created
+gpg: requesting key E4D304DF from hkp server keyserver.ubuntu.com
+gpg: /tmp/tmpyd9dblmk/trustdb.gpg: trustdb created
+gpg: key E4D304DF: public key "Launchpad PPA for cloud init development team" imported
+gpg: Total number processed: 1
+gpg:               imported: 1  (RSA: 1)
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial InRelease [18.0 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main amd64 Packages [1080 B]
+Get:9 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main Translation-en [480 B]
+  cloud-init
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~16.04.1 [469 kB]
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ lxc launch xenial-proposed test-xenial
+Creating test-xenial
+Starting test-xenial
++ lxc file push snap.yaml test-xenial/var/tmp/
++ lxc file push setup_dev_proposed.sh test-xenial/var/tmp/
++ lxc exec test-xenial -- cloud-init status --wait --long
+...............................
+status: done
+time: Wed, 03 Jun 2020 14:37:31 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/snap.yaml
+Valid cloud-config file /var/tmp/snap.yaml
