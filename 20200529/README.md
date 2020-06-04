@@ -13,6 +13,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 ## SRU verification content
 | Bug | Verification Script and Output |
 | -------- |  -------- |
+| [# gh-353](http://github.com/canonical/cloud-init/pull/353)| [verification output](../bugs/gh-353.txt) |
 | [# 1880279](http://pad.lv/1880279) | [verification output](../bugs/lp-1880279.txt) |
 | [# 1858884](http://pad.lv/1858884) | [verification output](../bugs/lp-1858884.txt) |
 | [# 1876414](http://pad.lv/1876414) | [verification output](../bugs/lp-1876414.txt) |
