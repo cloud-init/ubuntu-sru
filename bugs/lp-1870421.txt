@@ -1,0 +1,571 @@
+http://pad.lv/1870421
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1870421
+
+=== Begin cloud-init SRU Template ===
+[Impact]
+
+Cloud-init fails to parse valid netplan file with 'renderer' keyword and
+results in no networking for the target machine.
+
+[Test Case]
+
+#!/bin/bash
+# Provide a network-config file to cloud-init with the keyword 'renderer'
+# and confirm this fails on current cloud-init and passes with the update.
+#
+# network:
+#   renderer: networkd
+#   ethernets:
+#       eth0:
+#          dhcp4: true
+#
+
+# we inject a non-zero amount of runtime so that fast containers like
+# lxc don't complete in less than 1 second giving us a false-negative result
+read -r -d '' NETCFG <<- EOM
+version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true
+EOM
+
+
+recreate() {
+    release=$1
+    name=${release}-recreate-lp1870421
+
+    # initialize the contaier
+    lxc init ubuntu-daily:$release $name
+    lxc config set $name user.network-config "${NETCFG}"
+
+    lxc start $name
+    sleep 2
+    # cloud-init should report no errors after using proposed cloud-init
+    echo "Checking cloud-init status for exit-code 1"
+    exit_code=$(lxc exec $name -- bash -c 'cloud-init status --wait>/dev/null; echo $?')
+    echo "Expecting exit_code: 1";
+    echo "Found              : ${exit_code}"
+
+    echo "Checking cloud-init.log for RuntimeError exception count 1"
+    runtime_err=$(lxc exec $name -- grep -c RuntimeError /var/log/cloud-init.log)
+    echo "Expecting RuntimeError count: 1"
+    echo "Found          : ${runtime_err}"
+
+    # both tests must fail to recreate issue
+    if [ "${exit_code}" = "1" -a "${runtime_err}" = "1" ]; then
+        lxc delete --force ${name}
+        return 0
+    fi
+    return 1
+}
+
+
+verify() {
+    release=$1
+    ref=$release-proposed
+    name=$release-verify-lp1870421
+
+    if ! which lxc-proposed-snapshot >/dev/null; then
+        echo "Cannot find lxc-proposd-snapshot, get from qa-scripts repo";
+        return 1
+    fi
+    # https://github.com/cloud-init/qa-scripts/blob/master/scripts/lxc-proposed-snapshot
+    echo "Creating image with cloud-init from ${release} -proposed pocket"
+    # lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $release $ref
+    lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish $release $ref
+    lxc init $ref $name
+    lxc config set $name user.network-config "${NETCFG}"
+
+    lxc start $name
+    lxc exec $name -- cloud-init status --wait
+    # cloud-init should report no errors after using proposed cloud-init
+    echo "Checking cloud-init status for exit-code 0"
+    exit_code=$(lxc exec $name -- bash -c 'cloud-init status --wait>/dev/null; echo $?')
+    echo "Expecting exit_code: 0";
+    echo "Found              : ${exit_code}"
+
+    echo "Checking cloud-init.log for RuntimeError exception count 0"
+    runtime_err=$(lxc exec $name -- grep -c RuntimeError /var/log/cloud-init.log)
+    echo "Expecting RuntimeError count: 0"
+    echo "Found          : ${runtime_err}"
+
+    # both tests must pass
+    if [ "${exit_code}" = "0" -a "${runtime_err}" = "0" ]; then
+        lxc delete --force ${name}
+        return 0
+    fi
+    return 1
+}
+
+RELEASE=${1}
+[ -z "${RELEASE}" ] && { echo "usage: $0 <ubuntu release name>"; exit 1; }
+
+if [ "${RELEASE}" = "focal" ]; then
+   echo "This bug is already fixed in focal"
+   exit 0
+fi
+
+echo "Starting recreate for $RELEASE"
+recreate ${RELEASE} || { echo "Error recreating failure"; exit $?; }
+echo "done"
+
+echo "Starting verification for $RELEASE"
+verify ${RELEASE} || { echo "Error verifying fix"; exit $?; }
+echo "done"
+
+
+[Regression Potential]
+
+None
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
+==== xenial ====
++ read -r -d '' NETCFG
++ RELEASE=xenial
++ '[' -z xenial ']'
++ echo 'Starting recreate for xenial'
+Starting recreate for xenial
++ recreate xenial
++ release=xenial
++ name=xenial-recreate-lp1870421
++ lxc init ubuntu-daily:xenial xenial-recreate-lp1870421
+Creating xenial-recreate-lp1870421
++ lxc config set xenial-recreate-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start xenial-recreate-lp1870421
++ sleep 2
++ echo 'Checking cloud-init status for exit-code 1'
+Checking cloud-init status for exit-code 1
+++ lxc exec xenial-recreate-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=1
++ echo 'Expecting exit_code: 1'
+Expecting exit_code: 1
++ echo 'Found              : 1'
+Found              : 1
++ echo 'Checking cloud-init.log for RuntimeError exception count 1'
+Checking cloud-init.log for RuntimeError exception count 1
+++ lxc exec xenial-recreate-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=1
++ echo 'Expecting RuntimeError count: 1'
+Expecting RuntimeError count: 1
++ echo 'Found          : 1'
+Found          : 1
++ '[' 1 = 1 -a 1 = 1 ']'
++ lxc delete --force xenial-recreate-lp1870421
++ return 0
++ echo done
+done
++ echo 'Starting verification for xenial'
+Starting verification for xenial
++ verify xenial
++ release=xenial
++ ref=xenial-proposed
++ name=xenial-verify-lp1870421
++ which lxc-proposed-snapshot
++ echo 'Creating image with cloud-init from xenial -proposed pocket'
+Creating image with cloud-init from xenial -proposed pocket
++ lxc-proposed-snapshot --add-archive 'ppa:~cloud-init-dev/proposed' --publish xenial xenial-proposed
+Creating xenial-proposed-290030805
+gpg: keyring `/tmp/tmpad5_4kwg/secring.gpg' created
+gpg: keyring `/tmp/tmpad5_4kwg/pubring.gpg' created
+gpg: requesting key E4D304DF from hkp server keyserver.ubuntu.com
+gpg: /tmp/tmpad5_4kwg/trustdb.gpg: trustdb created
+gpg: key E4D304DF: public key "Launchpad PPA for cloud init development team" imported
+gpg: Total number processed: 1
+gpg:               imported: 1  (RSA: 1)
+OK
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial InRelease [18.0 kB]
+Get:4 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:5 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [873 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main amd64 Packages [1080 B]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [328 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [493 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:10 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6092 B]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:13 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main Translation-en [480 B]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1151 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [435 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [798 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Fetched 17.2 MB in 4s (3836 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 4 not upgraded.
+Need to get 469 kB of archives.
+After this operation, 66.6 kB of additional disk space will be used.
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu xenial/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~16.04.1 [469 kB]
+Preconfiguring packages ...
+Fetched 469 kB in 1s (437 kB/s)
+(Reading database ... 25784 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Instance published with fingerprint: f70f27515d347a635636cca2c5085ce56095791ec5ceb6b0a7b74834ba984bfd
++ lxc init xenial-proposed xenial-verify-lp1870421
+Creating xenial-verify-lp1870421
++ lxc config set xenial-verify-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start xenial-verify-lp1870421
++ lxc exec xenial-verify-lp1870421 -- cloud-init status --wait
+...........................
+status: done
++ echo 'Checking cloud-init status for exit-code 0'
+Checking cloud-init status for exit-code 0
+++ lxc exec xenial-verify-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=0
++ echo 'Expecting exit_code: 0'
+Expecting exit_code: 0
++ echo 'Found              : 0'
+Found              : 0
++ echo 'Checking cloud-init.log for RuntimeError exception count 0'
+Checking cloud-init.log for RuntimeError exception count 0
+++ lxc exec xenial-verify-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=0
++ echo 'Expecting RuntimeError count: 0'
+Expecting RuntimeError count: 0
++ echo 'Found          : 0'
+Found          : 0
++ '[' 0 = 0 -a 0 = 0 ']'
++ lxc delete --force xenial-verify-lp1870421
++ return 0
++ echo done
+done
+
+==== bionic ====
++ read -r -d '' NETCFG
++ RELEASE=bionic
++ '[' -z bionic ']'
++ echo 'Starting recreate for bionic'
+Starting recreate for bionic
++ recreate bionic
++ release=bionic
++ name=bionic-recreate-lp1870421
++ lxc init ubuntu-daily:bionic bionic-recreate-lp1870421
+Creating bionic-recreate-lp1870421
++ lxc config set bionic-recreate-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start bionic-recreate-lp1870421
++ sleep 2
++ echo 'Checking cloud-init status for exit-code 1'
+Checking cloud-init status for exit-code 1
+++ lxc exec bionic-recreate-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=1
++ echo 'Expecting exit_code: 1'
+Expecting exit_code: 1
++ echo 'Found              : 1'
+Found              : 1
++ echo 'Checking cloud-init.log for RuntimeError exception count 1'
+Checking cloud-init.log for RuntimeError exception count 1
+++ lxc exec bionic-recreate-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=1
++ echo 'Expecting RuntimeError count: 1'
+Expecting RuntimeError count: 1
++ echo 'Found          : 1'
+Found          : 1
++ '[' 1 = 1 -a 1 = 1 ']'
++ lxc delete --force bionic-recreate-lp1870421
++ return 0
++ echo done
+done
++ echo 'Starting verification for bionic'
+Starting verification for bionic
++ verify bionic
++ release=bionic
++ ref=bionic-proposed
++ name=bionic-verify-lp1870421
++ which lxc-proposed-snapshot
++ echo 'Creating image with cloud-init from bionic -proposed pocket'
+Creating image with cloud-init from bionic -proposed pocket
++ lxc-proposed-snapshot --add-archive 'ppa:~cloud-init-dev/proposed' --publish bionic bionic-proposed
+Creating bionic-proposed-1256729612
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease [15.9 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 Packages [660 B]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [727 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:8 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:9 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main Translation-en [248 B]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [230 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [669 kB]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [222 kB]
+Get:13 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7596 B]
+Get:14 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2824 B]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [951 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [324 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1077 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [335 kB]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.7 kB]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6384 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Fetched 18.6 MB in 5s (3965 kB/s)
+Reading package lists...
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Hit:2 http://security.ubuntu.com/ubuntu bionic-security InRelease
+Hit:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu bionic-updates InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 13 not upgraded.
+Need to get 467 kB of archives.
+After this operation, 66.6 kB of additional disk space will be used.
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~18.04.1 [467 kB]
+Preconfiguring packages ...
+Fetched 467 kB in 1s (432 kB/s)
+(Reading database ... 28722 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: e237e2428b94c91b5f6ac521c1b00f9eed642a3f6f8c8fa8b743ce108ff72336
++ lxc init bionic-proposed bionic-verify-lp1870421
+Creating bionic-verify-lp1870421
++ lxc config set bionic-verify-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start bionic-verify-lp1870421
++ lxc exec bionic-verify-lp1870421 -- cloud-init status --wait
+................................
+status: done
++ echo 'Checking cloud-init status for exit-code 0'
+Checking cloud-init status for exit-code 0
+++ lxc exec bionic-verify-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=0
++ echo 'Expecting exit_code: 0'
+Expecting exit_code: 0
++ echo 'Found              : 0'
+Found              : 0
++ echo 'Checking cloud-init.log for RuntimeError exception count 0'
+Checking cloud-init.log for RuntimeError exception count 0
+++ lxc exec bionic-verify-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=0
++ echo 'Expecting RuntimeError count: 0'
+Expecting RuntimeError count: 0
++ echo 'Found          : 0'
+Found          : 0
++ '[' 0 = 0 -a 0 = 0 ']'
++ lxc delete --force bionic-verify-lp1870421
++ return 0
++ echo done
+done
+
+==== eoan ====
++ read -r -d '' NETCFG
++ RELEASE=eoan
++ '[' -z eoan ']'
++ echo 'Starting recreate for eoan'
+Starting recreate for eoan
++ recreate eoan
++ release=eoan
++ name=eoan-recreate-lp1870421
++ lxc init ubuntu-daily:eoan eoan-recreate-lp1870421
+Creating eoan-recreate-lp1870421
++ lxc config set eoan-recreate-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start eoan-recreate-lp1870421
++ sleep 2
++ echo 'Checking cloud-init status for exit-code 1'
+Checking cloud-init status for exit-code 1
+++ lxc exec eoan-recreate-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=1
++ echo 'Expecting exit_code: 1'
+Expecting exit_code: 1
++ echo 'Found              : 1'
+Found              : 1
++ echo 'Checking cloud-init.log for RuntimeError exception count 1'
+Checking cloud-init.log for RuntimeError exception count 1
+++ lxc exec eoan-recreate-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=1
++ echo 'Expecting RuntimeError count: 1'
+Expecting RuntimeError count: 1
++ echo 'Found          : 1'
+Found          : 1
++ '[' 1 = 1 -a 1 = 1 ']'
++ lxc delete --force eoan-recreate-lp1870421
++ return 0
++ echo done
+done
++ echo 'Starting verification for eoan'
+Starting verification for eoan
++ verify eoan
++ release=eoan
++ ref=eoan-proposed
++ name=eoan-verify-lp1870421
++ which lxc-proposed-snapshot
++ echo 'Creating image with cloud-init from eoan -proposed pocket'
+Creating image with cloud-init from eoan -proposed pocket
++ lxc-proposed-snapshot --add-archive 'ppa:~cloud-init-dev/proposed' --publish eoan eoan-proposed
+Creating eoan-proposed-90092085
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease [15.9 kB]
+Get:4 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:5 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [219 kB]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5892 B]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [171 kB]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [61.6 kB]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6568 B]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:13 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:14 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 Packages [648 B]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main Translation-en [248 B]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:21 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [296 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9392 B]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [217 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [84.4 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7744 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6316 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.9 MB in 5s (3352 kB/s)
+Reading package lists...
+Hit:1 http://archive.ubuntu.com/ubuntu eoan InRelease
+Hit:2 http://security.ubuntu.com/ubuntu eoan-security InRelease
+Hit:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu eoan-updates InRelease
+Hit:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.
+Need to get 469 kB of archives.
+After this operation, 66.6 kB of additional disk space will be used.
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 cloud-init all 20.2-38-g8377897b-0ubuntu1~19.10.1 [469 kB]
+Preconfiguring packages ...
+Fetched 469 kB in 1s (429 kB/s)
+(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: 642f4d12cfb5cb203682a36889f8a145d078143ce5f6e21d719f3ed68f59447b
++ lxc init eoan-proposed eoan-verify-lp1870421
+Creating eoan-verify-lp1870421
++ lxc config set eoan-verify-lp1870421 user.network-config 'version: 2
+renderer: networkd
+ethernets:
+  eth0:
+    dhcp4: true'
++ lxc start eoan-verify-lp1870421
++ lxc exec eoan-verify-lp1870421 -- cloud-init status --wait
+..........................................................................
+status: done
++ echo 'Checking cloud-init status for exit-code 0'
+Checking cloud-init status for exit-code 0
+++ lxc exec eoan-verify-lp1870421 -- bash -c 'cloud-init status --wait>/dev/null; echo $?'
++ exit_code=0
++ echo 'Expecting exit_code: 0'
+Expecting exit_code: 0
++ echo 'Found              : 0'
+Found              : 0
++ echo 'Checking cloud-init.log for RuntimeError exception count 0'
+Checking cloud-init.log for RuntimeError exception count 0
+++ lxc exec eoan-verify-lp1870421 -- grep -c RuntimeError /var/log/cloud-init.log
++ runtime_err=0
++ echo 'Expecting RuntimeError count: 0'
+Expecting RuntimeError count: 0
++ echo 'Found          : 0'
+Found          : 0
++ '[' 0 = 0 -a 0 = 0 ']'
++ lxc delete --force eoan-verify-lp1870421
++ return 0
++ echo done
+done
+
+==== focal ====
++ read -r -d '' NETCFG
++ RELEASE=focal
++ '[' -z focal ']'
++ '[' focal = focal ']'
++ echo 'This bug is already fixed in focal'
+This bug is already fixed in focal
++ exit 0
