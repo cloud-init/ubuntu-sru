@@ -32,7 +32,7 @@ get_ec2_instance_id() {
     aws ec2 describe-instances --filter "Name=dns-name,Values=${dns_name}" --query $query | jq -r .[]
 }
 
-terminate_instances() {
+terminate_instance() {
     ec2_inst=$1
     if [ "$PRESERVE_INSTANCE" = false ]; then
         echo "deleting instance"
@@ -78,7 +78,7 @@ for series in $SRU_SERIES; do
     [ -n "$EC2_INST" ] || { echo "Failed to launch ec2 instance!"; exit 1; }
     sleep 60
 
-    trap "terminate_instances ${EC2_INST}" ERR
+    trap "terminate_instance ${EC2_INST}" ERR
     ssh $sshopts $EC2_INST -- cloud-init status --wait --long
     ssh $sshopts $EC2_INST -- cat /run/cloud-init/result.json
     ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init.*"
@@ -120,6 +120,6 @@ for series in $SRU_SERIES; do
     sleep 60
     echo 'After reboot'
     ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
-    terminate_instances $EC2_INST
+    terminate_instance $EC2_INST
     echo "### END $series"
 done
