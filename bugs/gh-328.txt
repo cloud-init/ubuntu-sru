@@ -1,0 +1,96 @@
+=== Begin SRU Template ===
+[Impact]
+It's possible that the first transformation for a mirror
+hostname could be passed None if the parsed mirror URL didn't have a
+hostname component, when the defined interface is that the
+transformations will be passed strings.
+
+[Test Case]
+#!/bin/sh
+
+cat > test-case.yaml << EOF
+#cloud-config
+system_info:
+  package_mirrors:
+    - arches: [amd64]
+      search:
+        primary:
+          - foo.com
+EOF
+
+for SERIES in bionic eoan focal xenial; do
+    echo '=== BEGIN ' $SERIES
+    ref=$SERIES-proposed
+    name=test-$SERIES
+    lxc image list | grep $ref
+    if [ $? -eq 1 ]; then
+        lxc-proposed-snapshot --add-archive ppa:~cloud-init-dev/proposed --publish $SERIES $ref | egrep "Creating|cloud-init"
+    fi
+    lxc launch $ref $name -c user.user-data="$(cat test-case.yaml)"
+    lxc exec $name -- cloud-init status --wait --long
+    lxc exec $name -- /bin/grep "search for mirror in candidates.*foo.com" /var/log/cloud-init.log
+    if [ $? -eq 0 ]; then
+        echo "TEST CASE FAILED!!!!!"
+        continue
+    fi
+    lxc exec $name -- /bin/grep "Resolving URL.*foo.com*" /var/log/cloud-init.log
+    if [ $? -eq 0 ]; then
+        echo "TEST CASE FAILED!!!!!"
+        continue
+    fi
+    echo "TEST CASE PASSED FOR ${SERIES}"
+    lxc stop $name
+    lxc rm $name
+done
+
+[Regression Potential]
+If an invalid URL was being used and somehow relied on, it will no longer work.
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/7276aa5240b8cb84671a56d795d811f15dfba8e2
+
+== End SRU Template ===
+
+=== Verification Output ===
+=== BEGIN  bionic
+| bionic-proposed | 842c73e8fcdf | no     |                                               | x86_64       | CONTAINER | 271.51MB | Jun 4, 2020 at 3:49pm (UTC)  |
+Creating test-bionic
+Starting test-bionic
+...............................
+status: done
+time: Mon, 08 Jun 2020 22:09:19 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+TEST CASE PASSED FOR bionic
+=== BEGIN  eoan
+| eoan-proposed   | fc1485ddb47a | no     |                                               | x86_64       | CONTAINER | 427.08MB | Jun 4, 2020 at 4:10pm (UTC)  |
+Creating test-eoan
+Starting test-eoan
+...........................................................................
+status: done
+time: Mon, 08 Jun 2020 22:09:42 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+TEST CASE PASSED FOR eoan
+=== BEGIN  focal
+| focal-proposed  | 82219d51a029 | no     |                                               | x86_64       | CONTAINER | 436.60MB | Jun 4, 2020 at 3:08pm (UTC)  |
+Creating test-focal
+Starting test-focal
+...................................................................
+status: done
+time: Mon, 08 Jun 2020 22:10:04 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+TEST CASE PASSED FOR focal
+=== BEGIN  xenial
+| xenial-proposed | 940c860dfa71 | no     |                                               | x86_64       | CONTAINER | 241.97MB | Jun 4, 2020 at 4:01pm (UTC)  |
+Creating test-xenial
+Starting test-xenial
+....................
+status: done
+time: Mon, 08 Jun 2020 22:10:13 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+TEST CASE PASSED FOR xenial
+
+
