@@ -1,0 +1,370 @@
+=== Begin SRU Template ===
+[Impact]
+When a user is configuring a snapd service, we must ensure the provided yaml conforms to
+our expected schema. Furthermore, we should also verify if the new properties added to the
+schema are not breaking past snap configs.
+
+[Test Case]
+
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+cat > valid_snap.yaml << EOF
+#cloud-config
+snap:
+  assertions:
+    00: |
+      signed_assertion_blob_here
+    02: |
+      signed_assertion_blob_here
+  commands:
+    00: snap create-user --sudoer --known <snap-user>@mydomain.com
+    01: ['snap', 'install', 'canonical-livepatch']
+    02: canonical-livepatch enable <AUTH_TOKEN>
+EOF
+
+cat > invalid_snap.yaml << EOF
+#cloud-config
+snap:
+  assertions:
+    00: |
+      signed_assertion_blob_here
+    02: |
+      signed_assertion_blob_here
+  commands:
+    00:
+     c1: apt update
+     c2: apt upgrade
+    01: ['snap', 'install', 'canonical-livepatch']
+    02: canonical-livepatch enable <AUTH_TOKEN>
+EOF
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get update -qq;
+apt-get install -qqy cloud-init;
+EOF
+
+#for SERIES in bionic eoan focal xenial; do
+for SERIES in xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name
+
+   lxc file push valid_snap.yaml $name/var/tmp/
+   lxc file push invalid_snap.yaml $name/var/tmp/
+
+   lxc exec $name -- cloud-init status --wait --long
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml || echo "FAILURE"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_snap.yaml || echo "FAILURE"
+
+   # upgrade cloud-init to proposed
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- bash /var/tmp/setup_dev_proposed.sh
+   # re test on current cloud-init that both invalid and valid_snap.yaml pass (because we have no schema validation
+   echo "Expect schema failure on invalid_snap"
+   if [ "$SERIES" = "xenial" ]; then
+       echo "Xenial does not have jsonschema dependecy, making this type of checking to not work on it"
+   fi
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+   echo "Expect success on valid_snap.yaml"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_snap.yaml || echo "FAILURE"
+done
+```
+
+[Regression Potential]
+
+Some users may rely on old snap config that do not follow the enforced pattern in this schema.
+However, as far as I can see, this can be mitigated by the users adapting their snap configuration
+to follow that pattern. Because this can be easily solvable, we this is an acceptable risk to take.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
++ cat
++ cat
++ cat
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ ref=bionic-proposed
++ name=test-bionic
++ lxc delete test-bionic --force
++ lxc launch ubuntu-daily:bionic test-bionic
+Creating test-bionic
+Starting test-bionic
++ lxc file push valid_snap.yaml test-bionic/var/tmp/
++ lxc file push invalid_snap.yaml test-bionic/var/tmp/
++ lxc exec test-bionic -- cloud-init status --wait --long
+...............................
+status: done
+time: Mon, 08 Jun 2020 16:12:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Valid cloud-config file /var/tmp/invalid_snap.yaml
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ lxc file push setup_dev_proposed.sh test-bionic/var/tmp/
++ lxc exec test-bionic -- bash /var/tmp/setup_dev_proposed.sh
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease [15.9 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 Packages [660 B]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [669 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:8 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main Translation-en [248 B]
+Get:9 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [222 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7596 B]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2824 B]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [951 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1077 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [335 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.7 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6384 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Fetched 17.3 MB in 20s (858 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1)
+...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
++ echo 'Expect schema failure on invalid_snap'
+Expect schema failure on invalid_snap
++ '[' bionic = xenial ']'
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Cloud config schema errors: snap.commands.0: {'c1': 'apt update', 'c2': 'apt upgrade'} is not valid
+under any of the given schemas
++ echo 'Expect success on valid_snap.yaml'
+Expect success on valid_snap.yaml
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ ref=eoan-proposed
++ name=test-eoan
++ lxc delete test-eoan --force
++ lxc launch ubuntu-daily:eoan test-eoan
+Creating test-eoan
+Starting test-eoan
++ lxc file push valid_snap.yaml test-eoan/var/tmp/
++ lxc file push invalid_snap.yaml test-eoan/var/tmp/
++ lxc exec test-eoan -- cloud-init status --wait --long
+........................................................................................................
+status: done
+time: Mon, 08 Jun 2020 16:13:39 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Valid cloud-config file /var/tmp/invalid_snap.yaml
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ lxc file push setup_dev_proposed.sh test-eoan/var/tmp/
++ lxc exec test-eoan -- bash /var/tmp/setup_dev_proposed.sh
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Get:2 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease [15.9 kB]
+Hit:3 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:4 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:5 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [219 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 Packages [648 B]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5892 B]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [171 kB]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [61.6 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6568 B]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main Translation-en [248 B]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:21 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [296 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9392 B]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [217 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [84.4 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7740 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6316 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.9 MB in 20s (805 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1)
+...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
++ echo 'Expect schema failure on invalid_snap'
+Expect schema failure on invalid_snap
++ '[' eoan = xenial ']'
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Cloud config schema errors: snap.commands.0: {'c1': 'apt update', 'c2': 'apt upgrade'} is not valid
+under any of the given schemas
++ echo 'Expect success on valid_snap.yaml'
+Expect success on valid_snap.yaml
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ ref=focal-proposed
++ name=test-focal
++ lxc delete test-focal --force
++ lxc launch ubuntu-daily:focal test-focal
+Creating test-focal
+Starting test-focal
++ lxc file push valid_snap.yaml test-focal/var/tmp/
++ lxc file push invalid_snap.yaml test-focal/var/tmp/
++ lxc exec test-focal -- cloud-init status --wait --long
+..................................................................................................
+status: done
+time: Mon, 08 Jun 2020 16:14:59 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Valid cloud-config file /var/tmp/invalid_snap.yaml
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ lxc file push setup_dev_proposed.sh test-focal/var/tmp/
++ lxc exec test-focal -- bash /var/tmp/setup_dev_proposed.sh
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal InRelease [18.0 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main amd64 Packages [656 B]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [33.4 kB]
+Get:7 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:8 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main Translation-en [604 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [16.1 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1356 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:15 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:16 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:20 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [177 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [102 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [46.8 kB]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3704 B]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:27 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2792 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1280 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [188 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.0 MB in 25s (610 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
++ echo 'Expect schema failure on invalid_snap'
+Expect schema failure on invalid_snap
++ '[' focal = xenial ']'
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Cloud config schema errors: snap.commands.0: {'c1': 'apt update', 'c2': 'apt upgrade'} is not valid
+under any of the given schemas
++ echo 'Expect success on valid_snap.yaml'
+Expect success on valid_snap.yaml
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ ref=xenial-proposed
++ name=test-xenial
++ lxc delete test-xenial --force
++ lxc launch ubuntu-daily:xenial test-xenial
+Creating test-xenial
+Starting test-xenial
++ lxc file push valid_snap.yaml test-xenial/var/tmp/
++ lxc file push invalid_snap.yaml test-xenial/var/tmp/
++ lxc exec test-xenial -- cloud-init status --wait --long
+.............................
+status: done
+time: Mon, 08 Jun 2020 16:16:02 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Valid cloud-config file /var/tmp/invalid_snap.yaml
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
++ lxc file push setup_dev_proposed.sh test-xenial/var/tmp/
++ lxc exec test-xenial -- bash /var/tmp/setup_dev_proposed.sh
+gpg: keyring `/tmp/tmpkicg04j1/secring.gpg' created
+gpg: keyring `/tmp/tmpkicg04j1/pubring.gpg' created
+gpg: requesting key E4D304DF from hkp server keyserver.ubuntu.com
+gpg: /tmp/tmpkicg04j1/trustdb.gpg: trustdb created
+gpg: key E4D304DF: public key "Launchpad PPA for cloud init development team" imported
+gpg: Total number processed: 1
+gpg:               imported: 1  (RSA: 1)
+OK
+Preconfiguring packages ...
+(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-38-g8377897b-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1)
+...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-38-g8377897b-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ echo 'Expect schema failure on invalid_snap'
+Expect schema failure on invalid_snap
++ '[' xenial = xenial ']'
++ echo 'Xenial does not have jsonschema dependecy, making this type of checking to not work on it'
+Xenial does not have jsonschema dependecy, making this type of checking to not work on it
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_snap.yaml
+Valid cloud-config file /var/tmp/invalid_snap.yaml
++ echo 'Expect success on valid_snap.yaml'
+Expect success on valid_snap.yaml
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/valid_snap.yaml
+Valid cloud-config file /var/tmp/valid_snap.yaml
