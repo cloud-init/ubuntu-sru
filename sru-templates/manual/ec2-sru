@@ -3,6 +3,7 @@
 set -e
 
 SRU_SERIES="%SRU_SERIES%"
+PRESERVE_INSTANCE=false
 
 # local values
 LP_USER=${LP_USER:-"%SRU_LP_USER%"}
@@ -15,6 +16,32 @@ else
     PROPOSED_SCRIPT=setup_dev_proposed.sh
 fi
 
+while [ $# -ne 0 ]; do
+	case "$1" in
+		# any flag pass through.
+		--preserve-instance) PRESERVE_INSTANCE=true;;
+		--) shift; break;;
+	esac
+	shift;
+done
+
+get_ec2_instance_id() {
+    dns_name=$1
+    dns_name="${dns_name#"ubuntu@"}"
+    query='Reservations[].Instances[].InstanceId'
+    aws ec2 describe-instances --filter "Name=dns-name,Values=${dns_name}" --query $query | jq -r .[]
+}
+
+terminate_instance() {
+    ec2_inst=$1
+    if [ "$PRESERVE_INSTANCE" = false ]; then
+        echo "deleting instance"
+        ec2_inst_id=`get_ec2_instance_id ${ec2_inst}`
+        aws ec2 terminate-instances --instance-ids $ec2_inst_id
+    else
+        echo "Keeping instance active"
+    fi
+}
 
 # Manual EC2 upgrade and clean install validation
 cat > sethostname.yaml <<EOF
@@ -50,6 +77,8 @@ for series in $SRU_SERIES; do
     EC2_INST=`launch-ec2 --series $series -u sethostname.yaml | awk '/Found/{print $5}'`
     [ -n "$EC2_INST" ] || { echo "Failed to launch ec2 instance!"; exit 1; }
     sleep 60
+
+    trap "terminate_instance ${EC2_INST}" ERR
     ssh $sshopts $EC2_INST -- cloud-init status --wait --long
     ssh $sshopts $EC2_INST -- cat /run/cloud-init/result.json
     ssh $sshopts $EC2_INST -- ! grep Trace "/var/log/cloud-init.*"
@@ -91,5 +120,6 @@ for series in $SRU_SERIES; do
     sleep 60
     echo 'After reboot'
     ssh $sshopts $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+    terminate_instance $EC2_INST
     echo "### END $series"
 done
