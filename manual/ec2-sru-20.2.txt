@@ -148,9 +148,10 @@ perform_eni_route_verification() {
     done
 }
 
-verify_network_config() {
-    search_pattern=$1
-    ssh $sshopts $ec2_inst -- cat $net_file | grep $search_pattern | wc -l
+count_occurrences_in_file() {
+    search_file=$1
+    search_pattern=$2
+    ssh $sshopts $ec2_inst -- cat $search_file | grep $search_pattern | wc -l
 }
 
 perform_only_eth0_route_verification() {
@@ -158,7 +159,7 @@ perform_only_eth0_route_verification() {
     net_file=$2
 
     metric_count_expected=0
-    metric_count_actual=$(verify_network_config "metric")
+    metric_count_actual=$(count_occurrences_in_file $net_file "metric")
 
     if [ "$metric_count_expected" = "$metric_count_actual" ]; then
         echo "No metrics as expected"
@@ -168,7 +169,7 @@ perform_only_eth0_route_verification() {
     fi
 
     metric_count_expected=2
-    metric_count_actual=$(verify_network_config "eth0")
+    metric_count_actual=$(count_occurrences_in_file $net_file "eth0")
 
     if [ "$metric_count_expected" = "$metric_count_actual" ]; then
         echo "eth0 interface rendered"
@@ -178,7 +179,7 @@ perform_only_eth0_route_verification() {
     fi
 
     metric_count_expected=0
-    metric_count_actual=$(verify_network_config "eth[12]")
+    metric_count_actual=$(count_occurrences_in_file $net_file "eth[12]")
 
     if [ "$metric_count_expected" = "$metric_count_actual" ]; then
         echo "No eth1 or eth2 interfaces rendered"
@@ -226,6 +227,36 @@ perform_nic_ordering_test() {
     teardown_network_interface $attachment_id_2 $network_interface_id_2
 }
 
+perform_imds_hidden_token_verification() {
+    ec2_inst=$1
+    search_file=/var/log/cloud-init.log
+    search_pattern="'X-aws-ec2-metadata-token'"
+    num_token_key=$(count_occurrences_in_file $search_file $search_pattern)
+
+    search_pattern="'X-aws-ec2-metadata-token': 'REDACTED'"
+    num_token_key_redacted=$(count_occurrences_in_file $search_file $search_pattern)
+
+    if [ "$num_token_key" == "$num_token_key_redacted" ]; then
+        echo "X-aws-ec2-metadata-token are correctly appearing as redacted in logs"
+    else
+        echo "X-aws-ec2-metadata-token are fully appearing raw in log"
+        exit 2
+    fi
+
+    search_pattern="'X-aws-ec2-metadata-token-ttl-seconds'"
+    num_token_key=$(count_occurrences_in_file $search_file $search_pattern)
+
+    search_pattern="'X-aws-ec2-metadata-token-ttl-seconds': 'REDACTED'"
+    num_token_key_redacted=$(count_occurrences_in_file $search_file $search_pattern)
+
+    if [ "$num_token_key" == "$num_token_key_redacted" ]; then
+        echo "X-aws-ec2-metadata-token-ttl-seconds are correctly appearing as redacted in logs"
+    else
+        echo "X-aws-ec2-metadata-token-ttl-seconds are fully appearing raw in log"
+        exit 2
+    fi
+}
+
 
 for series in $SRU_SERIES; do
     echo "### BEGIN $series"
@@ -265,6 +296,9 @@ for series in $SRU_SERIES; do
     
     echo 'Get cloud-id'
     ssh $sshopts $EC2_INST cloud-id
+
+    echo 'Per LP:1863943 we should hide IMDSv2 tokens on the log'
+    perform_imds_hidden_token_verification $EC2_INST
 
     echo 'Per LP:1876312 should route based on device-number not on mac address'
     echo 'Per LP:1866930 should configure other network interfaces from imds data'
