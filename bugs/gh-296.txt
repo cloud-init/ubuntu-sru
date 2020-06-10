@@ -1,0 +1,95 @@
+=== Begin SRU Template ===
+[Impact]
+Leading/trailing hyphens from mirror URL labels now get automatically dropped
+
+[Test Case]
+#!/bin/sh
+
+cat > test-case.yaml << EOF
+#cloud-config
+system_info:
+  package_mirrors:
+    - arches: [amd64]
+      search:
+        primary:
+          - http://-lead-ing.trail-ing-.example.com/ubuntu
+EOF
+
+for SERIES in bionic eoan focal xenial; do
+    echo '=== BEGIN ' $SERIES
+    ref=$SERIES-proposed
+    name=test-$SERIES
+    lxc image list | grep $ref
+    if [ $? -eq 1 ]; then
+        lxc-proposed-snapshot -P --publish $SERIES $ref | egrep "Creating|cloud-init"
+    fi
+    lxc launch $ref $name -s lvmpool -c user.user-data="$(cat test-case.yaml)"
+    lxc exec $name -- cloud-init status --wait --long
+    echo '--- Expect Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu ---'
+    lxc exec $name -- /bin/grep "Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu" /var/log/cloud-init.log
+    if [ $? -eq 1 ]; then
+        echo "TEST CASE FAILED FOR ${SERIES}"
+        continue
+    fi
+    echo "TEST CASE PASSED FOR ${SERIES}"
+    lxc stop $name
+    lxc rm $name
+done
+
+[Regression Potential]
+None
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/1bbc4908ff7a2be19483811b3b6fee6ebc916235
+
+== End SRU Template ===
+
+=== Verification Output ===
+=== BEGIN  bionic
+| bionic-proposed | 565e252e9214 | no     |                                             | x86_64       | CONTAINER | 272.15MB | Jun 10, 2020 at 1:04pm (UTC) |
+Creating test-bionic
+Starting test-bionic
+...............................
+status: done
+time: Wed, 10 Jun 2020 13:16:48 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Expect Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu ---
+2020-06-10 13:16:45,873 - util.py[DEBUG]: Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu took 0.099 seconds
+TEST CASE PASSED FOR bionic
+=== BEGIN  eoan
+| eoan-proposed   | ab499f3a5d8e | no     |                                             | x86_64       | CONTAINER | 430.90MB | Jun 10, 2020 at 1:05pm (UTC) |
+Creating test-eoan
+Starting test-eoan
+...............................................................................................
+status: done
+time: Wed, 10 Jun 2020 13:17:16 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Expect Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu ---
+2020-06-10 13:17:16,341 - util.py[DEBUG]: Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu took 5.073 seconds
+TEST CASE PASSED FOR eoan
+=== BEGIN  focal
+| focal-proposed  | 9fdf3bdff1a7 | no     |                                             | x86_64       | CONTAINER | 437.38MB | Jun 10, 2020 at 1:07pm (UTC) |
+Creating test-focal
+Starting test-focal
+..............................................................................
+status: done
+time: Wed, 10 Jun 2020 13:17:40 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Expect Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu ---
+2020-06-10 13:17:40,107 - util.py[DEBUG]: Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu took 0.013 seconds
+TEST CASE PASSED FOR focal
+=== BEGIN  xenial
+| xenial-proposed | 5359efa55917 | no     |                                             | x86_64       | CONTAINER | 242.16MB | Jun 10, 2020 at 1:08pm (UTC) |
+Creating test-xenial
+Starting test-xenial
+..............................
+status: done
+time: Wed, 10 Jun 2020 13:17:51 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- Expect Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu ---
+2020-06-10 13:17:51,457 - util.py[DEBUG]: Resolving URL: http://lead-ing.trail-ing.example.com/ubuntu took 0.007 seconds
+TEST CASE PASSED FOR xenial
