@@ -1,0 +1,503 @@
+=== Begin SRU Template ===
+[Impact]
+When a user is configuring files to be created in the instance, we must ensure the provided yaml conforms to
+our expected schema. Furthermore, we should verify if the provided schema is working as expected.
+
+[Test Case]
+
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+cat > valid_write_file.yaml << EOF
+#cloud-config
+write_files:
+  - append: False 
+    content: a
+    encoding: gzip
+    owner: jeff
+    path: some
+    permissions: '0777'
+EOF
+
+cat > invalid_write_file.yaml << EOF
+#cloud-config
+write_files:
+  - append: False 
+    content: a
+    encoding: gzip
+    owner: jeff
+    permissions: '0777'
+EOF
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get update -qq;
+apt-get install -qqy cloud-init;
+EOF
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name
+
+   lxc file push valid_write_file.yaml $name/var/tmp/
+   lxc file push invalid_write_file.yaml $name/var/tmp/
+
+   lxc exec $name -- cloud-init status --wait --long
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml || echo "FAILURE"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml || echo "FAILURE"
+   lxc exec $name -- cloud-init devel schema --docs cc_write_files | grep cc_write_files
+   if [ $? = 1 ]; then
+       echo "SUCCESS: There is no --docs command in this version of cloud-init"
+   fi
+   lxc exec $name -- cloud-init devel schema --docs all | grep cc_write_files
+   if [ $? = 1 ]; then
+       echo "SUCCESS: There is no --docs command in this version of cloud-init"
+   fi
+
+   # upgrade cloud-init to proposed
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- bash /var/tmp/setup_dev_proposed.sh
+   # re test on current cloud-init that both invalid and valid_write_file.yaml pass (because we have no schema validation
+   echo "Expect schema failure on invalid_write_file"
+   if [ "$SERIES" = "xenial" ]; then
+       success_msg="SUCCESS: xenial correctly ignores schema because of missing jsonschema dep"
+       failure_msg="FAILURE: xenial should have accepted invalid_schema"
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml && echo $success_msg || echo $failure_msg
+   else
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml || echo "SUCCESS: $SERIES rejected invalid_schema"
+   fi
+   echo "Expect success on valid_write_file.yaml"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml || echo "FAILURE: $SERIES should have accepted the valid schema"
+   echo "Expect that the following commands will not fail"
+   lxc exec $name -- cloud-init devel schema --docs cc_write_files | grep cc_write_files || echo "FAILURE: $SERIES should have the docs command"
+   lxc exec $name -- cloud-init devel schema --docs all | grep cc_write_files || echo "FAILURE: $SERIES should have the docs command"
+done
+```
+
+[Regression Potential]
+
+Some users may rely on an old write file yaml that do not follow the enforced pattern in this schema.
+However, as far as I can see, this can be mitigated by the users adapting their configuration
+to follow the schema. Because this can be easily solvable, this is an acceptable risk to take.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
++ cat
++ cat
++ cat
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ ref=bionic-proposed
++ name=test-bionic
++ lxc delete test-bionic --force
++ lxc launch ubuntu-daily:bionic test-bionic
+Creating test-bionic
+Starting test-bionic
++ lxc file push valid_write_file.yaml test-bionic/var/tmp/
++ lxc file push invalid_write_file.yaml test-bionic/var/tmp/
++ lxc exec test-bionic -- cloud-init status --wait --long
+...................................................................
+status: done
+time: Thu, 11 Jun 2020 13:53:18 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Valid cloud-config file /var/tmp/invalid_write_file.yaml
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ lxc exec test-bionic -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs cc_write_files
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc exec test-bionic -- cloud-init devel schema --docs all
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs all
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc file push setup_dev_proposed.sh test-bionic/var/tmp/
++ lxc exec test-bionic -- bash /var/tmp/setup_dev_proposed.sh
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease [15.9 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 Packages [656 B]
+Get:7 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:8 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main Translation-en [248 B]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [746 kB]
+Get:10 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [236 kB]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [969 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [329 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/restricted amd64 Packages [60.5 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/restricted Translation-en [14.7 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1081 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [336 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:26 http://security.ubuntu.com/ubuntu bionic-security/restricted amd64 Packages [50.8 kB]
+Get:27 http://security.ubuntu.com/ubuntu bionic-security/restricted Translation-en [12.3 kB]
+Get:28 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:29 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:30 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:31 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Fetched 18.8 MB in 27s (691 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
++ echo 'Expect schema failure on invalid_write_file'
+Expect schema failure on invalid_write_file
++ '[' bionic = xenial ']'
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Cloud config schema errors: write_files.0: 'path' is a required property
++ echo 'SUCCESS: bionic rejected invalid_schema'
+SUCCESS: bionic rejected invalid_schema
++ echo 'Expect success on valid_write_file.yaml'
+Expect success on valid_write_file.yaml
++ lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ echo 'Expect that the following commands will not fail'
+Expect that the following commands will not fail
++ lxc exec test-bionic -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ lxc exec test-bionic -- cloud-init devel schema --docs all
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ ref=eoan-proposed
++ name=test-eoan
++ lxc delete test-eoan --force
++ lxc launch ubuntu-daily:eoan test-eoan
+Creating test-eoan
+Starting test-eoan
++ lxc file push valid_write_file.yaml test-eoan/var/tmp/
++ lxc file push invalid_write_file.yaml test-eoan/var/tmp/
++ lxc exec test-eoan -- cloud-init status --wait --long
+....................................................................................................
+status: done
+time: Thu, 11 Jun 2020 13:54:44 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Valid cloud-config file /var/tmp/invalid_write_file.yaml
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ lxc exec test-eoan -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs cc_write_files
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc exec test-eoan -- cloud-init devel schema --docs all
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs all
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc file push setup_dev_proposed.sh test-eoan/var/tmp/
++ lxc exec test-eoan -- bash /var/tmp/setup_dev_proposed.sh
+Hit:1 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:2 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan InRelease [15.9 kB]
+Get:4 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main amd64 Packages [648 B]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [227 kB]
+Get:7 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:8 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu eoan/main Translation-en [248 B]
+Get:9 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [78.8 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5892 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/restricted amd64 Packages [24.4 kB]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/restricted Translation-en [4008 B]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [172 kB]
+Get:15 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.3 kB]
+Get:16 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6640 B]
+Get:17 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:18 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:19 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:21 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:24 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [307 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [112 kB]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9460 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/restricted amd64 Packages [30.3 kB]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/restricted Translation-en [6524 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.5 kB]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 16.2 MB in 20s (797 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
++ echo 'Expect schema failure on invalid_write_file'
+Expect schema failure on invalid_write_file
++ '[' eoan = xenial ']'
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Cloud config schema errors: write_files.0: 'path' is a required property
++ echo 'SUCCESS: eoan rejected invalid_schema'
+SUCCESS: eoan rejected invalid_schema
++ echo 'Expect success on valid_write_file.yaml'
+Expect success on valid_write_file.yaml
++ lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ echo 'Expect that the following commands will not fail'
+Expect that the following commands will not fail
++ lxc exec test-eoan -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ lxc exec test-eoan -- cloud-init devel schema --docs all
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ ref=focal-proposed
++ name=test-focal
++ lxc delete test-focal --force
++ lxc launch ubuntu-daily:focal test-focal
+Creating test-focal
+Starting test-focal
++ lxc file push valid_write_file.yaml test-focal/var/tmp/
++ lxc file push invalid_write_file.yaml test-focal/var/tmp/
++ lxc exec test-focal -- cloud-init status --wait --long
+............................................................................................
+status: done
+time: Thu, 11 Jun 2020 13:56:02 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Valid cloud-config file /var/tmp/invalid_write_file.yaml
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ lxc exec test-focal -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs cc_write_files
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc exec test-focal -- cloud-init devel schema --docs all
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs all
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc file push setup_dev_proposed.sh test-focal/var/tmp/
++ lxc exec test-focal -- bash /var/tmp/setup_dev_proposed.sh
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:3 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal InRelease [18.0 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main amd64 Packages [656 B]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [102 kB]
+Get:7 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [38.4 kB]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2628 B]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [10.9 kB]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [2972 B]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [34.5 kB]
+Get:13 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:14 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main Translation-en [604 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.0 kB]
+Get:16 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1444 B]
+Get:17 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:18 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:19 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:20 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:23 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [190 kB]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [73.7 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5392 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [106 kB]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [49.5 kB]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3824 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2792 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1280 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [188 B]
+Get:41 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.3 MB in 19s (805 kB/s)
+Reading package lists... Done
+Preconfiguring packages ...
+(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
++ echo 'Expect schema failure on invalid_write_file'
+Expect schema failure on invalid_write_file
++ '[' focal = xenial ']'
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Cloud config schema errors: write_files.0: 'path' is a required property
++ echo 'SUCCESS: focal rejected invalid_schema'
+SUCCESS: focal rejected invalid_schema
++ echo 'Expect success on valid_write_file.yaml'
+Expect success on valid_write_file.yaml
++ lxc exec test-focal -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ echo 'Expect that the following commands will not fail'
+Expect that the following commands will not fail
++ lxc exec test-focal -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ lxc exec test-focal -- cloud-init devel schema --docs all
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ ref=xenial-proposed
++ name=test-xenial
++ lxc delete test-xenial --force
++ lxc launch ubuntu-daily:xenial test-xenial
+Creating test-xenial
+Starting test-xenial
++ lxc file push valid_write_file.yaml test-xenial/var/tmp/
++ lxc file push invalid_write_file.yaml test-xenial/var/tmp/
++ lxc exec test-xenial -- cloud-init status --wait --long
+.............................
+status: done
+time: Thu, 11 Jun 2020 13:56:58 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Valid cloud-config file /var/tmp/invalid_write_file.yaml
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ lxc exec test-xenial -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs cc_write_files
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc exec test-xenial -- cloud-init devel schema --docs all
++ grep cc_write_files
+usage: /usr/bin/cloud-init [-h] [--version] [--file FILES] [--debug] [--force]
+                           {init,modules,single,query,dhclient-hook,features,analyze,devel,collect-logs,clean,status}
+                           ...
+/usr/bin/cloud-init: error: unrecognized arguments: --docs all
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: There is no --docs command in this version of cloud-init'
+SUCCESS: There is no --docs command in this version of cloud-init
++ lxc file push setup_dev_proposed.sh test-xenial/var/tmp/
++ lxc exec test-xenial -- bash /var/tmp/setup_dev_proposed.sh
+gpg: keyring `/tmp/tmp8hblvpgx/secring.gpg' created
+gpg: keyring `/tmp/tmp8hblvpgx/pubring.gpg' created
+gpg: requesting key E4D304DF from hkp server keyserver.ubuntu.com
+gpg: /tmp/tmp8hblvpgx/trustdb.gpg: trustdb created
+gpg: key E4D304DF: public key "Launchpad PPA for cloud init development team" imported
+gpg: Total number processed: 1
+gpg:               imported: 1  (RSA: 1)
+OK
+Preconfiguring packages ...
+(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ echo 'Expect schema failure on invalid_write_file'
+Expect schema failure on invalid_write_file
++ '[' xenial = xenial ']'
++ success_msg='SUCCESS: xenial correctly ignores schema because of missing jsonschema dep'
++ failure_msg='FAILURE: xenial should have accepted invalid_schema'
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_write_file.yaml
+Valid cloud-config file /var/tmp/invalid_write_file.yaml
++ echo SUCCESS: xenial correctly ignores schema because of missing jsonschema dep
+SUCCESS: xenial correctly ignores schema because of missing jsonschema dep
++ echo 'Expect success on valid_write_file.yaml'
+Expect success on valid_write_file.yaml
++ lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_write_file.yaml
++ echo 'Expect that the following commands will not fail'
+Expect that the following commands will not fail
++ lxc exec test-xenial -- cloud-init devel schema --docs cc_write_files
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
++ lxc exec test-xenial -- cloud-init devel schema --docs all
++ grep cc_write_files
+**Internal name:** ``cc_write_files``
