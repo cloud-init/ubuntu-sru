@@ -1,0 +1,153 @@
+=== Begin SRU Template ===
+[Impact]
+This modifies _get_package_mirror_info to convert the hostnames of
+generated mirror URLs to their IDNA form, and then iterate through them
+replacing any invalid characters (i.e. anything other than letters,
+digits or a hyphen) with a hyphen.
+
+[Test Case]
+#!/bin/sh
+
+# temporary workaround for https://github.com/canonical/cloud-init/pull/427
+cat > log.cfg << EOF
+_log:
+ - &log_base |
+   [loggers]
+   keys=root,cloudinit
+
+   [handlers]
+   keys=consoleHandler,cloudLogHandler
+
+   [formatters]
+   keys=simpleFormatter,arg0Formatter
+
+   [logger_root]
+   level=DEBUG
+   handlers=consoleHandler,cloudLogHandler
+
+   [logger_cloudinit]
+   level=DEBUG
+   qualname=cloudinit
+   handlers=
+   propagate=1
+
+   [handler_consoleHandler]
+   class=StreamHandler
+   level=WARNING
+   formatter=arg0Formatter
+   args=(sys.stderr,)
+
+   [formatter_arg0Formatter]
+   format=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s
+
+   [formatter_simpleFormatter]
+   format=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s
+ - &log_file |
+   [handler_cloudLogHandler]
+   class=FileHandler
+   level=DEBUG
+   formatter=arg0Formatter
+   args=('/var/log/cloud-init.log', 'a', 'UTF-8')
+ - &log_syslog |
+   [handler_cloudLogHandler]
+   class=handlers.SysLogHandler
+   level=DEBUG
+   formatter=simpleFormatter
+   args=("/dev/log", handlers.SysLogHandler.LOG_USER)
+
+log_cfgs:
+ - [ *log_base, *log_file ]
+output: {all: '| tee -a /var/log/cloud-init-output.log'}
+
+EOF
+
+# Because of bash escape the dollar and backquote
+cat > test-case.yaml << EOF
+#cloud-config
+system_info:
+  package_mirrors:
+    - arches: [amd64]
+      search:
+        primary:
+          - http://s o!m"e\$-u&n'w(a)n*t+e,d;-<c=h>a\r^a_c\`t{ε|r}s~.examplε.com/ubuntuε
+EOF
+
+for SERIES in bionic eoan focal xenial; do
+    echo '=== BEGIN ' $SERIES
+    ref=$SERIES-proposed
+    name=test-$SERIES
+    lxc image list | grep $ref
+    if [ $? -eq 1 ]; then
+        lxc-proposed-snapshot -P --publish $SERIES $ref | egrep "Creating|cloud-init"
+    fi
+    lxc init $ref $name -c user.user-data="$(cat test-case.yaml)"
+    lxc file push log.cfg ${name}/etc/cloud/cloud.cfg.d/05_logging.cfg
+    lxc start $name
+    lxc exec $name -- cloud-init status --wait --long
+
+    # Verifying that IDNA encoding happens here, not verifying that it actually encodes correctly
+    echo '--- EXPECT Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε ---'
+    lxc exec $name -- /bin/grep "Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε" /var/log/cloud-init.log
+    if [ $? -gt 0 ]; then
+        echo "TEST CASE FAILED FOR ${SERIES}"
+        continue
+    fi
+    echo "TEST CASE PASSED FOR ${SERIES}"
+     lxc stop $name
+     lxc rm $name
+done
+
+
+[Regression Potential]
+None
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/c478d0bff412c67280dfe8f08568de733f9425a1
+
+== End SRU Template ===
+
+=== Verification Output ===
+=== BEGIN  bionic
+| bionic-proposed | 7875c2b704a6 | no     |                                               | x86_64       | CONTAINER | 272.19MB | Jun 11, 2020 at 2:33pm (UTC) |
+Creating test-bionic
+..............................
+status: done
+time: Thu, 11 Jun 2020 18:17:23 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- EXPECT Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε ---
+2020-06-11 18:17:21,997 - util.py[DEBUG]: Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--xs5a.xn--exampl-nye.com/ubuntuε took 0.147 seconds
+TEST CASE PASSED FOR bionic
+=== BEGIN  eoan
+| eoan-proposed   | 4c2c422408ff | no     |                                               | x86_64       | CONTAINER | 430.92MB | Jun 11, 2020 at 2:34pm (UTC) |
+Creating test-eoan
+..............................................................................
+status: done
+time: Thu, 11 Jun 2020 18:17:48 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- EXPECT Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε ---
+2020-06-11 18:17:47,660 - util.py[DEBUG]: Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--xs5a.xn--exampl-nye.com/ubuntuε took 0.232 seconds
+TEST CASE PASSED FOR eoan
+=== BEGIN  focal
+| focal-proposed  | 4a0d1a68f4f0 | no     |                                               | x86_64       | CONTAINER | 437.42MB | Jun 11, 2020 at 2:37pm (UTC) |
+Creating test-focal
+...........................................................................
+status: done
+time: Thu, 11 Jun 2020 18:18:11 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- EXPECT Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε ---
+2020-06-11 18:18:11,393 - util.py[DEBUG]: Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--xs5a.xn--exampl-nye.com/ubuntuε took 0.075 seconds
+TEST CASE PASSED FOR focal
+=== BEGIN  xenial
+| xenial-proposed | c9b6df8af148 | no     |                                               | x86_64       | CONTAINER | 242.18MB | Jun 11, 2020 at 2:38pm (UTC) |
+Creating test-xenial
+....................
+status: done
+time: Thu, 11 Jun 2020 18:18:21 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+--- EXPECT Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--.*.xn--exampl-.*.com/ubuntuε ---
+2020-06-11 18:18:20,835 - util.py[DEBUG]: Resolving URL: http://xn--s-o-m-e--u-n-w-a-n-t-e-d---c-h-a-r-a-c-t--r-s--xs5a.xn--exampl-nye.com/ubuntuε took 0.009 seconds
+TEST CASE PASSED FOR xenial
