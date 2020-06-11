@@ -52,10 +52,13 @@ for SERIES in bionic eoan focal xenial; do
    echo "Expect schema failure on invalid_locale"
    if [ "$SERIES" = "xenial" ]; then
        echo "Xenial does not have jsonschema dependecy, making this type of checking to not work on it"
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml || echo "FAILURE: xenial should have passed invalid_schema because it has no jsonschema dep"
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_locale.yaml || echo "FAILURE: xenial should have passed invalid_schema because it has no jsonschema dep"
+   else
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml || echo "SUCCESS: $SERIES rejected invalid schema"
+       echo "Expect success on valid_locale.yaml"
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_locale.yaml || echo "FAILURE: $SERIES should have accepted the valid schema"
    fi
-   lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
-   echo "Expect success on valid_locale.yaml"
-   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_locale.yaml || echo "FAILURE"
 done
 ```
 
@@ -68,6 +71,7 @@ to follow that pattern. Because this can be easily solvable, we believe this is 
 === End cloud-init SRU Template ===
 
 === Verification Log ===
+
 + cat
 + cat
 + cat
@@ -83,9 +87,9 @@ Starting test-bionic
 + lxc file push valid_locale.yaml test-bionic/var/tmp/
 + lxc file push invalid_locale.yaml test-bionic/var/tmp/
 + lxc exec test-bionic -- cloud-init status --wait --long
-.................................
+......................................................
 status: done
-time: Wed, 10 Jun 2020 12:51:39 +0000
+time: Thu, 11 Jun 2020 12:52:55 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
@@ -124,9 +128,9 @@ Get:26 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [75
 Get:27 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
 Get:28 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
 Get:29 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
-Get:30 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [118 kB]
-Get:31 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [42.7 kB]
-Fetched 19.2 MB in 27s (725 kB/s)
+Get:30 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [120 kB]
+Get:31 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [43.8 kB]
+Fetched 19.2 MB in 21s (921 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -136,11 +140,11 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 15 not upgraded.
 Need to get 422 kB of archives.
 After this operation, 68.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
-Fetched 422 kB in 2s (199 kB/s)
+Fetched 422 kB in 2s (211 kB/s)
 Preconfiguring packages ...
 (Reading database ... 28716 files and directories currently installed.)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
@@ -155,6 +159,8 @@ Expect schema failure on invalid_locale
 + '[' bionic = xenial ']'
 + lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
 Cloud config schema errors: locale: {'loc1': 'fr_CA'} is not of type 'string'
++ echo 'SUCCESS: bionic rejected invalid schema'
+SUCCESS: bionic rejected invalid schema
 + echo 'Expect success on valid_locale.yaml'
 Expect success on valid_locale.yaml
 + lxc exec test-bionic -- cloud-init devel schema -c /var/tmp/valid_locale.yaml
@@ -171,9 +177,9 @@ Starting test-eoan
 + lxc file push valid_locale.yaml test-eoan/var/tmp/
 + lxc file push invalid_locale.yaml test-eoan/var/tmp/
 + lxc exec test-eoan -- cloud-init status --wait --long
-.....................................................................................................
+...............................................................................................................
 status: done
-time: Wed, 10 Jun 2020 12:52:54 +0000
+time: Thu, 11 Jun 2020 12:54:05 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
@@ -183,23 +189,23 @@ Valid cloud-config file /var/tmp/valid_locale.yaml
 + lxc file push setup_proposed.sh test-eoan/var/tmp/
 + lxc exec test-eoan -- bash /var/tmp/setup_proposed.sh
 deb http://archive.ubuntu.com/ubuntu eoan-proposed main
-Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
-Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Hit:1 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:2 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
 Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
-Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [227 kB]
-Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
-Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [78.8 kB]
-Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5892 B]
-Get:8 http://security.ubuntu.com/ubuntu eoan-security/restricted amd64 Packages [24.4 kB]
-Get:9 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
-Get:10 http://security.ubuntu.com/ubuntu eoan-security/restricted Translation-en [4008 B]
-Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [172 kB]
-Get:12 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.1 kB]
-Get:13 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6636 B]
-Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
-Get:15 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
-Get:16 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
-Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:4 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:5 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [227 kB]
+Get:6 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:7 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [78.8 kB]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5892 B]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/restricted amd64 Packages [24.4 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/restricted Translation-en [4008 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [172 kB]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.1 kB]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6640 B]
+Get:15 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:16 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:17 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
 Get:18 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
 Get:19 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
 Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
@@ -212,7 +218,7 @@ Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/restricted amd64 Packages [
 Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/restricted Translation-en [6524 B]
 Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
 Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.5 kB]
-Get:30 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7808 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
 Get:31 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
 Get:32 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
 Get:33 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
@@ -224,10 +230,10 @@ Get:38 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [
 Get:39 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
 Get:40 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
 Get:41 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
-Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [41.7 kB]
-Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [16.9 kB]
-Get:44 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1168 B]
-Fetched 16.4 MB in 18s (900 kB/s)
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [44.3 kB]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [17.8 kB]
+Get:44 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1180 B]
+Fetched 16.4 MB in 19s (883 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -237,11 +243,11 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 12 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 13 not upgraded.
 Need to get 420 kB of archives.
 After this operation, 69.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
-Fetched 420 kB in 3s (148 kB/s)
+Fetched 420 kB in 3s (166 kB/s)
 Preconfiguring packages ...
 (Reading database ... 30081 files and directories currently installed.)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
@@ -256,6 +262,8 @@ Expect schema failure on invalid_locale
 + '[' eoan = xenial ']'
 + lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
 Cloud config schema errors: locale: {'loc1': 'fr_CA'} is not of type 'string'
++ echo 'SUCCESS: eoan rejected invalid schema'
+SUCCESS: eoan rejected invalid schema
 + echo 'Expect success on valid_locale.yaml'
 Expect success on valid_locale.yaml
 + lxc exec test-eoan -- cloud-init devel schema -c /var/tmp/valid_locale.yaml
@@ -272,9 +280,9 @@ Starting test-focal
 + lxc file push valid_locale.yaml test-focal/var/tmp/
 + lxc file push invalid_locale.yaml test-focal/var/tmp/
 + lxc exec test-focal -- cloud-init status --wait --long
-................................................................................................
+...........................................................................................
 status: done
-time: Wed, 10 Jun 2020 12:54:03 +0000
+time: Thu, 11 Jun 2020 12:55:13 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
@@ -287,16 +295,16 @@ deb http://archive.ubuntu.com/ubuntu focal-proposed main
 Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
 Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
 Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
-Get:4 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [101 kB]
-Get:5 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
-Get:6 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [37.8 kB]
-Get:7 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2612 B]
-Get:8 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [10.9 kB]
-Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [2972 B]
-Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [34.1 kB]
-Get:11 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
-Get:12 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [16.6 kB]
-Get:13 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1428 B]
+Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:5 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [102 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [38.0 kB]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2628 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [10.9 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [2972 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [34.5 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.0 kB]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1444 B]
 Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
 Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
 Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
@@ -306,14 +314,14 @@ Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265
 Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
 Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
 Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
-Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [188 kB]
-Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [73.0 kB]
-Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5340 B]
-Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [10.9 kB]
-Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [2972 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [190 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [73.7 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5392 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
 Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [106 kB]
-Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [49.2 kB]
-Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3808 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [49.5 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3824 B]
 Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
 Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
 Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
@@ -323,10 +331,10 @@ Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages 
 Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1280 B]
 Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [188 B]
 Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
-Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [53.2 kB]
-Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [24.3 kB]
-Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1728 B]
-Fetched 15.6 MB in 20s (799 kB/s)
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [59.0 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [26.4 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1896 B]
+Fetched 15.6 MB in 23s (677 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -340,7 +348,7 @@ The following packages will be upgraded:
 Need to get 416 kB of archives.
 After this operation, 52.2 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
-Fetched 416 kB in 2s (180 kB/s)
+Fetched 416 kB in 2s (176 kB/s)
 Preconfiguring packages ...
 (Reading database ... 31250 files and directories currently installed.)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
@@ -355,6 +363,8 @@ Expect schema failure on invalid_locale
 + '[' focal = xenial ']'
 + lxc exec test-focal -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
 Cloud config schema errors: locale: {'loc1': 'fr_CA'} is not of type 'string'
++ echo 'SUCCESS: focal rejected invalid schema'
+SUCCESS: focal rejected invalid schema
 + echo 'Expect success on valid_locale.yaml'
 Expect success on valid_locale.yaml
 + lxc exec test-focal -- cloud-init devel schema -c /var/tmp/valid_locale.yaml
@@ -371,9 +381,9 @@ Starting test-xenial
 + lxc file push valid_locale.yaml test-xenial/var/tmp/
 + lxc file push invalid_locale.yaml test-xenial/var/tmp/
 + lxc exec test-xenial -- cloud-init status --wait --long
-...........................
+............................
 status: done
-time: Wed, 10 Jun 2020 12:54:55 +0000
+time: Thu, 11 Jun 2020 12:56:08 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
@@ -386,11 +396,11 @@ deb http://archive.ubuntu.com/ubuntu xenial-proposed main
 Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
 Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
 Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
-Get:4 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
-Get:5 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [882 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
 Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
-Get:7 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
-Get:8 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [330 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [330 kB]
+Get:8 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
 Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
 Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
 Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
@@ -408,9 +418,9 @@ Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [72
 Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
 Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
 Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
-Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [49.3 kB]
-Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [19.2 kB]
-Fetched 17.5 MB in 17s (979 kB/s)
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [51.6 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [20.1 kB]
+Fetched 17.5 MB in 19s (886 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -420,11 +430,11 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 12 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 13 not upgraded.
 Need to get 425 kB of archives.
 After this operation, 68.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
-Fetched 425 kB in 2s (203 kB/s)
+Fetched 425 kB in 2s (170 kB/s)
 Preconfiguring packages ...
 (Reading database ... 25763 files and directories currently installed.)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
@@ -442,7 +452,5 @@ Expect schema failure on invalid_locale
 Xenial does not have jsonschema dependecy, making this type of checking to not work on it
 + lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/invalid_locale.yaml
 Valid cloud-config file /var/tmp/invalid_locale.yaml
-+ echo 'Expect success on valid_locale.yaml'
-Expect success on valid_locale.yaml
 + lxc exec test-xenial -- cloud-init devel schema -c /var/tmp/valid_locale.yaml
 Valid cloud-config file /var/tmp/valid_locale.yaml
