@@ -51,7 +51,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual oracle test | [verification output](../manual/oracle-sru-20.2.38.txt) |
 | Manual gce test | [verification output](../manual/gce-sru-20.2.38.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-20.2.38.txt) |
-| Manual ec2 test | [verification output](../manual/ec2-sru-20.2.38.txt) |
+| Manual ec2 test | [verification output](../manual/ec2-sru-20.2.45.txt) |
 | Manual vmware test | [verification output](../manual/vmware-sru-20.2.38.txt) |
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-20.2.38.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-20.2.38.txt) |
