@@ -1,0 +1,104 @@
+# This file is sourced by any manual SRU cloud tests
+# It should be stored in ~/.local/cloud-init/sru-vars.sh
+# Set the variables accordingly for your cloud configuration and usernames
+
+PRESERVE_INSTANCE=false   # can be set as cmdline param
+UBUNTU_RELEASE=""         # The release to test specfied as cmdline param
+LP_USER="UNSET"            # specify your launchpad username
+
+USE_DEV_PPA=0  # set to 1 to use ppa:cloud-init-dev/proposed
+if [ "${USE_DEV_PPA:-0}" -eq "0" ]; then
+    PROPOSED_SCRIPT=setup_proposed.sh
+else
+    PROPOSED_SCRIPT=setup_dev_proposed.sh
+fi
+
+SAMPLE_CLOUDCONFIG="sethostname.yaml"
+# Key used to interact with cloud-instances
+SSH_KEY="$HOME/.ssh/id_rsa.pub"
+
+
+# Azure-specific
+AZURE_REGION="UNSET"          # specify your region name
+AZURE_VNET_NAME="UNSET"       # specify your virtual network name
+AZURE_NETWORK_SECURITY_GROUP="UNSET" # specify your network security group
+AZURE_NIC_NAME="UNSET"        # specify a preferred nic name
+AZURE_RESOURCE_GROUP="UNSET"  # specify your resource group
+AZURE_BOOT_DIAG="UNSET"       # your boot diagnostics group: bootdiag
+
+GCE_ZONE="UNSET"              # specify preferred zone: us-central1-b
+
+OPENSTACK_ADMIN_NET_ID="UNSET" # your openstack admin net on serverstack
+OPENSTACK_SSH_KEY_NAME="UNSET" # your openstack ssh key name on serverstack
+
+VMWARE_PASSWORD="UNSET"        # set to vcenter admin password
+
+
+create_samplecloudconfig(){
+   filename=${1:-${SAMPLE_CLOUDCONFIG}}
+       cat > sethostname.yaml <<EOF
+## template: jinja
+#cloud-config
+ssh_import_id: [$LP_USER]
+hostname: SRU-worked-{{v1.cloud_name}}
+EOF
+}
+
+
+create_setup_proposed_scripts(){
+    cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+
+    cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+}
+
+
+# Assert expected vars are set for a cloud
+assert_expected_vars(){
+ local value=""
+ for var in $@; do
+   eval "value=\$$var > /dev/null"
+   if [ -z "${value}" -o "${value}" = "UNSET" ]; then
+        echo "Error: expected ${var} in ~/.local/cloud-init/sru-vars.sh"
+        exit 1
+   fi
+ done
+}
+
+usage_error(){
+ script=$1
+ msg=$2
+ [ -z "${2}" ] || echo ${2}
+ echo "Usage: $script <ubuntu_release> [--preserve-instance]"
+ exit 1
+}
+
+parse_args(){
+script=$1; shift;
+
+[ $# = 0 ] && usage_error $script "missing required <ubuntu_release> param"
+
+while [ $# -ne 0 ]; do
+        case "$1" in
+                # any flag pass through.
+                --preserve-instance) PRESERVE_INSTANCE=true;;
+                xenial|bionic|eaon|focal) UBUNTU_RELEASE=$1;;
+                --) shift; break;;
+                *) echo "Invalid ubuntu_release provided: $1"; exit 1;;
+        esac
+        shift;
+done
+if [ -z "${UBUNTU_RELEASE}" ]; then
+    usage_error $script "no valid <ubuntu_release> param found"
+fi
+}
