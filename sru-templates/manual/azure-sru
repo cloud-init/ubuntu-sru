@@ -20,6 +20,8 @@ assert_expected_vars PROPOSED_SCRIPT AZURE_REGION AZURE_VNET_NAME \
 create_samplecloudconfig
 create_setup_proposed_script
 
+AZURE_VNET_NAME=$AZURE_VNET_NAME-$UBUNTU_RELEASE
+
 
 IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
 IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
@@ -59,28 +61,29 @@ while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
 done
 
 
+echo "### BEGIN $UBUNTU_RELEASE"
 
-az group create --name $AZURE_RESOURCE_GROUP --location $AZURE_REGION
+az group show -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az group create --name $AZURE_RESOURCE_GROUP --location $AZURE_REGION
 
 if [ -n "${AZURE_BOOT_DIAG}" ]; then
-    az storage account create \
-        --name $AZURE_BOOT_DIAG \
-        --resource-group $AZURE_RESOURCE_GROUP \
-        --location $AZURE_REGION \
-        --sku Standard_RAGRS \
-        --kind StorageV2
+     az storage account show --name $AZURE_BOOT_DIAG > /dev/null 2>&1 ||
+         az storage account create \
+             --name $AZURE_BOOT_DIAG \
+             --resource-group $AZURE_RESOURCE_GROUP \
+             --location $AZURE_REGION \
+             --sku Standard_RAGRS \
+             --kind StorageV2
     AZURE_BOOT_DIAG_ARG="--boot-diagnostics-storage ${AZURE_BOOT_DIAG}"
 else
     AZURE_BOOT_DIAG_ARG=""
 fi
 
-
-az network nsg create \
+az network nsg show --name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg create \
     --resource-group $AZURE_RESOURCE_GROUP \
     --location $AZURE_REGION \
     --name $AZURE_NETWORK_SECURITY_GROUP
 
-az network nsg rule create \
+az network nsg rule show --name allowSSHIn --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
     --name allowSSHIn  \
     --nsg-name $AZURE_NETWORK_SECURITY_GROUP  \
     --resource-group $AZURE_RESOURCE_GROUP  \
@@ -94,7 +97,7 @@ az network nsg rule create \
     --destination-address-prefixes "*"  \
     --destination-port-ranges 22
 
-az network nsg rule create \
+az network nsg rule show --name allowAllOut --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
     --name allowAllOut  \
     --resource-group $AZURE_RESOURCE_GROUP \
     --nsg-name $AZURE_NETWORK_SECURITY_GROUP \
@@ -108,13 +111,13 @@ az network nsg rule create \
     --destination-address-prefixes "*"  \
     --destination-port-ranges "*"
 
-az network vnet create \
+az network vnet show --name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet create \
     --resource-group $AZURE_RESOURCE_GROUP \
     --location $AZURE_REGION \
     --name $AZURE_VNET_NAME \
     --address-prefixes "10.0.0.0/16" "ace:cab:deca::/48"
 
-az network vnet subnet create \
+az network vnet subnet show --name sruSubnet --vnet-name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet subnet create \
     --name sruSubnet \
     --resource-group $AZURE_RESOURCE_GROUP \
     --vnet-name $AZURE_VNET_NAME \
@@ -124,7 +127,6 @@ az network vnet subnet create \
 
 sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
-echo "### BEGIN $UBUNTU_RELEASE"
 netcfg="/etc/netplan/50-cloud-init.yaml"
 case $UBUNTU_RELEASE in
     xenial) image_version=16.04-DAILY-LTS
@@ -263,12 +265,13 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
             --private-ip-address-version IPv6
 
     fi
-    az vm create --name=$name \
-        --image=Canonical:UbuntuServer:$image_version:latest \
-        --admin-username=root --admin-username=ubuntu \
-        -g $AZURE_RESOURCE_GROUP --ssh-key-value $SSH_KEY \
-        $AZURE_BOOT_DIAG_ARG \
-        --custom-data $SAMPLE_CLOUDCONFIG $nics
+    az vm show --name $name -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 ||
+        az vm create --name=$name \
+            --image=Canonical:UbuntuServer:$image_version:latest \
+            --admin-username=root --admin-username=ubuntu \
+            -g $AZURE_RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+            $AZURE_BOOT_DIAG_ARG \
+            --custom-data $SAMPLE_CLOUDCONFIG $nics
     IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
     echo "Created $name: ubuntu@$IP"
@@ -276,7 +279,7 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
     ssh $sshopts $IP -- cloud-init status --wait --long
     ssh $sshopts $IP -- dpkg-query --show cloud-init
     ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
-    ssh $sshopts $IP -- grep Trace /var/log/cloud-init.log
+    ssh $sshopts $IP -- ! grep Trace /var/log/cloud-init.log
     ssh $sshopts $IP -- systemd-analyze
     ssh $sshopts $IP -- systemd-analyze blame
     ssh $sshopts $IP -- cloud-init analyze show
@@ -294,7 +297,7 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
     ssh $sshopts $IP -- dpkg-query --show cloud-init
     ssh $sshopts $IP -- sudo hostname SRU-didnt-work
     ssh $sshopts $IP -- sudo rm -f $netcfg
-    ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot
+    ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot || true
     sleep 60
 
     ssh $sshopts $IP -- cloud-init status --wait --long
