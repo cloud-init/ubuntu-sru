@@ -1,24 +1,19 @@
-# This file is sourced by any manual SRU cloud tests
-# It should be stored in $(CWD)sru-vars.rc
+# This file is sourced by all manual SRU cloud tests
+# It relies on user-specific variable overrides in SRU_VARS_LOCAL_RC.
 # Set the variables accordingly for your cloud configuration and usernames
 
 PRESERVE_INSTANCE=false   # can be set as cmdline param
 UBUNTU_RELEASE=""         # The release to test specfied as cmdline param
 LP_USER="UNSET"            # specify your launchpad username
+PROPOSED_SCRIPT=setup_proposed.sh
 
 USE_DEV_PPA=0  # set to 1 to use ppa:cloud-init-dev/proposed
-if [ "${USE_DEV_PPA:-0}" -eq "0" ]; then
-    PROPOSED_SCRIPT=setup_proposed.sh
-else
-    PROPOSED_SCRIPT=setup_dev_proposed.sh
-fi
 
 SAMPLE_CLOUDCONFIG="sethostname.yaml"
 # Key used to interact with cloud-instances
 SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
 
-# Azure-specific
 AZURE_REGION="UNSET"          # specify your region name
 AZURE_VNET_NAME="UNSET"       # specify your virtual network name
 AZURE_NETWORK_SECURITY_GROUP="UNSET" # specify your network security group
@@ -34,6 +29,14 @@ OPENSTACK_SSH_KEY_NAME="UNSET" # your openstack ssh key name on serverstack
 
 VMWARE_PASSWORD="UNSET"        # set to vcenter admin password
 
+# Define custom values for the above variables in ~/sru-vars-local.rc
+SRU_VARS_LOCAL_RC=$HOME/sru-vars-local.rc
+if [ ! -f $SRU_VARS_LOCAL_RC ]; then
+    echo "Error: missing $SRU_VARS_LOCAL_RC variable overrides to testing"
+    exit 1
+fi
+. SRU_VARS_LOCAL_RC
+
 
 create_samplecloudconfig(){
     filename=${1:-${SAMPLE_CLOUDCONFIG}}
@@ -46,21 +49,23 @@ EOF
 }
 
 
-create_setup_proposed_scripts(){
-    cat > setup_proposed.sh <<EOF
+create_setup_proposed_script(){
+    if [ "${USE_DEV_PPA:-0}" -eq "0" ]; then
+        cat > PROPOSED_SCRIPT <<EOF
 #/bin/bash
 mirror=http://archive.ubuntu.com/ubuntu
 echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
 apt-get update -q;
 apt-get install -qy cloud-init;
 EOF
-
-    cat > setup_dev_proposed.sh <<EOF
+    else
+        cat > PROPOSED_SCRIPT <<EOF
 #/bin/bash
 add-apt-repository ppa:cloud-init-dev/proposed -y
 apt-get update -q;
 apt-get install -qy cloud-init;
 EOF
+    fi
 }
 
 
@@ -72,7 +77,7 @@ assert_expected_vars(){
         # to actual value of the variable name $var
         eval "value=\$$var > /dev/null"
         if [ -z "${value}" -o "${value}" = "UNSET" ]; then
-            echo "Error: expected ${var} in ~/.local/cloud-init/sru-vars.sh"
+            echo "Error: expected ${var} in $SRU_VARS_LOCAL_RC"
             exit 1
         fi
     done
@@ -95,7 +100,7 @@ parse_args(){
         case "$1" in
             # any flag pass through.
             --preserve-instance) PRESERVE_INSTANCE=true;;
-            xenial|bionic|eaon|focal) UBUNTU_RELEASE=$1;;
+            xenial|bionic|eoan|focal) UBUNTU_RELEASE=$1;;
             --) shift; break;;
            *) echo "Invalid ubuntu_release provided: $1"; exit 1;;
         esac

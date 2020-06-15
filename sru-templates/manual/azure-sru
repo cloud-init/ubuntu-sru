@@ -4,7 +4,7 @@ set -ex
 # Validate upgrade to proposed version of cloud-init
 # Check Tracebacks or error conditions on clean boot
 
-SRU_VARS=~/sru-vars.rc
+SRU_VARS=./sru-templates/manual/sru-vars.rc
 
 if [ ! -f $SRU_VARS_FILE ]; then
    echo "Missing config environment file $SRU_VARS."
@@ -14,11 +14,11 @@ fi
 . $SRU_VARS
 
 parse_args $0 $@
-assert_expected_vars AZURE_REGION AZURE_VNET_NAME \
+assert_expected_vars PROPOSED_SCRIPT AZURE_REGION AZURE_VNET_NAME \
   AZURE_NETWORK_SECURITY_GROUP AZURE_NIC_NAME AZURE_RESOURCE_GROUP \
   AZURE_BOOT_DIAG SSH_KEY SAMPLE_CLOUDCONFIG AZURE_ADVANCED_NIC_TESTS
 create_samplecloudconfig
-create_setup_proposed_scripts
+create_setup_proposed_script
 
 
 IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
@@ -238,7 +238,7 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
              --accelerated-networking true \
             --subnet sruSubnet \
             --private-ip-address-version IPv4 \
-             --lb-address-pools dsLbBackEndPool_v4_$UBUNTU_RELEASE  \
+            --lb-address-pools dsLbBackEndPool_v4_$UBUNTU_RELEASE  \
             --lb-name dsLB_$UBUNTU_RELEASE  \
             --public-ip-address vmPublicIP-IPv4-$UBUNTU_RELEASE
 
@@ -268,7 +268,7 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
         --admin-username=root --admin-username=ubuntu \
         -g $AZURE_RESOURCE_GROUP --ssh-key-value $SSH_KEY \
         $AZURE_BOOT_DIAG_ARG \
-        --custom-data ${SAMPLE_CLOUDCONFIG} $nics
+        --custom-data $SAMPLE_CLOUDCONFIG $nics
     IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
 
     echo "Created $name: ubuntu@$IP"
@@ -289,8 +289,8 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
     ssh $sshopts $IP -- ip -6 addr >> previous-network.out
     ssh $sshopts $IP -- grep DHCP /var/log/syslog >> previous-network.out
 
-    scp $sshopts setup_proposed.sh $IP:.
-    ssh $sshopts $IP -- sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+    scp $sshopts PROPOSED_SCRIPT $IP:.
+    ssh $sshopts $IP -- sudo bash PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
     ssh $sshopts $IP -- dpkg-query --show cloud-init
     ssh $sshopts $IP -- sudo hostname SRU-didnt-work
     ssh $sshopts $IP -- sudo rm -f $netcfg
