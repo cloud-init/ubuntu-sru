@@ -16,11 +16,10 @@ fi
 parse_args $0 $@
 assert_expected_vars AZURE_REGION AZURE_VNET_NAME \
   AZURE_NETWORK_SECURITY_GROUP AZURE_NIC_NAME AZURE_RESOURCE_GROUP \
-  AZURE_BOOT_DIAG SSH_KEY SAMPLE_CLOUDCONFIG
+  AZURE_BOOT_DIAG SSH_KEY SAMPLE_CLOUDCONFIG AZURE_ADVANCED_NIC_TESTS
 create_samplecloudconfig
 create_setup_proposed_scripts
 
-ADVANCED_NIC_TESTS=true
 
 IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
 IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
@@ -36,7 +35,7 @@ if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Regi
         echo -n "Proceed without any advanced networking tests (y/n)? "
         read OK
         if [ "$OK" = "y" ]; then
-            ADVANCED_NIC_TESTS=false
+            AZURE_ADVANCED_NIC_TESTS=false
         else
             echo "quit the test run"
             exit 1
@@ -136,12 +135,12 @@ case $UBUNTU_RELEASE in
     *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
 esac
 # Note: accelerated network requires bigger size than our default DS1
-for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$release --size Standard_DS2_v2"; do
+for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELEASE --size Standard_DS2_v2"; do
     if [ "" = "$nics" ]; then
         echo "Creating standard network vm"
         name=test-sru-$UBUNTU_RELEASE
     else
-        if [ $ADVANCED_NIC_TESTS = false ]; then
+        if [ $AZURE_ADVANCED_NIC_TESTS = false ]; then
             echo "Skipping advanced nic tests because ipv6 feature is disabled"
             continue
         fi
@@ -199,7 +198,7 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$release --s
 
         # Create LB health probe for ssh port
         az network lb probe create -g $AZURE_RESOURCE_GROUP  \
-            --lb-name dsLB_$UBUNTU_RELEASE -n dsProbe_$release --protocol tcp \
+            --lb-name dsLB_$UBUNTU_RELEASE -n dsProbe_$UBUNTU_RELEASE --protocol tcp \
             --port 22
 
         az network lb rule create \
