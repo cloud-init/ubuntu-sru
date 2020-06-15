@@ -25,11 +25,18 @@ while [ $# -ne 0 ]; do
 	shift;
 done
 
+
+run_describe_command() {
+    dnsname=$1
+    query=$2
+    aws ec2 describe-instances --filter "Name=dns-name,Values=${dnsname}" --query $query | jq -r .[]
+}
+
 get_ec2_instance_id() {
     dns_name=$1
     dns_name="${dns_name#"ubuntu@"}"
     query='Reservations[].Instances[].InstanceId'
-    aws ec2 describe-instances --filter "Name=dns-name,Values=${dns_name}" --query $query | jq -r .[]
+    run_describe_command $dns_name $query
 }
 
 terminate_instance() {
@@ -41,6 +48,56 @@ terminate_instance() {
     else
         echo "Keeping instance active"
     fi
+}
+
+get_subnet_id() {
+    inst_name=$1
+    dns_name="${inst_name#"ubuntu@"}"
+    query='Reservations[].Instances[].SubnetId'
+    run_describe_command $dns_name $query
+}
+
+create_network_interface() {
+    subnet_id=$1
+    aws ec2 create-network-interface --subnet-id $subnet_id
+}
+
+get_network_interface_id() {
+    network_interface_json=$*
+    echo $network_interface_json | jq -r .NetworkInterface.NetworkInterfaceId
+}
+
+delete_network_interface() {
+    network_interface_id=$1
+    aws ec2 delete-network-interface --network-interface-id $network_interface_id
+}
+
+attach_network_interface() {
+    instance_id=$1
+    network_interface_id=$2
+    device_index=$3
+
+    aws ec2 attach-network-interface --device-index $device_index --instance-id $instance_id --network-interface-id $network_interface_id | jq -r .AttachmentId
+}
+
+detach_network_interface() {
+    attachment_id=$1
+    aws ec2 detach-network-interface --attachment-id $attachment_id
+}
+
+setup_network_interface() {
+    subnet_id=$1
+    network_interface_json=$(create_network_interface $subnet_id)
+    get_network_interface_id $network_interface_json
+}
+
+teardown_network_interface() {
+    attachment_id=$1
+    network_interface_id=$2
+
+    detach_network_interface $attachment_id
+    sleep 30
+    delete_network_interface $network_interface_id
 }
 
 # Manual EC2 upgrade and clean install validation
