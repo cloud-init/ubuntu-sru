@@ -1,0 +1,555 @@
+=== Begin SRU Template ===
+[Impact]
+Since md5 is now broken, we should output the authorized ssh keys fingerprint with sha256 by default instead of md5.
+
+
+[Test Case]
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+cat > ssh.yaml <<EOF
+#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w==
+EOF
+
+reproduce() {
+   series=$1
+   name=test-$series-reproduce
+
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$series $name -c user.user-data="$(cat ssh.yaml)"
+   lxc exec $name -- cloud-init status --wait --long
+
+   expected_type='md5'
+   console_output=$(lxc console $name --show-log | grep "Fingerprint ($expected_type)" | wc -l)
+
+   if [ "$series" = "focal" ]; then
+       expected_output=0
+   else
+       expected_output=1
+   fi
+
+   if [ "$console_output" = "$expected_output" ]; then
+       echo "SUCCESS: $series has outputted $expected_output authorized keys as $expected_type"
+   else
+       echo "FAILURE: $series has not outputted authorized keys as $expected_type"
+   fi
+}
+
+verify() {
+   series=$1
+   ref=$series-proposed
+   name_proposed=test-$series-proposed
+
+   lxc delete $name_proposed --force 2> /dev/null
+   lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $series $ref
+   lxc init $ref $name_proposed -c user.user-data="$(cat ssh.yaml)"
+   lxc start $name_proposed
+   lxc exec $name_proposed -- cloud-init status --wait --long
+
+   expected_type='sha256'
+   console_output=$(lxc console $name_proposed --show-log | grep "Fingerprint ($expected_type)" | wc -l)
+   expected_output=1
+
+   if [ "$console_output" = "$expected_output" ]; then
+       echo "SUCCESS: $series has outputted $expected_output authorized keys as ${expected_type}"
+   else
+       echo "FAILURE $series has not outputted authorized keys as $expected_type"
+   fi
+}
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   reproduce $SERIES
+   verify $SERIES
+done
+
+[Regression Potential]
+Some users may rely on validating the keys with md5. But since md5 is problematic and the default hash is sha256 since bionic, we believe this is
+an issue that can be addressed by the user.
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/28aa8c5a16b67ea0226734eeadfa2c467701899d
+
+=== End SRU Template ===
+
+=== Verification Output ===
+
++ cat
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ reproduce bionic
++ series=bionic
++ name=test-bionic-reproduce
++ lxc delete test-bionic-reproduce --force
+++ cat ssh.yaml
++ lxc launch ubuntu-daily:bionic test-bionic-reproduce -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-bionic-reproduce
+Starting test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+...................................
+status: done
+time: Mon, 15 Jun 2020 19:26:16 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=md5
+++ lxc console test-bionic-reproduce --show-log
+++ grep 'Fingerprint (md5)'
+++ wc -l
++ console_output=1
++ '[' bionic = focal ']'
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: bionic has outputted 1 authorized keys as md5'
+SUCCESS: bionic has outputted 1 authorized keys as md5
++ verify bionic
++ series=bionic
++ ref=bionic-proposed
++ name_proposed=test-bionic-proposed
++ lxc delete test-bionic-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
+Creating bionic-proposed-2904725034
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [747 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:10 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [969 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1081 kB]
+Get:16 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [336 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [101 kB]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [39.0 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [34.5 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [17.3 kB]
+Get:28 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Fetched 18.8 MB in 23s (821 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preconfiguring packages ...
+Fetched 422 kB in 3s (160 kB/s)
+(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: 21bca83e5a369f000797bceab12668fdd3843f8948c60f87b1ff82299b8ec52c
+++ cat ssh.yaml
++ lxc init bionic-proposed test-bionic-proposed -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-bionic-proposed
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+...........................................
+status: done
+time: Mon, 15 Jun 2020 19:28:00 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=sha256
+++ lxc console test-bionic-proposed --show-log
+++ grep 'Fingerprint (sha256)'
+++ wc -l
++ console_output=1
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: bionic has outputted 1 authorized keys as sha256'
+SUCCESS: bionic has outputted 1 authorized keys as sha256
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ reproduce eoan
++ series=eoan
++ name=test-eoan-reproduce
++ lxc delete test-eoan-reproduce --force
+++ cat ssh.yaml
++ lxc launch ubuntu-daily:eoan test-eoan-reproduce -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-eoan-reproduce
+Starting test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+.............................................................................................................................................................................................
+status: done
+time: Mon, 15 Jun 2020 19:28:53 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=md5
+++ lxc console test-eoan-reproduce --show-log
+++ grep 'Fingerprint (md5)'
+++ wc -l
++ console_output=1
++ '[' eoan = focal ']'
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: eoan has outputted 1 authorized keys as md5'
+SUCCESS: eoan has outputted 1 authorized keys as md5
++ verify eoan
++ series=eoan
++ ref=eoan-proposed
++ name_proposed=test-eoan-proposed
++ lxc delete test-eoan-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
+Creating eoan-proposed-3165832183
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [228 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [79.2 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5908 B]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [172 kB]
+Get:9 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.5 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6640 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [307 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9452 B]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.5 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [41.6 kB]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [16.6 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1140 B]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.9 kB]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [12.2 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1208 B]
+Fetched 16.2 MB in 1min 10s (233 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preconfiguring packages ...
+Fetched 420 kB in 4s (113 kB/s)
+(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: fb0b5cffedc7183fc3e6bb778f0c1521dcc2c47b6559c3b2b4f378d6e7a93b03
+++ cat ssh.yaml
++ lxc init eoan-proposed test-eoan-proposed -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-eoan-proposed
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+...........................................................................................................................................................................................
+status: done
+time: Mon, 15 Jun 2020 19:32:10 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=sha256
+++ lxc console test-eoan-proposed --show-log
+++ grep 'Fingerprint (sha256)'
+++ wc -l
++ console_output=1
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: eoan has outputted 1 authorized keys as sha256'
+SUCCESS: eoan has outputted 1 authorized keys as sha256
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ reproduce focal
++ series=focal
++ name=test-focal-reproduce
++ lxc delete test-focal-reproduce --force
+++ cat ssh.yaml
++ lxc launch ubuntu-daily:focal test-focal-reproduce -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-focal-reproduce
+Starting test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+...................................................................................
+status: done
+time: Mon, 15 Jun 2020 19:32:36 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=md5
+++ lxc console test-focal-reproduce --show-log
+++ grep 'Fingerprint (md5)'
+++ wc -l
++ console_output=0
++ '[' focal = focal ']'
++ expected_output=0
++ '[' 0 = 0 ']'
++ echo 'SUCCESS: focal has outputted 0 authorized keys as md5'
+SUCCESS: focal has outputted 0 authorized keys as md5
++ verify focal
++ series=focal
++ ref=focal-proposed
++ name_proposed=test-focal-proposed
++ lxc delete test-focal-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
+Creating focal-proposed-2045010593
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [104 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [39.0 kB]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2664 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [11.0 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [3000 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [34.9 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.3 kB]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1444 B]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [191 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [74.1 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5428 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [107 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [50.2 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3848 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2788 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [188 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [56.2 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [24.9 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1736 B]
+Get:43 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [24.4 kB]
+Get:44 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [18.8 kB]
+Get:45 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1712 B]
+Fetched 15.6 MB in 27s (575 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 28 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preconfiguring packages ...
+Fetched 416 kB in 8s (50.1 kB/s)
+(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: 7eb91b49f8a14ce78fd1f73c97c9e43907357ceb9bd363711713cc8865f4504a
+++ cat ssh.yaml
++ lxc init focal-proposed test-focal-proposed -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-focal-proposed
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+.............................................................................................................................................
+status: done
+time: Mon, 15 Jun 2020 19:35:08 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=sha256
+++ lxc console test-focal-proposed --show-log
+++ grep 'Fingerprint (sha256)'
+++ wc -l
++ console_output=1
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: focal has outputted 1 authorized keys as sha256'
+SUCCESS: focal has outputted 1 authorized keys as sha256
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ reproduce xenial
++ series=xenial
++ name=test-xenial-reproduce
++ lxc delete test-xenial-reproduce --force
+++ cat ssh.yaml
++ lxc launch ubuntu-daily:xenial test-xenial-reproduce -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-xenial-reproduce
+Starting test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+...........................
+status: done
+time: Mon, 15 Jun 2020 19:35:20 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=md5
+++ lxc console test-xenial-reproduce --show-log
+++ grep 'Fingerprint (md5)'
+++ wc -l
++ console_output=1
++ '[' xenial = focal ']'
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: xenial has outputted 1 authorized keys as md5'
+SUCCESS: xenial has outputted 1 authorized keys as md5
++ verify xenial
++ series=xenial
++ ref=xenial-proposed
++ name_proposed=test-xenial-proposed
++ lxc delete test-xenial-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
+Creating xenial-proposed-1088622918
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:8 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:9 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:10 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:11 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
+Get:13 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [52.7 kB]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [20.8 kB]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [9216 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6572 B]
+Get:25 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
+Get:26 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:27 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:28 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Fetched 17.1 MB in 23s (730 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 12 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preconfiguring packages ...
+Fetched 425 kB in 6s (65.4 kB/s)
+(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Instance published with fingerprint: 9ebe38f37e7356a435aff04dc36224ebe010de78971716dd3460c84d1790047e
+++ cat ssh.yaml
++ lxc init xenial-proposed test-xenial-proposed -c 'user.user-data=#cloud-config
+ssh_authorized_keys:
+  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDXW9Gg5H7ehjdSc6qDzwNtgCy94XYHhEYlXZMO2+FJrH3wfHGiMfCwOHxcOMt2QiXItULthdeQWS9QjBSSjVRXf6731igFrqPFyS9qBlOQ5D29C4HBXFnQggGVpBNJ82IRJv7szbbe/ vpgLBP4kttUza9Dr4e1YM1ln4PRnjfXea6T0m+m1ixNb5432pTXlqYOnNOxSIm1gHgMLxPuDrJvQERDKrSiKSjIdyC9Jd8t2e1tkNLY0stmckVRbhShmcJvlyofHWbc2Ca1mmtP7MlS1VQnfLkvU1IrFwkmaQmaggX6WR6coRJ6XFXdWcq/ AI2K6GjSnl1dnnCxE8VCEXBlXgFzad+PMSG4yiL5j8Oo1ZVpkTdgBnw4okGqTYCXyZg6X00As9IBNQfZMFlQXlIo4FiWgj3CO5QHQOyOX6FuEumaU13GnERrSSdp9tCs1Qm3/ DG2RSCQBWTfcgMcStIvKqvJ3IjFn0vGLvI3Ampnq9q1SHwmmzAPSdzcMA76HyMUA5VWaBvWHlUxzIM6unxZASnwvuCzpywSEB5J2OF+p6H+cStJwQ32XwmOG8pLp1srlVWpqZI58Du/ lzrkPqONphoZx0LDV86w7RUz1ksDzAdcm0tvmNRFMN1a0frDs506oA3aWK0oDk4Nmvk8sXGTYYw3iQSkOvDUUlIsqdaO+w=='
+Creating test-xenial-proposed
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+......................................
+status: done
+time: Mon, 15 Jun 2020 19:37:02 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ expected_type=sha256
+++ lxc console test-xenial-proposed --show-log
+++ grep 'Fingerprint (sha256)'
+++ wc -l
++ console_output=1
++ expected_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: xenial has outputted 1 authorized keys as sha256'
+SUCCESS: xenial has outputted 1 authorized keys as sha256
