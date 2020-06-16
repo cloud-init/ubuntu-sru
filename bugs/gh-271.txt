@@ -1,0 +1,606 @@
+=== Begin SRU Template ===
+[Impact]
+When a user is configuring apt mirrors, we must ensure that the proposed code refactoring
+is working properly.
+
+[Test Case]
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+cat > apt.yaml <<EOF
+#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/
+EOF
+
+check_apt_mirror() {
+   name=$1
+   expected_output=20
+   command_output=$(lxc exec $name -- cat /etc/apt/sources.list | grep "$expected_mirror" | wc -l)
+
+   if [ "$command_output" = "$expected_output" ]; then
+       echo "SUCCESS: $series set the right mirror"
+   else
+       echo "FAILURE: $series could not set the right mirror"
+   fi
+}
+
+check_mirror_on_current_cloud_init() {
+   series=$1
+   name=test-$series-reproduce
+   expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
+
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$series $name -c user.user-data="$(cat apt.yaml)"
+   lxc exec $name -- cloud-init status --wait --long
+
+   check_apt_mirror $name
+}
+
+check_mirror_on_proposed_cloud_init() {
+   series=$1
+   ref=$series-proposed
+   name_proposed=test-$series-proposed
+
+   lxc delete $name_proposed --force 2> /dev/null
+   lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $series $ref
+   lxc init $ref $name_proposed -c user.user-data="$(cat apt.yaml)"
+   lxc start $name_proposed
+   lxc exec $name_proposed -- cloud-init status --wait --long
+
+   check_apt_mirror $name_proposed
+}
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   echo "$SERIES: Check if apt mirror set up is working correctly"
+   check_mirror_on_current_cloud_init $SERIES
+   echo "$SERIES: Check if updated cloud-init apt mirror set up is working correctly"
+   check_mirror_on_proposed_cloud_init $SERIES
+done
+```
+
+[Regression Potential]
+The proposed refactoring may break how apt mirrors are set up.
+
+=== End cloud-init SRU Template ===
+
++ cat
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ echo 'bionic: Check if apt mirror set up is working correctly'
+bionic: Check if apt mirror set up is working correctly
++ check_mirror_on_current_cloud_init bionic
++ series=bionic
++ name=test-bionic-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-bionic-reproduce --force
+++ cat apt.yaml
++ lxc launch ubuntu-daily:bionic test-bionic-reproduce -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-bionic-reproduce
+Starting test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+.......................................................
+status: done
+time: Tue, 16 Jun 2020 14:38:05 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-bionic-reproduce
++ name=test-bionic-reproduce
++ expected_output=20
+++ lxc exec test-bionic-reproduce -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: bionic set the right mirror'
+SUCCESS: bionic set the right mirror
++ echo 'bionic: Check if updated cloud-init apt mirror set up is working correctly'
+bionic: Check if updated cloud-init apt mirror set up is working correctly
++ check_mirror_on_proposed_cloud_init bionic
++ series=bionic
++ ref=bionic-proposed
++ name_proposed=test-bionic-proposed
++ lxc delete test-bionic-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
+Creating bionic-proposed-137313258
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [748 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:8 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [970 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1081 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [336 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [112 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [41.9 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [36.8 kB]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [17.5 kB]
+Fetched 18.8 MB in 21s (912 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preconfiguring packages ...
+Fetched 422 kB in 2s (203 kB/s)
+(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: b29eff9ce19f260c7132858befed56ea60147dd55873cb14173e804e87883250
+++ cat apt.yaml
++ lxc init bionic-proposed test-bionic-proposed -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-bionic-proposed
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+.......................................................
+status: done
+time: Tue, 16 Jun 2020 14:39:45 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-bionic-proposed
++ name=test-bionic-proposed
++ expected_output=20
+++ lxc exec test-bionic-proposed -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: bionic set the right mirror'
+SUCCESS: bionic set the right mirror
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ echo 'eoan: Check if apt mirror set up is working correctly'
+eoan: Check if apt mirror set up is working correctly
++ check_mirror_on_current_cloud_init eoan
++ series=eoan
++ name=test-eoan-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-eoan-reproduce --force
+++ cat apt.yaml
++ lxc launch ubuntu-daily:eoan test-eoan-reproduce -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-eoan-reproduce
+Starting test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+................................................................................................................................................
+status: done
+time: Tue, 16 Jun 2020 14:40:26 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-eoan-reproduce
++ name=test-eoan-reproduce
++ expected_output=20
+++ lxc exec test-eoan-reproduce -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: eoan set the right mirror'
+SUCCESS: eoan set the right mirror
++ echo 'eoan: Check if updated cloud-init apt mirror set up is working correctly'
+eoan: Check if updated cloud-init apt mirror set up is working correctly
++ check_mirror_on_proposed_cloud_init eoan
++ series=eoan
++ ref=eoan-proposed
++ name_proposed=test-eoan-proposed
++ lxc delete test-eoan-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
+Creating eoan-proposed-77757634
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [228 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:6 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [79.3 kB]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5908 B]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [172 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.5 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6640 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [307 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9452 B]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.5 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [43.8 kB]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [17.2 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1140 B]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.9 kB]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [12.2 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1208 B]
+Fetched 16.2 MB in 29s (553 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 15 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preconfiguring packages ...
+Fetched 420 kB in 2s (213 kB/s)
+(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: 96115be4d15d0bcbe2e88bc48b6116edb15d63689f374ec8372f02e94b0c261a
+++ cat apt.yaml
++ lxc init eoan-proposed test-eoan-proposed -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-eoan-proposed
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+............................................................................................
+status: done
+time: Tue, 16 Jun 2020 14:42:33 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-eoan-proposed
++ name=test-eoan-proposed
++ expected_output=20
+++ lxc exec test-eoan-proposed -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: eoan set the right mirror'
+SUCCESS: eoan set the right mirror
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ echo 'focal: Check if apt mirror set up is working correctly'
+focal: Check if apt mirror set up is working correctly
++ check_mirror_on_current_cloud_init focal
++ series=focal
++ name=test-focal-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-focal-reproduce --force
+++ cat apt.yaml
++ lxc launch ubuntu-daily:focal test-focal-reproduce -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-focal-reproduce
+Starting test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+......................................................................................................
+status: done
+time: Tue, 16 Jun 2020 14:43:07 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-focal-reproduce
++ name=test-focal-reproduce
++ expected_output=20
+++ lxc exec test-focal-reproduce -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: focal set the right mirror'
+SUCCESS: focal set the right mirror
++ echo 'focal: Check if updated cloud-init apt mirror set up is working correctly'
+focal: Check if updated cloud-init apt mirror set up is working correctly
++ check_mirror_on_proposed_cloud_init focal
++ series=focal
++ ref=focal-proposed
++ name_proposed=test-focal-proposed
++ lxc delete test-focal-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
+Creating focal-proposed-2179226867
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:4 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [105 kB]
+Get:5 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [39.1 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2664 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [11.0 kB]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [3000 B]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [34.9 kB]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.3 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1444 B]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:16 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [192 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [75.1 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5496 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [108 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [50.6 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [3892 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [60.5 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [26.5 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1752 B]
+Get:43 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [24.4 kB]
+Get:44 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [18.8 kB]
+Get:45 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1712 B]
+Fetched 15.7 MB in 24s (654 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 29 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preconfiguring packages ...
+Fetched 416 kB in 2s (201 kB/s)
+(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+invoke-rc.d: could not determine current runlevel
+Instance published with fingerprint: 7d7cbc985c8823e12fd18782640bd1313e10546b1f6b295bc802fb50baa7086d
+++ cat apt.yaml
++ lxc init focal-proposed test-focal-proposed -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-focal-proposed
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+...........................................................................................................................................
+status: done
+time: Tue, 16 Jun 2020 14:45:23 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-focal-proposed
++ name=test-focal-proposed
++ expected_output=20
+++ lxc exec test-focal-proposed -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: focal set the right mirror'
+SUCCESS: focal set the right mirror
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ echo 'xenial: Check if apt mirror set up is working correctly'
+xenial: Check if apt mirror set up is working correctly
++ check_mirror_on_current_cloud_init xenial
++ series=xenial
++ name=test-xenial-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-xenial-reproduce --force
+++ cat apt.yaml
++ lxc launch ubuntu-daily:xenial test-xenial-reproduce -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-xenial-reproduce
+Starting test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+...........................
+status: done
+time: Tue, 16 Jun 2020 14:45:34 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-xenial-reproduce
++ name=test-xenial-reproduce
++ expected_output=20
+++ lxc exec test-xenial-reproduce -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: xenial set the right mirror'
+SUCCESS: xenial set the right mirror
++ echo 'xenial: Check if updated cloud-init apt mirror set up is working correctly'
+xenial: Check if updated cloud-init apt mirror set up is working correctly
++ check_mirror_on_proposed_cloud_init xenial
++ series=xenial
++ ref=xenial-proposed
++ name_proposed=test-xenial-proposed
++ lxc delete test-xenial-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
+Creating xenial-proposed-262341662
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [52.7 kB]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [20.8 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [9216 B]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6572 B]
+Fetched 17.1 MB in 21s (811 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 12 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preconfiguring packages ...
+Fetched 425 kB in 2s (194 kB/s)
+(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Instance published with fingerprint: 46deebaa4907abb71e38f569ab66e12e8adff7ab6535b5e0a4606edea8ce62a7
+++ cat apt.yaml
++ lxc init xenial-proposed test-xenial-proposed -c 'user.user-data=#cloud-config
+apt:
+  primary:
+    - arches:
+        - default
+      search:
+        - http://uk.archive.ubuntu.com/ubuntu/'
+Creating test-xenial-proposed
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+...................................................
+status: done
+time: Tue, 16 Jun 2020 14:47:07 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ check_apt_mirror test-xenial-proposed
++ name=test-xenial-proposed
++ expected_output=20
+++ lxc exec test-xenial-proposed -- cat /etc/apt/sources.list
+++ grep http://uk.archive.ubuntu.com/ubuntu/
+++ wc -l
++ command_output=20
++ '[' 20 = 20 ']'
++ echo 'SUCCESS: xenial set the right mirror'
+SUCCESS: xenial set the right mirror
+
