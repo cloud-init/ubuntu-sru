@@ -1,0 +1,2247 @@
+=== Begin SRU Template ===
+[Impact]
+Users will be able to configure their user data with new cloud-init information, such as distro,
+python_version and kernel_version. Because of that, they also be able to query this information
+through the cloud-init query command.
+
+
+[Test Case]
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+curr_query_keys="_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata"
+new_query_keys="distro distro_release distro_version kernel_release machine merged_cfg python_version"
+
+reproduce() {
+   series=$1
+   name=test-$series-reproduce
+   expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
+
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$series $name
+   lxc exec $name -- cloud-init status --wait --long
+
+   for curr_query_key in $curr_query_keys; do
+       expected_output="SUCCESS"
+       actual_output=$(lxc exec $name_proposed -- cloud-init query $curr_query_key 2>&1 | grep "ERROR" || echo "SUCCESS")
+
+       if [ "$expected_output" = "$actual_output" ]; then
+           echo "SUCCESS: proposed $SERIES have key:$curr_query_key for cloud-init query command"
+       else
+           echo "FAILURE: proposed $SERIES do not have $curr_query_key for cloud-init query command"
+       fi
+   done
+
+   for new_query_key in $new_query_keys; do
+       error_output="ERROR: Undefined instance-data key $new_query_key"
+
+       if [ "$series" = "focal" ]; then
+           expected_output="SUCCESS"
+       else
+           expected_output=$error_output
+       fi
+
+       actual_output=$(lxc exec $name -- cloud-init query $new_query_key 2>&1 | grep "$error_output" || echo "SUCCESS")
+
+       if [ "$expected_output" = "$actual_output" ]; then
+           if [ "$series" = "focal" ]; then
+              echo "SUCCESS: current $SERIES do have key:$new_query_key for cloud-init query command"
+           else
+              echo "SUCCESS: current $SERIES do not have key:$new_query_key for cloud-init query command"
+           fi
+       else
+           echo "FAILURE: current $SERIES have $new_query_key for cloud-init query command"
+       fi
+   done
+}
+
+verify() {
+   series=$1
+   ref=$series-proposed
+   name_proposed=test-$series-proposed
+
+   lxc delete $name_proposed --force 2> /dev/null
+   lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $series $ref
+   lxc init $ref $name_proposed
+   lxc start $name_proposed
+   lxc exec $name_proposed -- cloud-init status --wait --long
+
+   all_keys="$curr_query_keys $new_query_keys"
+
+   for query_key in $all_keys; do
+       expected_output="SUCCESS"
+       command_error="ERROR: Undefined instance-data key $new_query_key"
+       actual_output=$(lxc exec $name_proposed -- cloud-init query $query_key 2>&1 | grep "$command_error" || echo "SUCCESS")
+
+       if [ "$expected_output" = "$actual_output" ]; then
+           echo "SUCCESS: proposed $SERIES have key:$query_key for cloud-init query command"
+       else
+           echo "FAILURE: proposed $SERIES do not have key:$query_key for cloud-init query command"
+       fi
+   done
+}
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   echo "$SERIES: Check if new query commands are not found on current version of cloud-init"
+   reproduce $SERIES
+   echo "$SERIES: Check if new query commands are found on proposed version of cloud-init"
+   verify $SERIES
+done
+
+[Regression Potential]
+Since we are adding only instance metadata information and not modifying existing ones, we should
+see any regression related to this feature.
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/71af48df3514ca831c90b77dc71ba0a121dec401
+
+=== End SRU Template ===
+
+=== Verification Output ===
+
++ curr_query_keys='_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata'
++ new_query_keys='distro distro_release distro_version kernel_release machine merged_cfg python_version'
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ echo 'bionic: Check if new query commands are not found on current version of cloud-init'
+bionic: Check if new query commands are not found on current version of cloud-init
++ reproduce bionic
++ series=bionic
++ name=test-bionic-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-bionic-reproduce --force
++ lxc launch ubuntu-daily:bionic test-bionic-reproduce
+Creating test-bionic-reproduce
+Starting test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+......................................
+status: done
+time: Tue, 16 Jun 2020 19:21:37 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query _beta_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:_beta_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query availability_zone
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:availability_zone for cloud-init query command'
+SUCCESS: proposed bionic have key:availability_zone for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query base64_encoded_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:base64_encoded_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query cloud_name
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:cloud_name for cloud-init query command'
+SUCCESS: proposed bionic have key:cloud_name for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query ds
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:ds for cloud-init query command'
+SUCCESS: proposed bionic have key:ds for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query instance_id
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:instance_id for cloud-init query command'
+SUCCESS: proposed bionic have key:instance_id for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query local_hostname
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:local_hostname for cloud-init query command'
+SUCCESS: proposed bionic have key:local_hostname for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query platform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:platform for cloud-init query command'
+SUCCESS: proposed bionic have key:platform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query public_ssh_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:public_ssh_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query region
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:region for cloud-init query command'
+SUCCESS: proposed bionic have key:region for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query sensitive_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:sensitive_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query subplatform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:subplatform for cloud-init query command'
+SUCCESS: proposed bionic have key:subplatform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query userdata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:userdata for cloud-init query command'
+SUCCESS: proposed bionic have key:userdata for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query v1
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:v1 for cloud-init query command'
+SUCCESS: proposed bionic have key:v1 for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec -- cloud-init query vendordata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:vendordata for cloud-init query command'
+SUCCESS: proposed bionic have key:vendordata for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro'
+++ lxc exec test-bionic-reproduce -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key distro'
++ actual_output='ERROR: Undefined instance-data key distro'
++ '[' 'ERROR: Undefined instance-data key distro' = 'ERROR: Undefined instance-data key distro' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:distro for cloud-init query command'
+SUCCESS: current bionic do not have key:distro for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_release'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_release'
+++ lxc exec test-bionic-reproduce -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key distro_release'
++ actual_output='ERROR: Undefined instance-data key distro_release'
++ '[' 'ERROR: Undefined instance-data key distro_release' = 'ERROR: Undefined instance-data key distro_release' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:distro_release for cloud-init query command'
+SUCCESS: current bionic do not have key:distro_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_version'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_version'
+++ lxc exec test-bionic-reproduce -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key distro_version'
++ actual_output='ERROR: Undefined instance-data key distro_version'
++ '[' 'ERROR: Undefined instance-data key distro_version' = 'ERROR: Undefined instance-data key distro_version' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:distro_version for cloud-init query command'
+SUCCESS: current bionic do not have key:distro_version for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key kernel_release'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key kernel_release'
+++ lxc exec test-bionic-reproduce -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key kernel_release'
++ actual_output='ERROR: Undefined instance-data key kernel_release'
++ '[' 'ERROR: Undefined instance-data key kernel_release' = 'ERROR: Undefined instance-data key kernel_release' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:kernel_release for cloud-init query command'
+SUCCESS: current bionic do not have key:kernel_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key machine'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key machine'
+++ lxc exec test-bionic-reproduce -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key machine'
++ actual_output='ERROR: Undefined instance-data key machine'
++ '[' 'ERROR: Undefined instance-data key machine' = 'ERROR: Undefined instance-data key machine' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:machine for cloud-init query command'
+SUCCESS: current bionic do not have key:machine for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key merged_cfg'
+++ lxc exec test-bionic-reproduce -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key merged_cfg'
++ actual_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' 'ERROR: Undefined instance-data key merged_cfg' = 'ERROR: Undefined instance-data key merged_cfg' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:merged_cfg for cloud-init query command'
+SUCCESS: current bionic do not have key:merged_cfg for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key python_version'
++ '[' bionic = focal ']'
++ expected_output='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-reproduce -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
++ actual_output='ERROR: Undefined instance-data key python_version'
++ '[' 'ERROR: Undefined instance-data key python_version' = 'ERROR: Undefined instance-data key python_version' ']'
++ '[' bionic = focal ']'
++ echo 'SUCCESS: current bionic do not have key:python_version for cloud-init query command'
+SUCCESS: current bionic do not have key:python_version for cloud-init query command
++ echo 'bionic: Check if new query commands are found on proposed version of cloud-init'
+bionic: Check if new query commands are found on proposed version of cloud-init
++ verify bionic
++ series=bionic
++ ref=bionic-proposed
++ name_proposed=test-bionic-proposed
++ lxc delete test-bionic-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
+Creating bionic-proposed-283649988
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [748 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [969 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1081 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [336 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [115 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [42.5 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [37.1 kB]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [17.7 kB]
+Fetched 18.8 MB in 30s (623 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 16 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preconfiguring packages ...
+Fetched 422 kB in 3s (149 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 19.07MB (19.06MB/s)                                                     Publishing instance: Image pack: 47.65MB (23.81MB/s)                                                     Publishing instance: Image pack: 68.79MB (22.92MB/s)                                                     Publishing instance: Image pack: 85.90MB (21.46MB/s)Publishing instance: Image pack: 103.74MB (20.73MB/s)                                                      Publishing instance: Image pack: 122.21MB (20.35MB/s)                                                      Publishing instance: Image pack: 142.72MB (20.37MB/s)                                                      Publishing instance: Image pack: 164.67MB (20.56MB/s)                                                      Publishing instance: Image pack: 181.25MB (20.12MB/s)                                                      Publishing instance: Image pack: 197.42MB (19.72MB/s)                                                      Publishing instance: Image pack: 217.30MB (19.74MB/s)                                                      Publishing instance: Image pack: 244.30MB (20.34MB/s)                                                      Publishing instance: Image pack: 272.25MB (20.92MB/s)                                                      Publishing instance: Image pack: 295.26MB (21.07MB/s)                                                      Publishing instance: Image pack: 317.29MB (21.13MB/s)                                                      Publishing instance: Image pack: 339.57MB (21.20MB/s)                                                      Publishing instance: Image pack: 358.59MB (21.07MB/s)                                                      Publishing instance: Image pack: 379.41MB (21.06MB/s)                                                      Publishing instance: Image pack: 403.37MB (21.21MB/s)                                                      Publishing instance: Image pack: 423.65MB (21.16MB/s)                                                      Publishing instance: Image pack: 452.33MB (21.52MB/s)                                                      Publishing instance: Image pack: 469.94MB (21.34MB/s)                                                      Publishing instance: Image pack: 495.92MB (21.54MB/s)                                                      Publishing instance: Image pack: 520.92MB (21.69MB/s)                                                      Publishing instance: Image pack: 539.01MB (21.54MB/s)                                                      Publishing instance: Image pack: 567.12MB (21.80MB/s)                                                      Publishing instance: Image pack: 589.59MB (21.82MB/s)                                                      Publishing instance: Image pack: 609.26MB (21.74MB/s)                                                      Publishing instance: Image pack: 627.84MB (21.63MB/s)                                                      Publishing instance: Image pack: 645.08MB (21.49MB/s)                                                      Publishing instance: Image pack: 661.13MB (21.31MB/s)                                                      Publishing instance: Image pack: 677.88MB (21.17MB/s)                                                      Publishing instance: Image pack: 695.75MB (21.07MB/s)                                                      Publishing instance: Image pack: 741.86MB (21.80MB/s)                                                      Publishing instance: Image pack: 785.87MB (22.44MB/s)                                                      Publishing instance: Image pack: 814.81MB (22.62MB/s)                                                      Instance published with fingerprint: 1de73e8f3d1669bcd03723afb540d1ebab9f3fc047c940a6d904dc151a5657e5
++ lxc init bionic-proposed test-bionic-proposed
+Creating test-bionic-proposed
+Retrieving image: Unpack: 1% (55.84MB/s)                                         Retrieving image: Unpack: 2% (54.32MB/s)                                         Retrieving image: Unpack: 3% (39.89MB/s)                                         Retrieving image: Unpack: 4% (36.35MB/s)                                         Retrieving image: Unpack: 5% (36.92MB/s)                                         Retrieving image: Unpack: 6% (37.82MB/s)                                         Retrieving image: Unpack: 7% (39.21MB/s)                                         Retrieving image: Unpack: 8% (40.46MB/s)                                         Retrieving image: Unpack: 9% (40.89MB/s)Retrieving image: Unpack: 10% (41.07MB/s)                                          Retrieving image: Unpack: 10% (41.65MB/s)                                          Retrieving image: Unpack: 11% (42.12MB/s)                                          Retrieving image: Unpack: 12% (42.63MB/s)                                          Retrieving image: Unpack: 13% (43.20MB/s)                                          Retrieving image: Unpack: 14% (43.52MB/s)                                          Retrieving image: Unpack: 15% (43.67MB/s)                                          Retrieving image: Unpack: 16% (37.74MB/s)                                          Retrieving image: Unpack: 17% (38.41MB/s)                                          Retrieving image: Unpack: 18% (38.80MB/s)                                          Retrieving image: Unpack: 19% (39.10MB/s)                                          Retrieving image: Unpack: 20% (39.41MB/s)                                          Retrieving image: Unpack: 20% (39.59MB/s)                                          Retrieving image: Unpack: 21% (39.93MB/s)                                          Retrieving image: Unpack: 22% (39.73MB/s)                                          Retrieving image: Unpack: 23% (40.16MB/s)                                          Retrieving image: Unpack: 24% (40.57MB/s)                                          Retrieving image: Unpack: 25% (40.90MB/s)                                          Retrieving image: Unpack: 26% (41.19MB/s)                                          Retrieving image: Unpack: 27% (41.36MB/s)                                          Retrieving image: Unpack: 28% (41.52MB/s)                                          Retrieving image: Unpack: 29% (41.62MB/s)                                          Retrieving image: Unpack: 30% (41.65MB/s)                                          Retrieving image: Unpack: 30% (41.06MB/s)                                          Retrieving image: Unpack: 31% (36.11MB/s)                                          Retrieving image: Unpack: 32% (36.02MB/s)                                          Retrieving image: Unpack: 33% (35.93MB/s)                                          Retrieving image: Unpack: 34% (35.51MB/s)                                          Retrieving image: Unpack: 35% (35.28MB/s)                                          Retrieving image: Unpack: 36% (35.16MB/s)                                          Retrieving image: Unpack: 37% (35.32MB/s)                                          Retrieving image: Unpack: 38% (35.55MB/s)                                          Retrieving image: Unpack: 39% (35.80MB/s)                                          Retrieving image: Unpack: 39% (36.01MB/s)                                          Retrieving image: Unpack: 40% (36.21MB/s)                                          Retrieving image: Unpack: 41% (36.36MB/s)                                          Retrieving image: Unpack: 42% (36.44MB/s)                                          Retrieving image: Unpack: 43% (36.69MB/s)                                          Retrieving image: Unpack: 44% (36.91MB/s)                                          Retrieving image: Unpack: 45% (37.15MB/s)                                          Retrieving image: Unpack: 46% (35.17MB/s)                                          Retrieving image: Unpack: 47% (35.37MB/s)                                          Retrieving image: Unpack: 48% (35.65MB/s)                                          Retrieving image: Unpack: 49% (35.78MB/s)                                          Retrieving image: Unpack: 49% (36.07MB/s)                                          Retrieving image: Unpack: 50% (36.20MB/s)                                          Retrieving image: Unpack: 51% (36.34MB/s)                                          Retrieving image: Unpack: 52% (36.49MB/s)                                          Retrieving image: Unpack: 53% (36.64MB/s)                                          Retrieving image: Unpack: 54% (36.78MB/s)                                          Retrieving image: Unpack: 55% (36.93MB/s)                                          Retrieving image: Unpack: 56% (36.93MB/s)                                          Retrieving image: Unpack: 57% (36.97MB/s)                                          Retrieving image: Unpack: 58% (36.74MB/s)                                          Retrieving image: Unpack: 59% (36.85MB/s)                                          Retrieving image: Unpack: 59% (36.99MB/s)                                          Retrieving image: Unpack: 60% (34.59MB/s)                                          Retrieving image: Unpack: 61% (34.71MB/s)                                          Retrieving image: Unpack: 62% (34.42MB/s)                                          Retrieving image: Unpack: 63% (34.42MB/s)                                          Retrieving image: Unpack: 64% (34.42MB/s)                                          Retrieving image: Unpack: 65% (34.53MB/s)                                          Retrieving image: Unpack: 66% (34.46MB/s)                                          Retrieving image: Unpack: 67% (34.51MB/s)                                          Retrieving image: Unpack: 68% (34.51MB/s)                                          Retrieving image: Unpack: 69% (34.55MB/s)                                          Retrieving image: Unpack: 69% (34.51MB/s)                                          Retrieving image: Unpack: 70% (34.52MB/s)                                          Retrieving image: Unpack: 71% (34.65MB/s)                                          Retrieving image: Unpack: 72% (34.44MB/s)                                          Retrieving image: Unpack: 73% (34.33MB/s)                                          Retrieving image: Unpack: 74% (32.45MB/s)                                          Retrieving image: Unpack: 75% (31.52MB/s)                                          Retrieving image: Unpack: 76% (31.54MB/s)                                          Retrieving image: Unpack: 77% (31.63MB/s)                                          Retrieving image: Unpack: 78% (31.64MB/s)                                          Retrieving image: Unpack: 78% (31.37MB/s)                                          Retrieving image: Unpack: 79% (31.50MB/s)                                          Retrieving image: Unpack: 80% (31.63MB/s)                                          Retrieving image: Unpack: 81% (31.74MB/s)                                          Retrieving image: Unpack: 82% (31.87MB/s)                                          Retrieving image: Unpack: 83% (31.98MB/s)                                          Retrieving image: Unpack: 84% (32.10MB/s)                                          Retrieving image: Unpack: 85% (32.22MB/s)                                          Retrieving image: Unpack: 86% (32.34MB/s)                                          Retrieving image: Unpack: 87% (32.45MB/s)                                          Retrieving image: Unpack: 88% (32.56MB/s)                                          Retrieving image: Unpack: 88% (32.67MB/s)                                          Retrieving image: Unpack: 89% (31.96MB/s)                                          Retrieving image: Unpack: 90% (32.00MB/s)                                          Retrieving image: Unpack: 91% (31.99MB/s)                                          Retrieving image: Unpack: 92% (32.05MB/s)                                          Retrieving image: Unpack: 93% (32.11MB/s)                                          Retrieving image: Unpack: 94% (32.15MB/s)                                          Retrieving image: Unpack: 95% (32.20MB/s)                                          Retrieving image: Unpack: 96% (32.27MB/s)                                          Retrieving image: Unpack: 97% (32.35MB/s)                                          Retrieving image: Unpack: 98% (32.41MB/s)                                          Retrieving image: Unpack: 98% (31.92MB/s)                                          Retrieving image: Unpack: 99% (31.93MB/s)Retrieving image: Unpack: 100% (31.57MB/s)                                           Retrieving image: Unpack: 100% (31.57MB/s)                                           + lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+...............................................
+status: done
+time: Tue, 16 Jun 2020 19:23:32 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ all_keys='_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata distro distro_release distro_version kernel_release machine merged_cfg python_version'
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query _beta_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:_beta_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query availability_zone
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:availability_zone for cloud-init query command'
+SUCCESS: proposed bionic have key:availability_zone for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query base64_encoded_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:base64_encoded_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query cloud_name
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:cloud_name for cloud-init query command'
+SUCCESS: proposed bionic have key:cloud_name for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query ds
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:ds for cloud-init query command'
+SUCCESS: proposed bionic have key:ds for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query instance_id
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:instance_id for cloud-init query command'
+SUCCESS: proposed bionic have key:instance_id for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query local_hostname
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:local_hostname for cloud-init query command'
+SUCCESS: proposed bionic have key:local_hostname for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query platform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:platform for cloud-init query command'
+SUCCESS: proposed bionic have key:platform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query public_ssh_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:public_ssh_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query region
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:region for cloud-init query command'
+SUCCESS: proposed bionic have key:region for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query sensitive_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed bionic have key:sensitive_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query subplatform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:subplatform for cloud-init query command'
+SUCCESS: proposed bionic have key:subplatform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query userdata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:userdata for cloud-init query command'
+SUCCESS: proposed bionic have key:userdata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query v1
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:v1 for cloud-init query command'
+SUCCESS: proposed bionic have key:v1 for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query vendordata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:vendordata for cloud-init query command'
+SUCCESS: proposed bionic have key:vendordata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:distro for cloud-init query command'
+SUCCESS: proposed bionic have key:distro for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:distro_release for cloud-init query command'
+SUCCESS: proposed bionic have key:distro_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:distro_version for cloud-init query command'
+SUCCESS: proposed bionic have key:distro_version for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:kernel_release for cloud-init query command'
+SUCCESS: proposed bionic have key:kernel_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:machine for cloud-init query command'
+SUCCESS: proposed bionic have key:machine for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:merged_cfg for cloud-init query command'
+SUCCESS: proposed bionic have key:merged_cfg for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-bionic-proposed -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed bionic have key:python_version for cloud-init query command'
+SUCCESS: proposed bionic have key:python_version for cloud-init query command
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ echo 'eoan: Check if new query commands are not found on current version of cloud-init'
+eoan: Check if new query commands are not found on current version of cloud-init
++ reproduce eoan
++ series=eoan
++ name=test-eoan-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-eoan-reproduce --force
++ lxc launch ubuntu-daily:eoan test-eoan-reproduce
+Creating test-eoan-reproduce
+Starting test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+.................................................................................................................................
+status: done
+time: Tue, 16 Jun 2020 19:24:22 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query _beta_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:_beta_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query availability_zone
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:availability_zone for cloud-init query command'
+SUCCESS: proposed eoan have key:availability_zone for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query base64_encoded_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:base64_encoded_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query cloud_name
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:cloud_name for cloud-init query command'
+SUCCESS: proposed eoan have key:cloud_name for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query ds
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:ds for cloud-init query command'
+SUCCESS: proposed eoan have key:ds for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query instance_id
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:instance_id for cloud-init query command'
+SUCCESS: proposed eoan have key:instance_id for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query local_hostname
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:local_hostname for cloud-init query command'
+SUCCESS: proposed eoan have key:local_hostname for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query platform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:platform for cloud-init query command'
+SUCCESS: proposed eoan have key:platform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query public_ssh_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:public_ssh_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query region
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:region for cloud-init query command'
+SUCCESS: proposed eoan have key:region for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query sensitive_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:sensitive_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query subplatform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:subplatform for cloud-init query command'
+SUCCESS: proposed eoan have key:subplatform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query userdata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:userdata for cloud-init query command'
+SUCCESS: proposed eoan have key:userdata for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query v1
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:v1 for cloud-init query command'
+SUCCESS: proposed eoan have key:v1 for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-bionic-proposed -- cloud-init query vendordata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:vendordata for cloud-init query command'
+SUCCESS: proposed eoan have key:vendordata for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro'
+++ lxc exec test-eoan-reproduce -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key distro'
++ actual_output='ERROR: Undefined instance-data key distro'
++ '[' 'ERROR: Undefined instance-data key distro' = 'ERROR: Undefined instance-data key distro' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:distro for cloud-init query command'
+SUCCESS: current eoan do not have key:distro for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_release'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_release'
+++ lxc exec test-eoan-reproduce -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key distro_release'
++ actual_output='ERROR: Undefined instance-data key distro_release'
++ '[' 'ERROR: Undefined instance-data key distro_release' = 'ERROR: Undefined instance-data key distro_release' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:distro_release for cloud-init query command'
+SUCCESS: current eoan do not have key:distro_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_version'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_version'
+++ lxc exec test-eoan-reproduce -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key distro_version'
++ actual_output='ERROR: Undefined instance-data key distro_version'
++ '[' 'ERROR: Undefined instance-data key distro_version' = 'ERROR: Undefined instance-data key distro_version' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:distro_version for cloud-init query command'
+SUCCESS: current eoan do not have key:distro_version for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key kernel_release'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key kernel_release'
+++ lxc exec test-eoan-reproduce -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key kernel_release'
++ actual_output='ERROR: Undefined instance-data key kernel_release'
++ '[' 'ERROR: Undefined instance-data key kernel_release' = 'ERROR: Undefined instance-data key kernel_release' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:kernel_release for cloud-init query command'
+SUCCESS: current eoan do not have key:kernel_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key machine'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key machine'
+++ lxc exec test-eoan-reproduce -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key machine'
++ actual_output='ERROR: Undefined instance-data key machine'
++ '[' 'ERROR: Undefined instance-data key machine' = 'ERROR: Undefined instance-data key machine' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:machine for cloud-init query command'
+SUCCESS: current eoan do not have key:machine for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key merged_cfg'
+++ lxc exec test-eoan-reproduce -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key merged_cfg'
++ actual_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' 'ERROR: Undefined instance-data key merged_cfg' = 'ERROR: Undefined instance-data key merged_cfg' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:merged_cfg for cloud-init query command'
+SUCCESS: current eoan do not have key:merged_cfg for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key python_version'
++ '[' eoan = focal ']'
++ expected_output='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-reproduce -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
++ actual_output='ERROR: Undefined instance-data key python_version'
++ '[' 'ERROR: Undefined instance-data key python_version' = 'ERROR: Undefined instance-data key python_version' ']'
++ '[' eoan = focal ']'
++ echo 'SUCCESS: current eoan do not have key:python_version for cloud-init query command'
+SUCCESS: current eoan do not have key:python_version for cloud-init query command
++ echo 'eoan: Check if new query commands are found on proposed version of cloud-init'
+eoan: Check if new query commands are found on proposed version of cloud-init
++ verify eoan
++ series=eoan
++ ref=eoan-proposed
++ name_proposed=test-eoan-proposed
++ lxc delete test-eoan-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
+Creating eoan-proposed-79869046
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [229 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:6 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [80.2 kB]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5980 B]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [173 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.7 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6648 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [308 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [113 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9520 B]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.7 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [43.8 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [17.2 kB]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1140 B]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.9 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [12.2 kB]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1208 B]
+Fetched 16.3 MB in 30s (547 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 18 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preconfiguring packages ...
+Fetched 420 kB in 13s (32.1 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 19.54MB (19.52MB/s)                                                     Publishing instance: Image pack: 38.88MB (19.42MB/s)                                                     Publishing instance: Image pack: 61.98MB (20.64MB/s)                                                     Publishing instance: Image pack: 82.43MB (20.58MB/s)Publishing instance: Image pack: 106.57MB (21.29MB/s)                                                      Publishing instance: Image pack: 123.20MB (20.51MB/s)                                                      Publishing instance: Image pack: 141.61MB (20.21MB/s)                                                      Publishing instance: Image pack: 168.55MB (21.05MB/s)                                                      Publishing instance: Image pack: 195.78MB (21.74MB/s)                                                      Publishing instance: Image pack: 219.49MB (21.93MB/s)                                                      Publishing instance: Image pack: 239.53MB (21.76MB/s)                                                      Publishing instance: Image pack: 258.53MB (21.53MB/s)                                                      Publishing instance: Image pack: 280.21MB (21.54MB/s)                                                      Publishing instance: Image pack: 311.07MB (22.20MB/s)                                                      Publishing instance: Image pack: 331.75MB (22.10MB/s)                                                      Publishing instance: Image pack: 350.71MB (21.90MB/s)                                                      Publishing instance: Image pack: 372.63MB (21.90MB/s)                                                      Publishing instance: Image pack: 395.45MB (21.95MB/s)                                                      Publishing instance: Image pack: 416.59MB (21.91MB/s)                                                      Publishing instance: Image pack: 440.65MB (22.01MB/s)                                                      Publishing instance: Image pack: 470.09MB (22.37MB/s)                                                      Publishing instance: Image pack: 488.90MB (22.21MB/s)                                                      Publishing instance: Image pack: 508.09MB (22.07MB/s)                                                      Publishing instance: Image pack: 531.93MB (22.15MB/s)                                                      Publishing instance: Image pack: 557.71MB (22.29MB/s)                                                      Publishing instance: Image pack: 575.55MB (22.12MB/s)                                                      Publishing instance: Image pack: 601.06MB (22.24MB/s)                                                      Publishing instance: Image pack: 623.45MB (22.25MB/s)                                                      Publishing instance: Image pack: 644.86MB (22.22MB/s)                                                      Publishing instance: Image pack: 663.81MB (22.11MB/s)                                                      Publishing instance: Image pack: 680.29MB (21.93MB/s)                                                      Publishing instance: Image pack: 697.50MB (21.78MB/s)                                                      Publishing instance: Image pack: 714.84MB (21.64MB/s)                                                      Publishing instance: Image pack: 736.58MB (21.65MB/s)                                                      Publishing instance: Image pack: 779.81MB (22.26MB/s)                                                      Publishing instance: Image pack: 815.64MB (22.64MB/s)                                                      Publishing instance: Image pack: 845.18MB (22.83MB/s)                                                      Publishing instance: Image pack: 874.02MB (22.98MB/s)                                                      Publishing instance: Image pack: 902.73MB (23.13MB/s)                                                      Publishing instance: Image pack: 932.46MB (23.29MB/s)                                                      Publishing instance: Image pack: 962.54MB (23.46MB/s)                                                      Publishing instance: Image pack: 992.65MB (23.62MB/s)                                                      Instance published with fingerprint: 2f35faa29922365f520c74cd2db5e550782fd7b2d45d19b6d0c564aedf122db6
++ lxc init eoan-proposed test-eoan-proposed
+Creating test-eoan-proposed
+Retrieving image: Unpack: 1% (29.18MB/s)                                         Retrieving image: Unpack: 2% (36.93MB/s)                                         Retrieving image: Unpack: 3% (41.26MB/s)                                         Retrieving image: Unpack: 4% (43.02MB/s)                                         Retrieving image: Unpack: 5% (44.25MB/s)                                         Retrieving image: Unpack: 6% (44.39MB/s)                                         Retrieving image: Unpack: 7% (44.45MB/s)                                         Retrieving image: Unpack: 8% (45.16MB/s)                                         Retrieving image: Unpack: 9% (45.83MB/s)Retrieving image: Unpack: 10% (37.29MB/s)                                          Retrieving image: Unpack: 10% (38.45MB/s)                                          Retrieving image: Unpack: 11% (39.40MB/s)                                          Retrieving image: Unpack: 12% (39.84MB/s)                                          Retrieving image: Unpack: 13% (39.36MB/s)                                          Retrieving image: Unpack: 14% (37.78MB/s)                                          Retrieving image: Unpack: 15% (37.62MB/s)                                          Retrieving image: Unpack: 16% (37.48MB/s)                                          Retrieving image: Unpack: 17% (34.13MB/s)                                          Retrieving image: Unpack: 18% (34.50MB/s)                                          Retrieving image: Unpack: 19% (34.87MB/s)                                          Retrieving image: Unpack: 20% (35.29MB/s)                                          Retrieving image: Unpack: 20% (35.62MB/s)                                          Retrieving image: Unpack: 21% (35.80MB/s)                                          Retrieving image: Unpack: 22% (35.88MB/s)                                          Retrieving image: Unpack: 23% (35.79MB/s)                                          Retrieving image: Unpack: 24% (34.10MB/s)                                          Retrieving image: Unpack: 25% (34.54MB/s)                                          Retrieving image: Unpack: 26% (34.96MB/s)                                          Retrieving image: Unpack: 27% (35.34MB/s)                                          Retrieving image: Unpack: 28% (35.70MB/s)                                          Retrieving image: Unpack: 29% (36.09MB/s)                                          Retrieving image: Unpack: 30% (36.46MB/s)                                          Retrieving image: Unpack: 30% (36.65MB/s)                                          Retrieving image: Unpack: 31% (36.78MB/s)                                          Retrieving image: Unpack: 32% (35.78MB/s)                                          Retrieving image: Unpack: 33% (36.00MB/s)                                          Retrieving image: Unpack: 34% (36.23MB/s)                                          Retrieving image: Unpack: 35% (36.40MB/s)                                          Retrieving image: Unpack: 36% (36.58MB/s)                                          Retrieving image: Unpack: 37% (36.41MB/s)                                          Retrieving image: Unpack: 38% (36.61MB/s)                                          Retrieving image: Unpack: 39% (36.83MB/s)                                          Retrieving image: Unpack: 39% (35.66MB/s)                                          Retrieving image: Unpack: 40% (35.07MB/s)                                          Retrieving image: Unpack: 41% (34.71MB/s)                                          Retrieving image: Unpack: 42% (34.77MB/s)                                          Retrieving image: Unpack: 43% (34.95MB/s)                                          Retrieving image: Unpack: 44% (34.57MB/s)                                          Retrieving image: Unpack: 45% (34.63MB/s)                                          Retrieving image: Unpack: 46% (34.71MB/s)                                          Retrieving image: Unpack: 47% (34.79MB/s)                                          Retrieving image: Unpack: 48% (33.30MB/s)                                          Retrieving image: Unpack: 49% (32.95MB/s)                                          Retrieving image: Unpack: 49% (32.27MB/s)                                          Retrieving image: Unpack: 50% (31.64MB/s)                                          Retrieving image: Unpack: 51% (31.70MB/s)                                          Retrieving image: Unpack: 52% (31.28MB/s)                                          Retrieving image: Unpack: 53% (31.47MB/s)                                          Retrieving image: Unpack: 54% (30.55MB/s)                                          Retrieving image: Unpack: 55% (30.74MB/s)                                          Retrieving image: Unpack: 56% (30.92MB/s)                                          Retrieving image: Unpack: 57% (31.10MB/s)                                          Retrieving image: Unpack: 58% (31.27MB/s)                                          Retrieving image: Unpack: 59% (31.42MB/s)                                          Retrieving image: Unpack: 59% (31.48MB/s)                                          Retrieving image: Unpack: 60% (31.55MB/s)                                          Retrieving image: Unpack: 61% (31.09MB/s)                                          Retrieving image: Unpack: 62% (31.19MB/s)                                          Retrieving image: Unpack: 63% (31.30MB/s)                                          Retrieving image: Unpack: 64% (31.42MB/s)                                          Retrieving image: Unpack: 65% (31.09MB/s)                                          Retrieving image: Unpack: 66% (31.46MB/s)                                          Retrieving image: Unpack: 67% (31.81MB/s)                                          Retrieving image: Unpack: 68% (32.17MB/s)                                          Retrieving image: Unpack: 68% (32.53MB/s)                                          Retrieving image: Unpack: 69% (32.87MB/s)                                          Retrieving image: Unpack: 70% (32.71MB/s)                                          Retrieving image: Unpack: 71% (33.05MB/s)                                          Retrieving image: Unpack: 72% (33.37MB/s)                                          Retrieving image: Unpack: 73% (33.69MB/s)                                          Retrieving image: Unpack: 74% (34.00MB/s)                                          Retrieving image: Unpack: 75% (34.32MB/s)                                          Retrieving image: Unpack: 76% (34.66MB/s)                                          Retrieving image: Unpack: 77% (34.99MB/s)                                          Retrieving image: Unpack: 78% (35.30MB/s)                                          Retrieving image: Unpack: 78% (35.64MB/s)                                          Retrieving image: Unpack: 79% (35.98MB/s)                                          Retrieving image: Unpack: 80% (36.32MB/s)                                          Retrieving image: Unpack: 81% (36.64MB/s)                                          Retrieving image: Unpack: 82% (36.98MB/s)                                          Retrieving image: Unpack: 83% (37.31MB/s)                                          Retrieving image: Unpack: 84% (37.64MB/s)                                          Retrieving image: Unpack: 85% (37.97MB/s)                                          Retrieving image: Unpack: 86% (38.30MB/s)                                          Retrieving image: Unpack: 87% (38.63MB/s)                                          Retrieving image: Unpack: 88% (38.93MB/s)                                          Retrieving image: Unpack: 88% (39.26MB/s)                                          Retrieving image: Unpack: 89% (39.57MB/s)                                          Retrieving image: Unpack: 90% (39.86MB/s)                                          Retrieving image: Unpack: 91% (40.18MB/s)                                          Retrieving image: Unpack: 92% (40.50MB/s)                                          Retrieving image: Unpack: 93% (40.11MB/s)                                          Retrieving image: Unpack: 94% (40.41MB/s)                                          Retrieving image: Unpack: 95% (40.74MB/s)                                          Retrieving image: Unpack: 96% (41.05MB/s)                                          Retrieving image: Unpack: 97% (41.36MB/s)                                          Retrieving image: Unpack: 97% (41.67MB/s)                                          Retrieving image: Unpack: 98% (41.97MB/s)                                          Retrieving image: Unpack: 99% (42.26MB/s)Retrieving image: Unpack: 100% (42.54MB/s)                                           Retrieving image: Unpack: 100% (42.54MB/s)                                           + lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+......................................................................................................................................................
+status: done
+time: Tue, 16 Jun 2020 19:27:18 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ all_keys='_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata distro distro_release distro_version kernel_release machine merged_cfg python_version'
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query _beta_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:_beta_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query availability_zone
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:availability_zone for cloud-init query command'
+SUCCESS: proposed eoan have key:availability_zone for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query base64_encoded_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:base64_encoded_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query cloud_name
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:cloud_name for cloud-init query command'
+SUCCESS: proposed eoan have key:cloud_name for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query ds
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:ds for cloud-init query command'
+SUCCESS: proposed eoan have key:ds for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query instance_id
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:instance_id for cloud-init query command'
+SUCCESS: proposed eoan have key:instance_id for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query local_hostname
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:local_hostname for cloud-init query command'
+SUCCESS: proposed eoan have key:local_hostname for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query platform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:platform for cloud-init query command'
+SUCCESS: proposed eoan have key:platform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query public_ssh_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:public_ssh_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query region
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:region for cloud-init query command'
+SUCCESS: proposed eoan have key:region for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query sensitive_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed eoan have key:sensitive_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query subplatform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:subplatform for cloud-init query command'
+SUCCESS: proposed eoan have key:subplatform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query userdata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:userdata for cloud-init query command'
+SUCCESS: proposed eoan have key:userdata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query v1
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:v1 for cloud-init query command'
+SUCCESS: proposed eoan have key:v1 for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query vendordata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:vendordata for cloud-init query command'
+SUCCESS: proposed eoan have key:vendordata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:distro for cloud-init query command'
+SUCCESS: proposed eoan have key:distro for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:distro_release for cloud-init query command'
+SUCCESS: proposed eoan have key:distro_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:distro_version for cloud-init query command'
+SUCCESS: proposed eoan have key:distro_version for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:kernel_release for cloud-init query command'
+SUCCESS: proposed eoan have key:kernel_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:machine for cloud-init query command'
+SUCCESS: proposed eoan have key:machine for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:merged_cfg for cloud-init query command'
+SUCCESS: proposed eoan have key:merged_cfg for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-eoan-proposed -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed eoan have key:python_version for cloud-init query command'
+SUCCESS: proposed eoan have key:python_version for cloud-init query command
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ echo 'focal: Check if new query commands are not found on current version of cloud-init'
+focal: Check if new query commands are not found on current version of cloud-init
++ reproduce focal
++ series=focal
++ name=test-focal-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-focal-reproduce --force
++ lxc launch ubuntu-daily:focal test-focal-reproduce
+Creating test-focal-reproduce
+Starting test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+....................................................................................................
+status: done
+time: Tue, 16 Jun 2020 19:28:00 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query _beta_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed focal have key:_beta_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query availability_zone
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:availability_zone for cloud-init query command'
+SUCCESS: proposed focal have key:availability_zone for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query base64_encoded_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed focal have key:base64_encoded_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query cloud_name
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:cloud_name for cloud-init query command'
+SUCCESS: proposed focal have key:cloud_name for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query ds
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:ds for cloud-init query command'
+SUCCESS: proposed focal have key:ds for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query instance_id
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:instance_id for cloud-init query command'
+SUCCESS: proposed focal have key:instance_id for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query local_hostname
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:local_hostname for cloud-init query command'
+SUCCESS: proposed focal have key:local_hostname for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query platform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:platform for cloud-init query command'
+SUCCESS: proposed focal have key:platform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query public_ssh_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed focal have key:public_ssh_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query region
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:region for cloud-init query command'
+SUCCESS: proposed focal have key:region for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query sensitive_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed focal have key:sensitive_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query subplatform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:subplatform for cloud-init query command'
+SUCCESS: proposed focal have key:subplatform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query userdata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:userdata for cloud-init query command'
+SUCCESS: proposed focal have key:userdata for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query v1
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:v1 for cloud-init query command'
+SUCCESS: proposed focal have key:v1 for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-eoan-proposed -- cloud-init query vendordata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:vendordata for cloud-init query command'
+SUCCESS: proposed focal have key:vendordata for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key distro'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:distro for cloud-init query command'
+SUCCESS: current focal do have key:distro for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_release'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key distro_release'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:distro_release for cloud-init query command'
+SUCCESS: current focal do have key:distro_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_version'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key distro_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:distro_version for cloud-init query command'
+SUCCESS: current focal do have key:distro_version for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key kernel_release'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key kernel_release'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:kernel_release for cloud-init query command'
+SUCCESS: current focal do have key:kernel_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key machine'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key machine'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:machine for cloud-init query command'
+SUCCESS: current focal do have key:machine for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key merged_cfg'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:merged_cfg for cloud-init query command'
+SUCCESS: current focal do have key:merged_cfg for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key python_version'
++ '[' focal = focal ']'
++ expected_output=SUCCESS
+++ lxc exec test-focal-reproduce -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ '[' focal = focal ']'
++ echo 'SUCCESS: current focal do have key:python_version for cloud-init query command'
+SUCCESS: current focal do have key:python_version for cloud-init query command
++ echo 'focal: Check if new query commands are found on proposed version of cloud-init'
+focal: Check if new query commands are found on proposed version of cloud-init
++ verify focal
++ series=focal
++ ref=focal-proposed
++ name_proposed=test-focal-proposed
++ lxc delete test-focal-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
+Creating focal-proposed-1715621166
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [106 kB]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [40.1 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2764 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [11.0 kB]
+Get:9 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [3000 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [35.5 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.7 kB]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1612 B]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [197 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [77.6 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5676 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [110 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [51.9 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [4092 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [61.7 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [27.4 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1752 B]
+Get:43 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [24.4 kB]
+Get:44 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [18.8 kB]
+Get:45 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1712 B]
+Fetched 15.7 MB in 47s (331 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 32 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preconfiguring packages ...
+Fetched 416 kB in 7s (63.0 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 19.67MB (19.66MB/s)                                                     Publishing instance: Image pack: 39.16MB (19.57MB/s)                                                     Publishing instance: Image pack: 62.28MB (20.75MB/s)                                                     Publishing instance: Image pack: 83.84MB (20.94MB/s)Publishing instance: Image pack: 108.49MB (21.67MB/s)                                                      Publishing instance: Image pack: 125.66MB (20.92MB/s)                                                      Publishing instance: Image pack: 143.33MB (20.45MB/s)                                                      Publishing instance: Image pack: 169.03MB (21.11MB/s)                                                      Publishing instance: Image pack: 195.94MB (21.75MB/s)                                                      Publishing instance: Image pack: 223.21MB (22.30MB/s)                                                      Publishing instance: Image pack: 245.27MB (22.28MB/s)                                                      Publishing instance: Image pack: 266.34MB (22.18MB/s)                                                      Publishing instance: Image pack: 287.39MB (22.09MB/s)                                                      Publishing instance: Image pack: 308.31MB (22.01MB/s)                                                      Publishing instance: Image pack: 337.01MB (22.45MB/s)                                                      Publishing instance: Image pack: 359.42MB (22.45MB/s)                                                      Publishing instance: Image pack: 377.86MB (22.21MB/s)                                                      Publishing instance: Image pack: 397.67MB (22.08MB/s)                                                      Publishing instance: Image pack: 420.93MB (22.14MB/s)                                                      Publishing instance: Image pack: 440.63MB (22.02MB/s)                                                      Publishing instance: Image pack: 461.06MB (21.94MB/s)                                                      Publishing instance: Image pack: 490.24MB (22.27MB/s)                                                      Publishing instance: Image pack: 514.51MB (22.35MB/s)                                                      Publishing instance: Image pack: 537.14MB (22.37MB/s)                                                      Publishing instance: Image pack: 562.75MB (22.49MB/s)                                                      Publishing instance: Image pack: 587.83MB (22.59MB/s)                                                      Publishing instance: Image pack: 605.44MB (22.41MB/s)                                                      Publishing instance: Image pack: 632.99MB (22.59MB/s)                                                      Publishing instance: Image pack: 654.40MB (22.55MB/s)                                                      Publishing instance: Image pack: 674.79MB (22.48MB/s)                                                      Publishing instance: Image pack: 695.10MB (22.41MB/s)                                                      Publishing instance: Image pack: 714.04MB (22.30MB/s)                                                      Publishing instance: Image pack: 731.98MB (22.16MB/s)                                                      Publishing instance: Image pack: 749.87MB (22.04MB/s)                                                      Publishing instance: Image pack: 776.93MB (22.18MB/s)                                                      Publishing instance: Image pack: 819.06MB (22.73MB/s)                                                      Publishing instance: Image pack: 851.82MB (23.01MB/s)                                                      Publishing instance: Image pack: 879.23MB (23.12MB/s)                                                      Publishing instance: Image pack: 910.16MB (23.32MB/s)                                                      Publishing instance: Image pack: 940.85MB (23.50MB/s)                                                      Publishing instance: Image pack: 970.50MB (23.65MB/s)                                                      Publishing instance: Image pack: 999.86MB (23.79MB/s)                                                      Publishing instance: Image pack: 1.03GB (23.93MB/s)                                                      Instance published with fingerprint: 862d70f526f3c2f2e1a93846d15bc5176cacd59884e1c1cbd207fafa524298b4
++ lxc init focal-proposed test-focal-proposed
+Creating test-focal-proposed
+Retrieving image: Unpack: 1% (29.03MB/s)                                         Retrieving image: Unpack: 2% (37.08MB/s)                                         Retrieving image: Unpack: 3% (41.59MB/s)                                         Retrieving image: Unpack: 4% (43.32MB/s)                                         Retrieving image: Unpack: 5% (44.46MB/s)                                         Retrieving image: Unpack: 6% (44.78MB/s)                                         Retrieving image: Unpack: 7% (44.24MB/s)                                         Retrieving image: Unpack: 8% (37.83MB/s)                                         Retrieving image: Unpack: 9% (38.74MB/s)Retrieving image: Unpack: 10% (38.93MB/s)                                          Retrieving image: Unpack: 10% (39.93MB/s)                                          Retrieving image: Unpack: 11% (40.87MB/s)                                          Retrieving image: Unpack: 12% (41.41MB/s)                                          Retrieving image: Unpack: 13% (41.22MB/s)                                          Retrieving image: Unpack: 14% (35.78MB/s)                                          Retrieving image: Unpack: 15% (35.21MB/s)                                          Retrieving image: Unpack: 16% (35.06MB/s)                                          Retrieving image: Unpack: 17% (35.12MB/s)                                          Retrieving image: Unpack: 18% (35.03MB/s)                                          Retrieving image: Unpack: 19% (35.43MB/s)                                          Retrieving image: Unpack: 19% (33.13MB/s)                                          Retrieving image: Unpack: 20% (33.58MB/s)                                          Retrieving image: Unpack: 21% (34.10MB/s)                                          Retrieving image: Unpack: 22% (34.53MB/s)                                          Retrieving image: Unpack: 23% (34.90MB/s)                                          Retrieving image: Unpack: 24% (35.23MB/s)                                          Retrieving image: Unpack: 25% (35.17MB/s)                                          Retrieving image: Unpack: 26% (33.80MB/s)                                          Retrieving image: Unpack: 27% (34.24MB/s)                                          Retrieving image: Unpack: 28% (34.68MB/s)                                          Retrieving image: Unpack: 28% (35.03MB/s)                                          Retrieving image: Unpack: 29% (35.34MB/s)                                          Retrieving image: Unpack: 30% (35.71MB/s)                                          Retrieving image: Unpack: 31% (36.06MB/s)                                          Retrieving image: Unpack: 32% (35.28MB/s)                                          Retrieving image: Unpack: 33% (35.51MB/s)                                          Retrieving image: Unpack: 34% (35.77MB/s)                                          Retrieving image: Unpack: 35% (35.94MB/s)                                          Retrieving image: Unpack: 36% (36.18MB/s)                                          Retrieving image: Unpack: 37% (36.39MB/s)                                          Retrieving image: Unpack: 37% (35.52MB/s)                                          Retrieving image: Unpack: 38% (35.37MB/s)                                          Retrieving image: Unpack: 39% (35.51MB/s)                                          Retrieving image: Unpack: 40% (35.71MB/s)                                          Retrieving image: Unpack: 41% (35.08MB/s)                                          Retrieving image: Unpack: 42% (33.57MB/s)                                          Retrieving image: Unpack: 43% (33.54MB/s)                                          Retrieving image: Unpack: 44% (33.71MB/s)                                          Retrieving image: Unpack: 45% (33.58MB/s)                                          Retrieving image: Unpack: 46% (33.63MB/s)                                          Retrieving image: Unpack: 46% (33.76MB/s)                                          Retrieving image: Unpack: 47% (33.88MB/s)                                          Retrieving image: Unpack: 48% (32.83MB/s)                                          Retrieving image: Unpack: 49% (32.92MB/s)                                          Retrieving image: Unpack: 50% (32.72MB/s)                                          Retrieving image: Unpack: 51% (31.56MB/s)                                          Retrieving image: Unpack: 52% (31.60MB/s)                                          Retrieving image: Unpack: 53% (30.90MB/s)                                          Retrieving image: Unpack: 54% (30.71MB/s)                                          Retrieving image: Unpack: 55% (30.89MB/s)                                          Retrieving image: Unpack: 55% (31.07MB/s)                                          Retrieving image: Unpack: 56% (31.25MB/s)                                          Retrieving image: Unpack: 57% (31.42MB/s)                                          Retrieving image: Unpack: 58% (31.56MB/s)                                          Retrieving image: Unpack: 59% (31.07MB/s)                                          Retrieving image: Unpack: 60% (31.17MB/s)                                          Retrieving image: Unpack: 61% (31.26MB/s)                                          Retrieving image: Unpack: 62% (31.32MB/s)                                          Retrieving image: Unpack: 63% (31.40MB/s)                                          Retrieving image: Unpack: 64% (31.09MB/s)                                          Retrieving image: Unpack: 64% (31.22MB/s)                                          Retrieving image: Unpack: 65% (30.87MB/s)                                          Retrieving image: Unpack: 66% (31.22MB/s)                                          Retrieving image: Unpack: 67% (31.56MB/s)                                          Retrieving image: Unpack: 68% (31.92MB/s)                                          Retrieving image: Unpack: 69% (32.26MB/s)                                          Retrieving image: Unpack: 70% (32.60MB/s)                                          Retrieving image: Unpack: 71% (32.94MB/s)                                          Retrieving image: Unpack: 72% (32.37MB/s)                                          Retrieving image: Unpack: 73% (32.69MB/s)                                          Retrieving image: Unpack: 73% (33.00MB/s)                                          Retrieving image: Unpack: 74% (33.31MB/s)                                          Retrieving image: Unpack: 75% (33.63MB/s)                                          Retrieving image: Unpack: 76% (33.96MB/s)                                          Retrieving image: Unpack: 77% (34.26MB/s)                                          Retrieving image: Unpack: 78% (34.56MB/s)                                          Retrieving image: Unpack: 79% (34.89MB/s)                                          Retrieving image: Unpack: 80% (35.22MB/s)                                          Retrieving image: Unpack: 81% (35.54MB/s)                                          Retrieving image: Unpack: 82% (35.84MB/s)                                          Retrieving image: Unpack: 82% (36.16MB/s)                                          Retrieving image: Unpack: 83% (36.48MB/s)                                          Retrieving image: Unpack: 84% (36.81MB/s)                                          Retrieving image: Unpack: 85% (37.13MB/s)                                          Retrieving image: Unpack: 86% (37.43MB/s)                                          Retrieving image: Unpack: 87% (37.74MB/s)                                          Retrieving image: Unpack: 88% (37.52MB/s)                                          Retrieving image: Unpack: 89% (37.84MB/s)                                          Retrieving image: Unpack: 90% (38.15MB/s)                                          Retrieving image: Unpack: 91% (38.43MB/s)                                          Retrieving image: Unpack: 91% (38.74MB/s)                                          Retrieving image: Unpack: 92% (39.05MB/s)                                          Retrieving image: Unpack: 93% (39.36MB/s)                                          Retrieving image: Unpack: 94% (39.67MB/s)                                          Retrieving image: Unpack: 95% (39.97MB/s)                                          Retrieving image: Unpack: 96% (40.27MB/s)                                          Retrieving image: Unpack: 97% (40.57MB/s)                                          Retrieving image: Unpack: 98% (40.87MB/s)                                          Retrieving image: Unpack: 99% (41.17MB/s)Retrieving image: Unpack: 100% (41.45MB/s)                                           Retrieving image: Unpack: 100% (41.73MB/s)                                           Retrieving image: Unpack: 100% (41.73MB/s)                                           + lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+............................................................................................................................
+status: done
+time: Tue, 16 Jun 2020 19:30:54 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ all_keys='_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata distro distro_release distro_version kernel_release machine merged_cfg python_version'
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query _beta_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed focal have key:_beta_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query availability_zone
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:availability_zone for cloud-init query command'
+SUCCESS: proposed focal have key:availability_zone for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query base64_encoded_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed focal have key:base64_encoded_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query cloud_name
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:cloud_name for cloud-init query command'
+SUCCESS: proposed focal have key:cloud_name for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query ds
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:ds for cloud-init query command'
+SUCCESS: proposed focal have key:ds for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query instance_id
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:instance_id for cloud-init query command'
+SUCCESS: proposed focal have key:instance_id for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query local_hostname
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:local_hostname for cloud-init query command'
+SUCCESS: proposed focal have key:local_hostname for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query platform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:platform for cloud-init query command'
+SUCCESS: proposed focal have key:platform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query public_ssh_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed focal have key:public_ssh_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query region
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:region for cloud-init query command'
+SUCCESS: proposed focal have key:region for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query sensitive_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed focal have key:sensitive_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query subplatform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:subplatform for cloud-init query command'
+SUCCESS: proposed focal have key:subplatform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query userdata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:userdata for cloud-init query command'
+SUCCESS: proposed focal have key:userdata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query v1
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:v1 for cloud-init query command'
+SUCCESS: proposed focal have key:v1 for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query vendordata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:vendordata for cloud-init query command'
+SUCCESS: proposed focal have key:vendordata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:distro for cloud-init query command'
+SUCCESS: proposed focal have key:distro for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:distro_release for cloud-init query command'
+SUCCESS: proposed focal have key:distro_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:distro_version for cloud-init query command'
+SUCCESS: proposed focal have key:distro_version for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:kernel_release for cloud-init query command'
+SUCCESS: proposed focal have key:kernel_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:machine for cloud-init query command'
+SUCCESS: proposed focal have key:machine for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:merged_cfg for cloud-init query command'
+SUCCESS: proposed focal have key:merged_cfg for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-focal-proposed -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed focal have key:python_version for cloud-init query command'
+SUCCESS: proposed focal have key:python_version for cloud-init query command
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ echo 'xenial: Check if new query commands are not found on current version of cloud-init'
+xenial: Check if new query commands are not found on current version of cloud-init
++ reproduce xenial
++ series=xenial
++ name=test-xenial-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-xenial-reproduce --force
++ lxc launch ubuntu-daily:xenial test-xenial-reproduce
+Creating test-xenial-reproduce
+Starting test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+...............................
+status: done
+time: Tue, 16 Jun 2020 19:31:18 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query _beta_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:_beta_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query availability_zone
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:availability_zone for cloud-init query command'
+SUCCESS: proposed xenial have key:availability_zone for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query base64_encoded_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:base64_encoded_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query cloud_name
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:cloud_name for cloud-init query command'
+SUCCESS: proposed xenial have key:cloud_name for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query ds
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:ds for cloud-init query command'
+SUCCESS: proposed xenial have key:ds for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query instance_id
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:instance_id for cloud-init query command'
+SUCCESS: proposed xenial have key:instance_id for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query local_hostname
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:local_hostname for cloud-init query command'
+SUCCESS: proposed xenial have key:local_hostname for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query platform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:platform for cloud-init query command'
+SUCCESS: proposed xenial have key:platform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query public_ssh_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:public_ssh_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query region
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:region for cloud-init query command'
+SUCCESS: proposed xenial have key:region for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query sensitive_keys
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:sensitive_keys for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query subplatform
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:subplatform for cloud-init query command'
+SUCCESS: proposed xenial have key:subplatform for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query userdata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:userdata for cloud-init query command'
+SUCCESS: proposed xenial have key:userdata for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query v1
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:v1 for cloud-init query command'
+SUCCESS: proposed xenial have key:v1 for cloud-init query command
++ for curr_query_key in $curr_query_keys
++ expected_output=SUCCESS
+++ lxc exec test-focal-proposed -- cloud-init query vendordata
+++ grep ERROR
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:vendordata for cloud-init query command'
+SUCCESS: proposed xenial have key:vendordata for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro'
+++ lxc exec test-xenial-reproduce -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key distro'
++ actual_output='ERROR: Undefined instance-data key distro'
++ '[' 'ERROR: Undefined instance-data key distro' = 'ERROR: Undefined instance-data key distro' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:distro for cloud-init query command'
+SUCCESS: current xenial do not have key:distro for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_release'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_release'
+++ lxc exec test-xenial-reproduce -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key distro_release'
++ actual_output='ERROR: Undefined instance-data key distro_release'
++ '[' 'ERROR: Undefined instance-data key distro_release' = 'ERROR: Undefined instance-data key distro_release' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:distro_release for cloud-init query command'
+SUCCESS: current xenial do not have key:distro_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key distro_version'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key distro_version'
+++ lxc exec test-xenial-reproduce -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key distro_version'
++ actual_output='ERROR: Undefined instance-data key distro_version'
++ '[' 'ERROR: Undefined instance-data key distro_version' = 'ERROR: Undefined instance-data key distro_version' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:distro_version for cloud-init query command'
+SUCCESS: current xenial do not have key:distro_version for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key kernel_release'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key kernel_release'
+++ lxc exec test-xenial-reproduce -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key kernel_release'
++ actual_output='ERROR: Undefined instance-data key kernel_release'
++ '[' 'ERROR: Undefined instance-data key kernel_release' = 'ERROR: Undefined instance-data key kernel_release' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:kernel_release for cloud-init query command'
+SUCCESS: current xenial do not have key:kernel_release for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key machine'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key machine'
+++ lxc exec test-xenial-reproduce -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key machine'
++ actual_output='ERROR: Undefined instance-data key machine'
++ '[' 'ERROR: Undefined instance-data key machine' = 'ERROR: Undefined instance-data key machine' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:machine for cloud-init query command'
+SUCCESS: current xenial do not have key:machine for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key merged_cfg'
+++ lxc exec test-xenial-reproduce -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key merged_cfg'
++ actual_output='ERROR: Undefined instance-data key merged_cfg'
++ '[' 'ERROR: Undefined instance-data key merged_cfg' = 'ERROR: Undefined instance-data key merged_cfg' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:merged_cfg for cloud-init query command'
+SUCCESS: current xenial do not have key:merged_cfg for cloud-init query command
++ for new_query_key in $new_query_keys
++ error_output='ERROR: Undefined instance-data key python_version'
++ '[' xenial = focal ']'
++ expected_output='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-reproduce -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
++ actual_output='ERROR: Undefined instance-data key python_version'
++ '[' 'ERROR: Undefined instance-data key python_version' = 'ERROR: Undefined instance-data key python_version' ']'
++ '[' xenial = focal ']'
++ echo 'SUCCESS: current xenial do not have key:python_version for cloud-init query command'
+SUCCESS: current xenial do not have key:python_version for cloud-init query command
++ echo 'xenial: Check if new query commands are found on proposed version of cloud-init'
+xenial: Check if new query commands are found on proposed version of cloud-init
++ verify xenial
++ series=xenial
++ ref=xenial-proposed
++ name_proposed=test-xenial-proposed
++ lxc delete test-xenial-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
+Creating xenial-proposed-36403162
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:12 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [437 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [52.7 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [20.8 kB]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [9216 B]
+Get:29 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6572 B]
+Fetched 17.5 MB in 51s (343 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preconfiguring packages ...
+Fetched 425 kB in 2s (164 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Publishing instance: Image pack: 19.35MB (19.35MB/s)                                                     Publishing instance: Image pack: 45.14MB (22.56MB/s)                                                     Publishing instance: Image pack: 64.69MB (21.55MB/s)                                                     Publishing instance: Image pack: 85.17MB (21.28MB/s)Publishing instance: Image pack: 103.33MB (20.65MB/s)                                                      Publishing instance: Image pack: 124.34MB (20.71MB/s)                                                      Publishing instance: Image pack: 145.55MB (20.78MB/s)                                                      Publishing instance: Image pack: 164.67MB (20.57MB/s)                                                      Publishing instance: Image pack: 181.61MB (20.17MB/s)                                                      Publishing instance: Image pack: 201.06MB (20.09MB/s)                                                      Publishing instance: Image pack: 227.34MB (20.66MB/s)                                                      Publishing instance: Image pack: 250.82MB (20.89MB/s)                                                      Publishing instance: Image pack: 272.24MB (20.93MB/s)                                                      Publishing instance: Image pack: 295.73MB (21.11MB/s)                                                      Publishing instance: Image pack: 314.40MB (20.95MB/s)                                                      Publishing instance: Image pack: 339.40MB (21.20MB/s)                                                      Publishing instance: Image pack: 359.60MB (21.14MB/s)                                                      Publishing instance: Image pack: 388.04MB (21.55MB/s)                                                      Publishing instance: Image pack: 408.79MB (21.50MB/s)                                                      Publishing instance: Image pack: 438.25MB (21.90MB/s)                                                      Publishing instance: Image pack: 459.69MB (21.88MB/s)                                                      Publishing instance: Image pack: 480.75MB (21.84MB/s)                                                      Publishing instance: Image pack: 508.78MB (22.11MB/s)                                                      Publishing instance: Image pack: 528.43MB (22.01MB/s)                                                      Publishing instance: Image pack: 547.30MB (21.88MB/s)                                                      Publishing instance: Image pack: 564.76MB (21.71MB/s)                                                      Publishing instance: Image pack: 583.07MB (21.58MB/s)                                                      Publishing instance: Image pack: 600.96MB (21.45MB/s)                                                      Publishing instance: Image pack: 635.01MB (21.89MB/s)                                                      Publishing instance: Image pack: 679.40MB (22.63MB/s)                                                      Publishing instance: Image pack: 712.07MB (22.96MB/s)                                                      Publishing instance: Image pack: 750.36MB (23.44MB/s)                                                      Instance published with fingerprint: 219dc884f757d101f3fcc4165075530277c3aa2efe68503881b082176d4efa3c
++ lxc init xenial-proposed test-xenial-proposed
+Creating test-xenial-proposed
+Retrieving image: Unpack: 1% (51.07MB/s)                                         Retrieving image: Unpack: 2% (54.08MB/s)                                         Retrieving image: Unpack: 3% (52.89MB/s)                                         Retrieving image: Unpack: 4% (36.39MB/s)                                         Retrieving image: Unpack: 5% (37.39MB/s)                                         Retrieving image: Unpack: 6% (38.79MB/s)                                         Retrieving image: Unpack: 7% (38.90MB/s)                                         Retrieving image: Unpack: 8% (40.51MB/s)                                         Retrieving image: Unpack: 9% (35.35MB/s)Retrieving image: Unpack: 10% (36.87MB/s)                                          Retrieving image: Unpack: 10% (37.84MB/s)                                          Retrieving image: Unpack: 11% (38.40MB/s)                                          Retrieving image: Unpack: 12% (39.11MB/s)                                          Retrieving image: Unpack: 13% (39.80MB/s)                                          Retrieving image: Unpack: 14% (40.35MB/s)                                          Retrieving image: Unpack: 15% (40.98MB/s)                                          Retrieving image: Unpack: 16% (41.49MB/s)                                          Retrieving image: Unpack: 17% (41.69MB/s)                                          Retrieving image: Unpack: 18% (37.28MB/s)                                          Retrieving image: Unpack: 19% (37.58MB/s)                                          Retrieving image: Unpack: 19% (38.05MB/s)                                          Retrieving image: Unpack: 20% (38.48MB/s)                                          Retrieving image: Unpack: 21% (38.69MB/s)                                          Retrieving image: Unpack: 22% (38.88MB/s)                                          Retrieving image: Unpack: 23% (39.24MB/s)                                          Retrieving image: Unpack: 24% (39.55MB/s)                                          Retrieving image: Unpack: 25% (39.88MB/s)                                          Retrieving image: Unpack: 26% (39.82MB/s)                                          Retrieving image: Unpack: 27% (38.72MB/s)                                          Retrieving image: Unpack: 28% (39.03MB/s)                                          Retrieving image: Unpack: 28% (39.31MB/s)                                          Retrieving image: Unpack: 29% (39.39MB/s)                                          Retrieving image: Unpack: 30% (39.41MB/s)                                          Retrieving image: Unpack: 31% (39.08MB/s)                                          Retrieving image: Unpack: 32% (38.84MB/s)                                          Retrieving image: Unpack: 33% (38.85MB/s)                                          Retrieving image: Unpack: 34% (36.68MB/s)                                          Retrieving image: Unpack: 35% (36.78MB/s)                                          Retrieving image: Unpack: 36% (36.97MB/s)                                          Retrieving image: Unpack: 37% (37.13MB/s)                                          Retrieving image: Unpack: 38% (37.38MB/s)                                          Retrieving image: Unpack: 38% (37.59MB/s)                                          Retrieving image: Unpack: 39% (37.73MB/s)                                          Retrieving image: Unpack: 40% (37.90MB/s)                                          Retrieving image: Unpack: 41% (38.02MB/s)                                          Retrieving image: Unpack: 42% (37.02MB/s)                                          Retrieving image: Unpack: 43% (37.32MB/s)                                          Retrieving image: Unpack: 44% (37.54MB/s)                                          Retrieving image: Unpack: 45% (37.76MB/s)                                          Retrieving image: Unpack: 46% (37.94MB/s)                                          Retrieving image: Unpack: 47% (38.24MB/s)                                          Retrieving image: Unpack: 47% (38.39MB/s)                                          Retrieving image: Unpack: 48% (38.70MB/s)                                          Retrieving image: Unpack: 49% (38.85MB/s)                                          Retrieving image: Unpack: 50% (37.85MB/s)                                          Retrieving image: Unpack: 51% (38.00MB/s)                                          Retrieving image: Unpack: 52% (38.14MB/s)                                          Retrieving image: Unpack: 53% (38.30MB/s)                                          Retrieving image: Unpack: 54% (38.46MB/s)                                          Retrieving image: Unpack: 55% (38.50MB/s)                                          Retrieving image: Unpack: 56% (38.55MB/s)                                          Retrieving image: Unpack: 56% (38.38MB/s)                                          Retrieving image: Unpack: 57% (36.78MB/s)                                          Retrieving image: Unpack: 58% (36.97MB/s)                                          Retrieving image: Unpack: 59% (36.29MB/s)                                          Retrieving image: Unpack: 60% (36.23MB/s)                                          Retrieving image: Unpack: 61% (35.96MB/s)                                          Retrieving image: Unpack: 62% (35.99MB/s)                                          Retrieving image: Unpack: 63% (35.96MB/s)                                          Retrieving image: Unpack: 64% (36.23MB/s)                                          Retrieving image: Unpack: 65% (36.27MB/s)                                          Retrieving image: Unpack: 66% (35.01MB/s)                                          Retrieving image: Unpack: 66% (35.09MB/s)                                          Retrieving image: Unpack: 67% (35.16MB/s)                                          Retrieving image: Unpack: 68% (35.26MB/s)                                          Retrieving image: Unpack: 69% (35.30MB/s)                                          Retrieving image: Unpack: 70% (35.34MB/s)                                          Retrieving image: Unpack: 71% (35.42MB/s)                                          Retrieving image: Unpack: 72% (35.06MB/s)                                          Retrieving image: Unpack: 73% (33.95MB/s)                                          Retrieving image: Unpack: 74% (33.75MB/s)                                          Retrieving image: Unpack: 75% (32.59MB/s)                                          Retrieving image: Unpack: 75% (32.53MB/s)                                          Retrieving image: Unpack: 76% (32.58MB/s)                                          Retrieving image: Unpack: 77% (32.03MB/s)                                          Retrieving image: Unpack: 78% (31.70MB/s)                                          Retrieving image: Unpack: 79% (31.82MB/s)                                          Retrieving image: Unpack: 80% (31.94MB/s)                                          Retrieving image: Unpack: 81% (32.03MB/s)                                          Retrieving image: Unpack: 82% (32.14MB/s)                                          Retrieving image: Unpack: 83% (32.25MB/s)                                          Retrieving image: Unpack: 84% (32.36MB/s)                                          Retrieving image: Unpack: 84% (32.47MB/s)                                          Retrieving image: Unpack: 85% (32.09MB/s)                                          Retrieving image: Unpack: 86% (32.20MB/s)                                          Retrieving image: Unpack: 87% (32.30MB/s)                                          Retrieving image: Unpack: 88% (32.40MB/s)                                          Retrieving image: Unpack: 89% (32.48MB/s)                                          Retrieving image: Unpack: 90% (32.49MB/s)                                          Retrieving image: Unpack: 91% (32.48MB/s)                                          Retrieving image: Unpack: 92% (32.20MB/s)                                          Retrieving image: Unpack: 93% (32.26MB/s)                                          Retrieving image: Unpack: 94% (32.31MB/s)                                          Retrieving image: Unpack: 94% (32.35MB/s)                                          Retrieving image: Unpack: 95% (32.40MB/s)                                          Retrieving image: Unpack: 96% (32.19MB/s)                                          Retrieving image: Unpack: 97% (32.25MB/s)                                          Retrieving image: Unpack: 98% (32.32MB/s)                                          Retrieving image: Unpack: 99% (32.36MB/s)Retrieving image: Unpack: 100% (32.26MB/s)                                           + lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+...............................................
+status: done
+time: Tue, 16 Jun 2020 19:33:33 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ all_keys='_beta_keys availability_zone base64_encoded_keys cloud_name ds instance_id
+local_hostname platform public_ssh_keys region sensitive_keys subplatform userdata v1 vendordata distro distro_release distro_version kernel_release machine merged_cfg python_version'
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query _beta_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:_beta_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:_beta_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query availability_zone
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:availability_zone for cloud-init query command'
+SUCCESS: proposed xenial have key:availability_zone for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query base64_encoded_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:base64_encoded_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:base64_encoded_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query cloud_name
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:cloud_name for cloud-init query command'
+SUCCESS: proposed xenial have key:cloud_name for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query ds
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:ds for cloud-init query command'
+SUCCESS: proposed xenial have key:ds for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query instance_id
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:instance_id for cloud-init query command'
+SUCCESS: proposed xenial have key:instance_id for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query local_hostname
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:local_hostname for cloud-init query command'
+SUCCESS: proposed xenial have key:local_hostname for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query platform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:platform for cloud-init query command'
+SUCCESS: proposed xenial have key:platform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query public_ssh_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:public_ssh_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:public_ssh_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query region
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:region for cloud-init query command'
+SUCCESS: proposed xenial have key:region for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query sensitive_keys
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:sensitive_keys for cloud-init query command'
+SUCCESS: proposed xenial have key:sensitive_keys for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query subplatform
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:subplatform for cloud-init query command'
+SUCCESS: proposed xenial have key:subplatform for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query userdata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:userdata for cloud-init query command'
+SUCCESS: proposed xenial have key:userdata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query v1
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:v1 for cloud-init query command'
+SUCCESS: proposed xenial have key:v1 for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query vendordata
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:vendordata for cloud-init query command'
+SUCCESS: proposed xenial have key:vendordata for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query distro
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:distro for cloud-init query command'
+SUCCESS: proposed xenial have key:distro for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query distro_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:distro_release for cloud-init query command'
+SUCCESS: proposed xenial have key:distro_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query distro_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:distro_version for cloud-init query command'
+SUCCESS: proposed xenial have key:distro_version for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query kernel_release
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:kernel_release for cloud-init query command'
+SUCCESS: proposed xenial have key:kernel_release for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query machine
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:machine for cloud-init query command'
+SUCCESS: proposed xenial have key:machine for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query merged_cfg
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:merged_cfg for cloud-init query command'
+SUCCESS: proposed xenial have key:merged_cfg for cloud-init query command
++ for query_key in $all_keys
++ expected_output=SUCCESS
++ command_error='ERROR: Undefined instance-data key python_version'
+++ lxc exec test-xenial-proposed -- cloud-init query python_version
+++ grep 'ERROR: Undefined instance-data key python_version'
+++ echo SUCCESS
++ actual_output=SUCCESS
++ '[' SUCCESS = SUCCESS ']'
++ echo 'SUCCESS: proposed xenial have key:python_version for cloud-init query command'
+SUCCESS: proposed xenial have key:python_version for cloud-init query command
