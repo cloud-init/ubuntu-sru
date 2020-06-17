@@ -50,9 +50,9 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries, sruLPUser):
     print('Creating SRU readme: {date}/README.md'.format(date=sruDir))
     if not os.path.isdir(sruDir):
         os.makedirs(sruDir)
-    tmpl_dir = os.path.join(root_dir, 'sru-templates')
-    with open(os.path.join(tmpl_dir, 'README.md'), 'r') as stream:
-        readme = stream.read()
+    tmpl_dir = os.path.join(root_dir, 'sru-scripts')
+    with open(os.path.join(tmpl_dir, 'SRU_README.tmpl'), 'r') as stream:
+        readme = stream.reade
 
     bugDir = os.path.join(root_dir, 'bugs')
     bug_lines = []  # Bug verification markdown doc lines
