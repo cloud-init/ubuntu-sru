@@ -1,5 +1,5 @@
 # This file is sourced by all manual SRU cloud tests
-# It relies on user-specific variable overrides in SRU_VARS_LOCAL_RC.
+# It relies on user-specific variable overrides in SRU_VARS_RC.
 # Set the variables accordingly for your cloud configuration and usernames
 
 PRESERVE_INSTANCE=false   # can be set as cmdline param
@@ -29,13 +29,16 @@ OPENSTACK_SSH_KEY_NAME="UNSET" # your openstack ssh key name on serverstack
 
 VMWARE_PASSWORD="UNSET"        # set to vcenter admin password
 
-# Define custom values for the above variables in ~/sru-vars-local.rc
-SRU_VARS_LOCAL_RC=$HOME/sru-vars-local.rc
-if [ ! -f $SRU_VARS_LOCAL_RC ]; then
-    echo "Error: missing $SRU_VARS_LOCAL_RC variable overrides to testing"
+# Define custom values for the above variables in ~/.sru-vars.rc
+SRU_VARS_RC=.sru-vars.rc
+if [ -f $SRU_VARS_RC ]; then
+    . ./$SRU_VARS_RC
+elif [ -f $HOME/$SRU_VARS_RC ]; then
+    . $HOME/$SRU_VARS_RC
+else
+    echo "Error: did not find $SRU_VARS_RC SRU testing overrides in working dir of $HOME"
     exit 1
 fi
-. SRU_VARS_LOCAL_RC
 
 
 create_samplecloudconfig(){
@@ -77,7 +80,7 @@ assert_expected_vars(){
         # to actual value of the variable name $var
         eval "value=\$$var > /dev/null"
         if [ -z "${value}" -o "${value}" = "UNSET" ]; then
-            echo "Error: expected ${var} in $SRU_VARS_LOCAL_RC"
+            echo "Error: expected ${var} in $SRU_VARS_RC"
             exit 1
         fi
     done

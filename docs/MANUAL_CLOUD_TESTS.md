@@ -5,9 +5,16 @@
 Manual cloud test templates which are intended for use in every SRU are located in [sru-templates/manual](../sru-templates/manual). Each template filename follows the format `<cloud_name>-sru`.
 
 ## Common rc file for utilities and test config
-Utility functions and configuration parameters required for all manual cloud tests are located in `sru-templates/manual/sru-vars.rc`.
+Utility functions and configuration parameters required for all manual cloud tests are located in `sru-templates/manual/sru-vars.template`.
 
-The rc file defines a number of required cloud-specific configuration variables which are named with a common prefix for each cloud. These variables are all "UNSET" in the rc file. The developer is expected to provide their own cloud-specific overrides in `$HOME/sru-vars-local.rc` to define preferred values for their own cloud accounts.  Any required configuration variables left as "UNSET" will result in failure to run the manual cloud test.
+The rc file defines a number of required cloud-specific configuration variables which are named with a common prefix for each cloud. These variables are all "UNSET" in the rc template file. The developer is expected to provide their own cloud-specific overrides in either `~/.sru-vars.rc` or `./.sru-vars.rc` to define preferred values for their own cloud accounts.  Any required configuration variables left as "UNSET" will result in failure to run the manual cloud test.
+
+To create your ./sru-vars.rc:
+
+  $ echo "# Custom SRU verification Variable overrides" > .sru-vars.rc
+  $ grep '="UNSET' sru-templates/manual/sru-vars.template >> .sru-vars.rc
+  # Then set appropriate values for your LP_USER and specific cloud config
+  $ vi .sru-vars.rc
 
 
 ## Manual cloud test requirements
