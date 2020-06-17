@@ -28,4 +28,4 @@ The process we follow when creating a new SRU is the following:
   1. change verification-needed-*series* tag to verification-done-*series* on the SRU process bug when complete
 
 
-[See more details on manual cloud tests](docs/MANUAL_CLOUD_TESTS.md)
+[See more details on manual cloud tests](sru-scripts/MANUAL_CLOUD_TESTS.md)
