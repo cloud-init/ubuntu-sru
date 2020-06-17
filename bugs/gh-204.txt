@@ -1,0 +1,1151 @@
+=== Begin SRU Template ===
+[Impact]
+When an user is setting a new random password, we are now using the SystemRandom class. This class
+generates random numbers from sources provided by the operating system. Therefore, the password
+should be harder to crack than ones originally created.
+
+[Test Case]
+
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+cat > config.yaml <<EOF
+#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM
+EOF
+
+
+get_boot_load_time() {
+    name=$1
+    lxc exec $name -- systemd-analyze
+    lxc exec $name -- systemd-analyze blame
+}
+
+verify_user() {
+    name=$1
+    series=$2
+
+    if [ "$series" = "xenial" ]; then
+        expected_output="testcloudinit:x:1000:1000::/home/testcloudinit:"
+    else
+        expected_output="testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh"
+    fi
+
+    actual_output=$(lxc exec $name -- getent passwd | grep testcloudinit)
+
+    if [ "$expected_output" = "$actual_output" ]; then
+        echo "SUCCESS: $series created the right user"
+    else
+        echo "FAILURE: $series did not create the right user"
+    fi
+}
+
+verify_password_change() {
+    name=$1
+    series=$2
+
+    expected_output=1
+    actual_output=$(lxc exec $name -- cat /var/log/cloud-init.log | grep "Changing password for \['testcloudinit'\]" | wc -l)
+
+    if [ "$expected_output" = "$actual_output" ]; then
+        echo "SUCCESS: $series change password for testcloudinit"
+    else
+        echo "FAILURE: $series did not change password for testcloudinit"
+    fi
+}
+
+reproduce() {
+   series=$1
+   name=test-$series-reproduce
+   expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
+
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$series $name -c user.user-data="$(cat config.yaml)"
+   lxc exec $name -- cloud-init status --wait --long
+
+   verify_user $name $series
+   verify_password_change $name $series
+   get_boot_load_time $name
+}
+
+verify() {
+   series=$1
+   ref=$series-proposed
+   name_proposed=test-$series-proposed
+
+   lxc delete $name_proposed --force 2> /dev/null
+   lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $series $ref
+   lxc init $ref $name_proposed -c user.user-data="$(cat config.yaml)"
+   lxc start $name_proposed
+   lxc exec $name_proposed -- cloud-init status --wait --long
+
+   verify_user $name_proposed $series
+   verify_password_change $name_proposed $series
+   get_boot_load_time $name_proposed
+}
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   echo "$SERIES(Current cloud-init): Check boot time for when user sets a random password"
+   reproduce $SERIES
+   echo "$SERIES(Proposed cloud-init): Check boot time for when user sets a random password"
+   verify $SERIES
+   echo '=== END ' $SERIES
+done
+```
+
+[Regression Potential]
+It seems that the if the OS does not provide a call to os.urandom(), the call would fail and
+exit the boot process. Also, since we are not depending on the OS to generate the random passwords
+we can maybe see some slowdown in boot time for some releases.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
++ cat
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ echo 'bionic(Current cloud-init): Check boot time for when user sets a random password'
+bionic(Current cloud-init): Check boot time for when user sets a random password
++ reproduce bionic
++ series=bionic
++ name=test-bionic-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-bionic-reproduce --force
+++ cat config.yaml
++ lxc launch ubuntu-daily:bionic test-bionic-reproduce -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-bionic-reproduce
+Starting test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+.................................................................
+status: done
+time: Wed, 17 Jun 2020 14:00:29 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-bionic-reproduce bionic
++ name=test-bionic-reproduce
++ series=bionic
++ '[' bionic = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-bionic-reproduce -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: bionic created the right user'
+SUCCESS: bionic created the right user
++ verify_password_change test-bionic-reproduce bionic
++ name=test-bionic-reproduce
++ series=bionic
++ expected_output=1
+++ lxc exec test-bionic-reproduce -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: bionic change password for testcloudinit'
+SUCCESS: bionic change password for testcloudinit
++ get_boot_load_time test-bionic-reproduce
++ name=test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- systemd-analyze
+Startup finished in 16.632s (userspace) = 1h 38min 57.097s
+graphical.target reached after 15.381s in userspace
++ lxc exec test-bionic-reproduce -- systemd-analyze blame
+         11.584s snapd.seeded.service
+          1.026s systemd-networkd-wait-online.service
+           852ms cloud-init.service
+           731ms cloud-config.service
+           727ms cloud-init-local.service
+           568ms apparmor.service
+           519ms cloud-final.service
+           203ms systemd-udev-trigger.service
+           197ms snapd.service
+           176ms networkd-dispatcher.service
+            93ms lxd-containers.service
+            88ms keyboard-setup.service
+            81ms ssh.service
+            78ms ebtables.service
+            78ms systemd-logind.service
+            76ms systemd-journal-flush.service
+            68ms accounts-daemon.service
+            63ms systemd-networkd.service
+            61ms systemd-journald.service
+            50ms systemd-hostnamed.service
+            47ms blk-availability.service
+            43ms rsyslog.service
+            42ms apport.service
+            40ms systemd-user-sessions.service
+            36ms polkit.service
+            27ms systemd-udevd.service
+            26ms plymouth-read-write.service
+            25ms systemd-tmpfiles-setup-dev.service
+            21ms systemd-tmpfiles-setup.service
+            21ms systemd-resolved.service
+            19ms systemd-update-utmp-runlevel.service
+            16ms systemd-sysctl.service
+            15ms systemd-modules-load.service
+            14ms plymouth-quit.service
+            14ms ufw.service
+            13ms plymouth-quit-wait.service
+            10ms console-setup.service
+             9ms systemd-update-utmp.service
+             6ms lxd.socket
+             4ms snapd.socket
++ echo 'bionic(Proposed cloud-init): Check boot time for when user sets a random password'
+bionic(Proposed cloud-init): Check boot time for when user sets a random password
++ verify bionic
++ series=bionic
++ ref=bionic-proposed
++ name_proposed=test-bionic-proposed
++ lxc delete test-bionic-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
+Creating bionic-proposed-2380611431
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [748 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [970 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [329 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1085 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [337 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [92.2 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [36.4 kB]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [30.7 kB]
+Get:29 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [16.9 kB]
+Fetched 19.1 MB in 26s (721 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 16 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preconfiguring packages ...
+Fetched 422 kB in 7s (59.8 kB/s)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+++ cat config.yaml
++ lxc init bionic-proposed test-bionic-proposed -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+...................................
+status: done
+time: Wed, 17 Jun 2020 14:02:16 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-bionic-proposed bionic
++ name=test-bionic-proposed
++ series=bionic
++ '[' bionic = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-bionic-proposed -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: bionic created the right user'
+SUCCESS: bionic created the right user
++ verify_password_change test-bionic-proposed bionic
++ name=test-bionic-proposed
++ series=bionic
++ expected_output=1
+++ lxc exec test-bionic-proposed -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: bionic change password for testcloudinit'
+SUCCESS: bionic change password for testcloudinit
++ get_boot_load_time test-bionic-proposed
++ name=test-bionic-proposed
++ lxc exec test-bionic-proposed -- systemd-analyze
+Startup finished in 9.228s (userspace) = 1h 40min 44.488s
+graphical.target reached after 8.658s in userspace
++ lxc exec test-bionic-proposed -- systemd-analyze blame
+          5.023s rsyslog.service
+          2.622s snapd.seeded.service
+          1.068s systemd-networkd-wait-online.service
+           783ms cloud-init-local.service
+           779ms cloud-init.service
+           743ms cloud-config.service
+           635ms apparmor.service
+           563ms cloud-final.service
+           208ms systemd-udev-trigger.service
+           190ms snapd.service
+           165ms networkd-dispatcher.service
+           148ms lxd-containers.service
+           110ms accounts-daemon.service
+            99ms keyboard-setup.service
+            88ms systemd-journal-flush.service
+            76ms ebtables.service
+            63ms systemd-networkd.service
+            58ms ssh.service
+            55ms systemd-hostnamed.service
+            51ms systemd-logind.service
+            49ms apport.service
+            47ms systemd-journald.service
+            46ms systemd-user-sessions.service
+            42ms systemd-resolved.service
+            34ms systemd-udevd.service
+            31ms polkit.service
+            27ms plymouth-read-write.service
+            23ms systemd-tmpfiles-setup.service
+            22ms plymouth-quit.service
+            21ms systemd-sysctl.service
+            19ms systemd-update-utmp.service
+            18ms systemd-tmpfiles-setup-dev.service
+            16ms ufw.service
+            12ms systemd-modules-load.service
+            12ms systemd-update-utmp-runlevel.service
+             9ms blk-availability.service
+             8ms snapd.socket
+             7ms lxd.socket
+             6ms console-setup.service
+             1ms plymouth-quit-wait.service
++ echo '=== END ' bionic
+=== END  bionic
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ echo 'eoan(Current cloud-init): Check boot time for when user sets a random password'
+eoan(Current cloud-init): Check boot time for when user sets a random password
++ reproduce eoan
++ series=eoan
++ name=test-eoan-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-eoan-reproduce --force
+++ cat config.yaml
++ lxc launch ubuntu-daily:eoan test-eoan-reproduce -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-eoan-reproduce
+Starting test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+...........................................................................................
+status: done
+time: Wed, 17 Jun 2020 14:02:44 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-eoan-reproduce eoan
++ name=test-eoan-reproduce
++ series=eoan
++ '[' eoan = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-eoan-reproduce -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: eoan created the right user'
+SUCCESS: eoan created the right user
++ verify_password_change test-eoan-reproduce eoan
++ name=test-eoan-reproduce
++ series=eoan
++ expected_output=1
+++ lxc exec test-eoan-reproduce -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: eoan change password for testcloudinit'
+SUCCESS: eoan change password for testcloudinit
++ get_boot_load_time test-eoan-reproduce
++ name=test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- systemd-analyze
+Startup finished in 23.254s (userspace) 
+graphical.target reached after 22.064s in userspace
++ lxc exec test-eoan-reproduce -- systemd-analyze blame
+         17.107s snapd.seeded.service
+          1.403s systemd-networkd-wait-online.service
+          1.344s cloud-init.service
+          1.045s snapd.service
+           718ms cloud-config.service
+           682ms cloud-init-local.service
+           623ms snap.lxd.activate.service
+           526ms console-setup.service
+           470ms apparmor.service
+           469ms cloud-final.service
+           380ms systemd-hostnamed.service
+           377ms systemd-logind.service
+           273ms systemd-journald.service
+           232ms systemd-resolved.service
+           227ms systemd-networkd.service
+           185ms accounts-daemon.service
+           177ms systemd-udev-trigger.service
+           149ms networkd-dispatcher.service
+           139ms systemd-udev-settle.service
+           106ms secureboot-db.service
+           103ms apport.service
+           101ms ssh.service
+            94ms systemd-journal-flush.service
+            81ms keyboard-setup.service
+            77ms rsyslog.service
+            55ms atd.service
+            53ms systemd-user-sessions.service
+            46ms plymouth-quit.service
+            37ms systemd-remount-fs.service
+            31ms systemd-sysusers.service
+            30ms blk-availability.service
+            28ms systemd-udevd.service
+            25ms polkit.service
+            24ms plymouth-read-write.service
+            24ms systemd-tmpfiles-setup.service
+            22ms systemd-update-utmp-runlevel.service
+            18ms systemd-update-utmp.service
+            15ms ufw.service
+            14ms finalrd.service
+            13ms systemd-sysctl.service
+            13ms plymouth-quit-wait.service
+            13ms systemd-tmpfiles-setup-dev.service
+            10ms snap-snapd-7777.mount
+             8ms snap-lxd-15457.mount
+             8ms snap-core18-1754.mount
+             7ms snap.mount
+             1ms snapd.socket
++ echo 'eoan(Proposed cloud-init): Check boot time for when user sets a random password'
+eoan(Proposed cloud-init): Check boot time for when user sets a random password
++ verify eoan
++ series=eoan
++ ref=eoan-proposed
++ name_proposed=test-eoan-proposed
++ lxc delete test-eoan-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
+Creating eoan-proposed-929013630
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [229 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [80.2 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5980 B]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [173 kB]
+Get:9 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.7 kB]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6648 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [308 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [113 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9520 B]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.7 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [30.2 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [14.1 kB]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1140 B]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.1 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [12.2 kB]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1208 B]
+Fetched 16.3 MB in 18s (906 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 18 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preconfiguring packages ...
+Fetched 420 kB in 2s (206 kB/s)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+++ cat config.yaml
++ lxc init eoan-proposed test-eoan-proposed -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+.............................................................................................
+status: done
+time: Wed, 17 Jun 2020 14:04:40 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-eoan-proposed eoan
++ name=test-eoan-proposed
++ series=eoan
++ '[' eoan = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-eoan-proposed -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: eoan created the right user'
+SUCCESS: eoan created the right user
++ verify_password_change test-eoan-proposed eoan
++ name=test-eoan-proposed
++ series=eoan
++ expected_output=1
+++ lxc exec test-eoan-proposed -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: eoan change password for testcloudinit'
+SUCCESS: eoan change password for testcloudinit
++ get_boot_load_time test-eoan-proposed
++ name=test-eoan-proposed
++ lxc exec test-eoan-proposed -- systemd-analyze
+Startup finished in 23.736s (userspace) 
+graphical.target reached after 22.561s in userspace
++ lxc exec test-eoan-proposed -- systemd-analyze blame
+         18.327s snapd.seeded.service
+          5.031s rsyslog.service
+          1.090s systemd-networkd-wait-online.service
+           994ms snapd.service
+           861ms cloud-init.service
+           705ms cloud-config.service
+           685ms cloud-init-local.service
+           617ms snap.lxd.activate.service
+           565ms console-setup.service
+           523ms apparmor.service
+           469ms cloud-final.service
+           370ms systemd-logind.service
+           362ms systemd-hostnamed.service
+           299ms systemd-journald.service
+           242ms systemd-resolved.service
+           236ms systemd-networkd.service
+           212ms accounts-daemon.service
+           173ms systemd-udev-trigger.service
+           140ms systemd-udev-settle.service
+           131ms networkd-dispatcher.service
+           107ms apport.service
+            94ms secureboot-db.service
+            84ms ssh.service
+            67ms keyboard-setup.service
+            65ms systemd-journal-flush.service
+            44ms systemd-tmpfiles-setup.service
+            38ms systemd-sysusers.service
+            38ms atd.service
+            37ms systemd-update-utmp-runlevel.service
+            36ms polkit.service
+            29ms plymouth-quit-wait.service
+            29ms plymouth-quit.service
+            29ms blk-availability.service
+            28ms systemd-udevd.service
+            28ms systemd-user-sessions.service
+            26ms systemd-remount-fs.service
+            15ms plymouth-read-write.service
+            15ms systemd-sysctl.service
+            13ms systemd-update-utmp.service
+            12ms snap-snapd-7777.mount
+            12ms ufw.service
+            10ms systemd-tmpfiles-setup-dev.service
+            10ms snap.mount
+             8ms snap-core18-1754.mount
+             8ms snap-lxd-15457.mount
+             7ms snapd.socket
+             4ms finalrd.service
++ echo '=== END ' eoan
+=== END  eoan
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ echo 'focal(Current cloud-init): Check boot time for when user sets a random password'
+focal(Current cloud-init): Check boot time for when user sets a random password
++ reproduce focal
++ series=focal
++ name=test-focal-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-focal-reproduce --force
+++ cat config.yaml
++ lxc launch ubuntu-daily:focal test-focal-reproduce -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-focal-reproduce
+Starting test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+.............................................................................................
+status: done
+time: Wed, 17 Jun 2020 14:05:09 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-focal-reproduce focal
++ name=test-focal-reproduce
++ series=focal
++ '[' focal = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-focal-reproduce -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: focal created the right user'
+SUCCESS: focal created the right user
++ verify_password_change test-focal-reproduce focal
++ name=test-focal-reproduce
++ series=focal
++ expected_output=1
+++ lxc exec test-focal-reproduce -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: focal change password for testcloudinit'
+SUCCESS: focal change password for testcloudinit
++ get_boot_load_time test-focal-reproduce
++ name=test-focal-reproduce
++ lxc exec test-focal-reproduce -- systemd-analyze
+Startup finished in 23.608s (userspace) 
+graphical.target reached after 22.442s in userspace
++ lxc exec test-focal-reproduce -- systemd-analyze blame
+17.469s snapd.seeded.service                
+ 1.758s systemd-networkd-wait-online.service
+ 1.007s snapd.service                       
+  947ms cloud-init.service                  
+  719ms cloud-init-local.service            
+  696ms cloud-config.service                
+  639ms console-setup.service               
+  610ms snap.lxd.activate.service           
+  537ms apparmor.service                    
+  469ms cloud-final.service                 
+  453ms systemd-hostnamed.service           
+  428ms systemd-journald.service            
+  387ms systemd-logind.service              
+  283ms systemd-networkd.service            
+  270ms systemd-resolved.service            
+  188ms accounts-daemon.service             
+  185ms systemd-udev-trigger.service        
+  172ms networkd-dispatcher.service         
+  118ms ssh.service                         
+   90ms e2scrub_reap.service                
+   88ms apport.service                      
+   81ms keyboard-setup.service              
+   75ms secureboot-db.service               
+   57ms systemd-journal-flush.service       
+   40ms systemd-udevd.service               
+   39ms systemd-remount-fs.service          
+   37ms systemd-update-utmp-runlevel.service
+   36ms systemd-sysusers.service            
+   34ms polkit.service                      
+   29ms systemd-sysctl.service              
+   27ms plymouth-quit.service               
+   27ms blk-availability.service            
+   24ms systemd-user-sessions.service       
+   24ms atd.service                         
+   21ms plymouth-read-write.service         
+   20ms rsyslog.service                     
+   20ms systemd-tmpfiles-setup.service      
+   16ms systemd-udev-settle.service         
+   15ms snapd.apparmor.service              
+   12ms systemd-tmpfiles-setup-dev.service  
+   12ms ufw.service                         
+   11ms systemd-update-utmp.service         
+   10ms snap-snapd-7777.mount               
+   10ms finalrd.service                     
+    9ms plymouth-quit-wait.service          
+    9ms snap-lxd-15457.mount                
+    8ms snap-core18-1754.mount              
+    4ms snap.mount                          
+    2ms snapd.socket                        
++ echo 'focal(Proposed cloud-init): Check boot time for when user sets a random password'
+focal(Proposed cloud-init): Check boot time for when user sets a random password
++ verify focal
++ series=focal
++ ref=focal-proposed
++ name_proposed=test-focal-proposed
++ lxc delete test-focal-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
+Creating focal-proposed-2434930241
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [106 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [40.1 kB]
+Get:8 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2764 B]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [11.0 kB]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [3000 B]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [35.5 kB]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.7 kB]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1612 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:17 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [197 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [77.7 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5676 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [110 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [51.9 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [4092 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [53.8 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [27.4 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1948 B]
+Get:43 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [27.1 kB]
+Get:44 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [20.4 kB]
+Get:45 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1768 B]
+Fetched 15.7 MB in 19s (823 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 35 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preconfiguring packages ...
+Fetched 416 kB in 2s (202 kB/s)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+invoke-rc.d: could not determine current runlevel
+++ cat config.yaml
++ lxc init focal-proposed test-focal-proposed -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+status: done
+time: Wed, 17 Jun 2020 14:12:21 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-focal-proposed focal
++ name=test-focal-proposed
++ series=focal
++ '[' focal = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
+++ lxc exec test-focal-proposed -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh = testcloudinit:x:1000:1000::/home/testcloudinit:/bin/sh ']'
++ echo 'SUCCESS: focal created the right user'
+SUCCESS: focal created the right user
++ verify_password_change test-focal-proposed focal
++ name=test-focal-proposed
++ series=focal
++ expected_output=1
+++ lxc exec test-focal-proposed -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: focal change password for testcloudinit'
+SUCCESS: focal change password for testcloudinit
++ get_boot_load_time test-focal-proposed
++ name=test-focal-proposed
++ lxc exec test-focal-proposed -- systemd-analyze
+Startup finished in 5min 34.563s (userspace) 
+graphical.target reached after 5min 33.321s in userspace
++ lxc exec test-focal-proposed -- systemd-analyze blame
+5min 28.374s snapd.seeded.service                
+      1.427s systemd-networkd-wait-online.service
+      1.140s cloud-init.service                  
+       956ms snapd.service                       
+       760ms cloud-config.service                
+       742ms cloud-init-local.service            
+       692ms console-setup.service               
+       575ms snap.lxd.activate.service           
+       557ms apparmor.service                    
+       481ms cloud-final.service                 
+       465ms systemd-journald.service            
+       431ms systemd-logind.service              
+       294ms systemd-resolved.service            
+       287ms systemd-networkd.service            
+       202ms systemd-udev-trigger.service        
+       189ms accounts-daemon.service             
+       144ms networkd-dispatcher.service         
+       130ms ssh.service                         
+       110ms systemd-journal-flush.service       
+       100ms e2scrub_reap.service                
+        87ms keyboard-setup.service              
+        65ms secureboot-db.service               
+        59ms apport.service                      
+        41ms systemd-udevd.service               
+        41ms systemd-sysusers.service            
+        37ms polkit.service                      
+        32ms blk-availability.service            
+        31ms systemd-update-utmp-runlevel.service
+        28ms atd.service                         
+        27ms rsyslog.service                     
+        26ms systemd-udev-settle.service         
+        26ms systemd-remount-fs.service          
+        26ms systemd-user-sessions.service       
+        21ms systemd-tmpfiles-setup.service      
+        21ms systemd-sysctl.service              
+        20ms snapd.apparmor.service              
+        20ms plymouth-quit.service               
+        19ms plymouth-read-write.service         
+        16ms systemd-update-utmp.service         
+        13ms systemd-tmpfiles-setup-dev.service  
+        10ms ufw.service                         
+        10ms finalrd.service                     
+         8ms snap-lxd-15457.mount                
+         8ms snap-core18-1754.mount              
+         7ms plymouth-quit-wait.service          
+         6ms snap.mount                          
+         4ms snap-snapd-7777.mount               
+         1ms snapd.socket                        
++ echo '=== END ' focal
+=== END  focal
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ echo 'xenial(Current cloud-init): Check boot time for when user sets a random password'
+xenial(Current cloud-init): Check boot time for when user sets a random password
++ reproduce xenial
++ series=xenial
++ name=test-xenial-reproduce
++ expected_mirror=http://uk.archive.ubuntu.com/ubuntu/
++ lxc delete test-xenial-reproduce --force
+++ cat config.yaml
++ lxc launch ubuntu-daily:xenial test-xenial-reproduce -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-xenial-reproduce
+Starting test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+.........................
+status: done
+time: Wed, 17 Jun 2020 14:12:32 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-xenial-reproduce xenial
++ name=test-xenial-reproduce
++ series=xenial
++ '[' xenial = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:
+++ lxc exec test-xenial-reproduce -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit: = testcloudinit:x:1000:1000::/home/testcloudinit: ']'
++ echo 'SUCCESS: xenial created the right user'
+SUCCESS: xenial created the right user
++ verify_password_change test-xenial-reproduce xenial
++ name=test-xenial-reproduce
++ series=xenial
++ expected_output=1
+++ lxc exec test-xenial-reproduce -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: xenial change password for testcloudinit'
+SUCCESS: xenial change password for testcloudinit
++ get_boot_load_time test-xenial-reproduce
++ name=test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- systemd-analyze
+Startup finished in 6.733s (userspace) = 1h 51min 143ms
++ lxc exec test-xenial-reproduce -- systemd-analyze blame
+          2.583s snapd.seeded.service
+          1.363s cloud-config.service
+           676ms cloud-init-local.service
+           625ms cloud-init.service
+           612ms apparmor.service
+           449ms cloud-final.service
+           357ms networking.service
+           265ms snapd.service
+           232ms lvm2-monitor.service
+           177ms lxd-containers.service
+           138ms systemd-udev-trigger.service
+           101ms iscsid.service
+            88ms ssh.service
+            80ms accounts-daemon.service
+            78ms systemd-journal-flush.service
+            65ms resolvconf.service
+            64ms systemd-udevd.service
+            56ms ufw.service
+            55ms dev-hugepages.mount
+            54ms systemd-remount-fs.service
+            54ms systemd-modules-load.service
+            50ms systemd-tmpfiles-setup-dev.service
+            39ms systemd-journald.service
+            39ms mdadm.service
+            33ms systemd-logind.service
+            33ms ondemand.service
+            32ms irqbalance.service
+            31ms rsyslog.service
+            29ms apport.service
+            26ms plymouth-read-write.service
+            23ms systemd-update-utmp-runlevel.service
+            21ms polkitd.service
+            20ms systemd-update-utmp.service
+            18ms systemd-tmpfiles-setup.service
+            13ms systemd-sysctl.service
+            13ms plymouth-quit.service
+            13ms open-iscsi.service
+             8ms rc-local.service
+             7ms systemd-random-seed.service
+             7ms plymouth-quit-wait.service
+             4ms systemd-user-sessions.service
+             2ms lxd.socket
+             1ms snapd.socket
++ echo 'xenial(Proposed cloud-init): Check boot time for when user sets a random password'
+xenial(Proposed cloud-init): Check boot time for when user sets a random password
++ verify xenial
++ series=xenial
++ ref=xenial-proposed
++ name_proposed=test-xenial-proposed
++ lxc delete test-xenial-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
+Creating xenial-proposed-1522030209
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:10 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [437 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [40.2 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [16.7 kB]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [7740 B]
+Get:29 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6092 B]
+Fetched 17.5 MB in 25s (699 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preconfiguring packages ...
+Fetched 425 kB in 2s (193 kB/s)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+++ cat config.yaml
++ lxc init xenial-proposed test-xenial-proposed -c 'user.user-data=#cloud-config
+users:
+  - name: testcloudinit
+    sudo: false
+chpasswd:
+  expire: false
+  list:
+    - testcloudinit:RANDOM'
+Creating test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+...........................
+status: done
+time: Wed, 17 Jun 2020 14:14:04 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ verify_user test-xenial-proposed xenial
++ name=test-xenial-proposed
++ series=xenial
++ '[' xenial = xenial ']'
++ expected_output=testcloudinit:x:1000:1000::/home/testcloudinit:
+++ lxc exec test-xenial-proposed -- getent passwd
+++ grep testcloudinit
++ actual_output=testcloudinit:x:1000:1000::/home/testcloudinit:
++ '[' testcloudinit:x:1000:1000::/home/testcloudinit: = testcloudinit:x:1000:1000::/home/testcloudinit: ']'
++ echo 'SUCCESS: xenial created the right user'
+SUCCESS: xenial created the right user
++ verify_password_change test-xenial-proposed xenial
++ name=test-xenial-proposed
++ series=xenial
++ expected_output=1
+++ lxc exec test-xenial-proposed -- cat /var/log/cloud-init.log
+++ grep 'Changing password for \['\''testcloudinit'\''\]'
+++ wc -l
++ actual_output=1
++ '[' 1 = 1 ']'
++ echo 'SUCCESS: xenial change password for testcloudinit'
+SUCCESS: xenial change password for testcloudinit
++ get_boot_load_time test-xenial-proposed
++ name=test-xenial-proposed
++ lxc exec test-xenial-proposed -- systemd-analyze
+Startup finished in 7.115s (userspace) = 1h 52min 32.002s
++ lxc exec test-xenial-proposed -- systemd-analyze blame
+          3.070s snapd.seeded.service
+          1.335s cloud-config.service
+           734ms cloud-init.service
+           688ms cloud-init-local.service
+           641ms apparmor.service
+           433ms cloud-final.service
+           282ms networking.service
+           233ms lvm2-monitor.service
+           230ms snapd.service
+           154ms systemd-udev-trigger.service
+            90ms ssh.service
+            76ms lxd-containers.service
+            76ms accounts-daemon.service
+            58ms resolvconf.service
+            58ms iscsid.service
+            53ms mdadm.service
+            48ms systemd-remount-fs.service
+            48ms systemd-modules-load.service
+            46ms systemd-tmpfiles-setup-dev.service
+            45ms ufw.service
+            45ms ondemand.service
+            45ms dev-hugepages.mount
+            44ms irqbalance.service
+            41ms systemd-journal-flush.service
+            38ms systemd-journald.service
+            33ms apport.service
+            32ms systemd-logind.service
+            27ms systemd-update-utmp-runlevel.service
+            25ms systemd-udevd.service
+            22ms systemd-update-utmp.service
+            22ms rsyslog.service
+            22ms rc-local.service
+            20ms polkitd.service
+            19ms systemd-sysctl.service
+            17ms plymouth-read-write.service
+            14ms plymouth-quit.service
+            12ms systemd-tmpfiles-setup.service
+             8ms open-iscsi.service
+             7ms systemd-random-seed.service
+             5ms plymouth-quit-wait.service
+             5ms systemd-user-sessions.service
+             3ms snapd.socket
+             3ms lxd.socket
++ echo '=== END ' xenial
+=== END  xenial
