@@ -43,4 +43,3 @@ Each manual test **must** perform the following on a cloud without errors:
 
 Each manual test **may** perform the following additional tests:
   * emit and/or validate network config output
-  * verify any bugs/features related to the specific SRU under test
