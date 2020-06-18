@@ -9,10 +9,14 @@ PROPOSED_SCRIPT=setup_proposed.sh
 
 USE_DEV_PPA=0  # set to 1 to use ppa:cloud-init-dev/proposed
 
+ENI_NETCFG_FILE="/etc/network/interfaces.d/50-cloud-init.cfg"
+NETPLAN_NETCFG_FILE="/etc/netplan/50-cloud-init.yaml"
+
 SAMPLE_CLOUDCONFIG="sethostname.yaml"
 # Key used to interact with cloud-instances
 SSH_KEY="$HOME/.ssh/id_rsa.pub"
 
+SSHOPTS=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
 
 AZURE_REGION="UNSET"          # specify your region name
 AZURE_VNET_NAME="UNSET"       # specify your virtual network name
@@ -103,7 +107,12 @@ parse_args(){
         case "$1" in
             # any flag pass through.
             --preserve-instance) PRESERVE_INSTANCE=true;;
-            xenial|bionic|eoan|focal) UBUNTU_RELEASE=$1;;
+            xenial)
+                UBUNTU_RELEASE=$1
+                NETCFG_FILE=$ENI_NETCFG_FILE;;
+            bionic|eoan|focal)
+                UBUNTU_RELEASE=$1
+                NETCFG_FILE=$NETPLAN_NETCFG_FILE;;
             --) shift; break;;
            *) echo "Invalid ubuntu_release provided: $1"; exit 1;;
         esac
@@ -112,4 +121,12 @@ parse_args(){
     if [ -z "${UBUNTU_RELEASE}" ]; then
         usage_error $script "no valid <ubuntu_release> param found"
     fi
+}
+
+ssh_wait_for_instance_boot(){
+    local VM=$1   # expect <user>@<hostname>
+    sleep 10  # Wait for the instance to boot
+    while ! ssh "${SSHOPTS[@]}" $VM -- cloud-init status --wait --long; do
+        sleep 5
+    done
 }
