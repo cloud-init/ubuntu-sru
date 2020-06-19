@@ -52,7 +52,7 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries, sruLPUser):
         os.makedirs(sruDir)
     tmpl_dir = os.path.join(root_dir, 'sru-scripts')
     with open(os.path.join(tmpl_dir, 'SRU_README.tmpl'), 'r') as stream:
-        readme = stream.reade
+        readme = stream.read()
 
     bugDir = os.path.join(root_dir, 'bugs')
     bug_lines = []  # Bug verification markdown doc lines
