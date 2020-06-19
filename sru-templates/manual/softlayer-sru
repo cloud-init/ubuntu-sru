@@ -14,7 +14,7 @@
 # Manually deploy on Softlayer using slcli client.
 # Validate upgrade to proposed version of cloud-init
 # Check Tracebacks or error conditions on clean boot
-set -x
+set -ex
 
 SRU_VARS=./sru-scripts/sru-vars.template
 
@@ -28,44 +28,43 @@ fi
 parse_args $0 $@
 assert_expected_vars PROPOSED_SCRIPT LP_USER SAMPLE_CLOUDCFG SSHOPTS
  
-    echo "### BEGIN $UBUNTU_RELEASE"
-    VM_IP=`launch-softlayer --image=os:$UBUNTU_RELEASE -u $SAMPLE_CLOUDCONFIG | awk '/primary ip/{printf "root@%s", $NF}'`
-    sleep 180
-    ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
-    ssh "${SSHOPTS[@]}" $VM_IP -- grep Trace /var/log/cloud-init.log
-    ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze
-    ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
+echo "### BEGIN $UBUNTU_RELEASE"
+VM_IP=`launch-softlayer --image=os:$UBUNTU_RELEASE -u $SAMPLE_CLOUDCONFIG | awk '/primary ip/{printf "root@%s", $NF}'`
+sleep 180
+ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" $VM_IP -- grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze
+ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
 
-    scp "${SSHOPTS[@]}" $PROPOSED_SCRIPT $VM_IP:.
-    ssh "${SSHOPTS[@]}" $VM_IP -- bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
-    ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
-    ssh "${SSHOPTS[@]}" $VM_IP -- hostname SRU-didnt-work
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init clean --logs --reboot
+scp "${SSHOPTS[@]}" $PROPOSED_SCRIPT $VM_IP:.
+ssh "${SSHOPTS[@]}" $VM_IP -- bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $VM_IP -- hostname SRU-didnt-work
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init clean --logs --reboot || true
 
-    sleep 180
+sleep 180
 
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init status --wait --long
-    ssh "${SSHOPTS[@]}" $VM_IP -- grep Trace /var/log/cloud-init\*
-    ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
-    ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
-    ssh "${SSHOPTS[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
-    echo 'Get cloud-id'
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-id
-    ssh "${SSHOPTS[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init status --wait --long
+ssh "${SSHOPTS[@]}" $VM_IP -- ! grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
+echo 'Get cloud-id'
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-id
+ssh "${SSHOPTS[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
 
-    echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
-    ssh "${SSHOPTS[@]}" $VM_IP -- reboot || true
-    sleep 180
-    echo 'After reboot'
-    ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init status --wait --long
-    ssh "${SSHOPTS[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
-    echo "Confirm no traceback after reboot LP: 1823084"
-    ssh "${SSHOPTS[@]}" $VM_IP -- "grep 'Trace' /var/log/cloud-init.log"
+echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
+ssh "${SSHOPTS[@]}" $VM_IP -- reboot || true
+sleep 180
+echo 'After reboot'
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init status --wait --long
+ssh "${SSHOPTS[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+echo "Confirm no traceback after reboot LP: 1823084"
+ssh "${SSHOPTS[@]}" $VM_IP -- "grep 'Trace' /var/log/cloud-init.log"
 
-    echo "### END $UBUNTU_RELEASE"
-
+echo "### END $UBUNTU_RELEASE"
