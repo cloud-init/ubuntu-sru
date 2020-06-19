@@ -57,3 +57,4 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Manual nocloud-kvm test | [verification output](../manual/nocloud-kvm-20.2.45.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-20.2.45.txt) |
 | Manual nocloud-lxd test | [verification output](../manual/nocloud-lxd-20.2.45.txt) |
+| Manual curtin-cloudinit-sru test | [verification output](../manual/curtin-cloudinit-sru-20.2.45.txt) |
