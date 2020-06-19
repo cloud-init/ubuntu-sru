@@ -1,0 +1,330 @@
+#!/bin/sh
+set -ex
+# Manually deploy on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT AZURE_REGION AZURE_VNET_NAME \
+  AZURE_NETWORK_SECURITY_GROUP AZURE_NIC_NAME AZURE_RESOURCE_GROUP \
+  AZURE_BOOT_DIAG SSH_KEY SAMPLE_CLOUDCONFIG AZURE_ADVANCED_NIC_TESTS
+create_samplecloudconfig
+create_setup_proposed_script
+
+AZURE_VNET_NAME=$AZURE_VNET_NAME-$UBUNTU_RELEASE
+
+
+IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+
+if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; then
+    echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
+    read RESP
+    if [ "$RESP" = "y" ]; then
+        az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
+        az feature register --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network
+    else
+        echo "Skipping any advanced network tests because you opted to avoid registering IPv6 feature"
+        echo -n "Proceed without any advanced networking tests (y/n)? "
+        read OK
+        if [ "$OK" = "y" ]; then
+            AZURE_ADVANCED_NIC_TESTS=false
+        else
+            echo "quit the test run"
+            exit 1
+        fi
+    fi
+    echo "Waiting for AllowIPv6VirtualNetwork feature registration"
+    while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
+        echo -n "."
+        sleep 5
+        IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+        IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+    done
+fi
+
+IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+echo "Waiting for Microsoft.Network IPv6 feature registration"
+while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
+    echo -n "."
+    sleep 5
+    IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+done
+
+
+echo "### BEGIN $UBUNTU_RELEASE"
+
+az group show -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az group create --name $AZURE_RESOURCE_GROUP --location $AZURE_REGION
+
+if [ -n "${AZURE_BOOT_DIAG}" ]; then
+     az storage account show --name $AZURE_BOOT_DIAG > /dev/null 2>&1 ||
+         az storage account create \
+             --name $AZURE_BOOT_DIAG \
+             --resource-group $AZURE_RESOURCE_GROUP \
+             --location $AZURE_REGION \
+             --sku Standard_RAGRS \
+             --kind StorageV2
+    AZURE_BOOT_DIAG_ARG="--boot-diagnostics-storage ${AZURE_BOOT_DIAG}"
+else
+    AZURE_BOOT_DIAG_ARG=""
+fi
+
+az network nsg show --name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg create \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --location $AZURE_REGION \
+    --name $AZURE_NETWORK_SECURITY_GROUP
+
+az network nsg rule show --name allowSSHIn --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
+    --name allowSSHIn  \
+    --nsg-name $AZURE_NETWORK_SECURITY_GROUP  \
+    --resource-group $AZURE_RESOURCE_GROUP  \
+    --priority 100  \
+    --description "Allow SSH In"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Inbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges 22
+
+az network nsg rule show --name allowAllOut --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
+    --name allowAllOut  \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --nsg-name $AZURE_NETWORK_SECURITY_GROUP \
+    --priority 200  \
+    --description "Allow All Out"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Outbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges "*"
+
+az network vnet show --name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet create \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --location $AZURE_REGION \
+    --name $AZURE_VNET_NAME \
+    --address-prefixes "10.0.0.0/16" "ace:cab:deca::/48"
+
+az network vnet subnet show --name sruSubnet --vnet-name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet subnet create \
+    --name sruSubnet \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --vnet-name $AZURE_VNET_NAME \
+    --address-prefixes "10.0.0.0/24" "ace:cab:deca:deed::/64" \
+    --network-security-group $AZURE_NETWORK_SECURITY_GROUP
+
+
+sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+
+netcfg="/etc/netplan/50-cloud-init.yaml"
+case $UBUNTU_RELEASE in
+    xenial) image_version=Canonical:UbuntuServer:16.04-DAILY-LTS
+            netcfg="/etc/network/interfaces.d/50-cloud-init.cfg";;
+    bionic) image_version=Canonical:UbuntuServer:18.04-DAILY-LTS;;
+    eoan) image_version=Canonical:UbuntuServer:19.10-DAILY;;
+    focal) image_version=Canonical:0001-com-ubuntu-server-focal-daily:20_04-daily-lts;;
+    *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+esac
+# Note: accelerated network requires bigger size than our default DS1
+for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELEASE --size Standard_DS2_v2"; do
+    if [ "" = "$nics" ]; then
+        echo "Creating standard network vm"
+        name=test-sru-$UBUNTU_RELEASE
+    else
+        if [ $AZURE_ADVANCED_NIC_TESTS = false ]; then
+            echo "Skipping advanced nic tests because ipv6 feature is disabled"
+            continue
+        fi
+        echo "Creating advanced network vm"
+        name=test-sru-$UBUNTU_RELEASE-advanced
+        # Dual stack load balancer setup with only 1 dualstack/dual nic vm
+        # Create VM IP address
+        az network public-ip create \
+            --name vmPublicIP-IPv4-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --location $AZURE_REGION \
+            --sku BASIC \
+            --allocation-method dynamic \
+            --version IPv4
+        # Create an IPV4 IP address for LB
+        az network public-ip create \
+            --name lbPublicIP_v4_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --location $AZURE_REGION  \
+            --sku BASIC  \
+            --allocation-method dynamic  \
+            --version IPv4
+
+        # Create an IPV6 IP address for LB
+        az network public-ip create \
+            --name lbPublicIP_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --location $AZURE_REGION \
+            --sku BASIC  \
+            --allocation-method dynamic  \
+            --version IPv6
+
+        # Create LB
+        az network lb create \
+            --name dsLB_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --sku Basic \
+            --location $AZURE_REGION \
+            --frontend-ip-name dsLbFrontEnd_v4_$UBUNTU_RELEASE  \
+            --public-ip-address lbPublicIP_v4_$UBUNTU_RELEASE  \
+            --backend-pool-name dsLbBackEndPool_v4_$UBUNTU_RELEASE
+
+        # Create LB ipv6 frontend
+        az network lb frontend-ip create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLbFrontEnd_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --public-ip-address lbPublicIP_v6_$UBUNTU_RELEASE
+
+        # Create LB ipv6 backend
+        az network lb address-pool create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLbBackEndPool_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP
+
+        # Create LB health probe for ssh port
+        az network lb probe create -g $AZURE_RESOURCE_GROUP  \
+            --lb-name dsLB_$UBUNTU_RELEASE -n dsProbe_$UBUNTU_RELEASE --protocol tcp \
+            --port 22
+
+        az network lb rule create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLBrule_v4_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --frontend-ip-name dsLbFrontEnd_v4_$UBUNTU_RELEASE  \
+            --protocol Tcp  \
+            --frontend-port 22  \
+            --backend-port 22  \
+            --probe-name dsProbe_$UBUNTU_RELEASE \
+            --backend-pool-name dsLbBackEndPool_v4_$UBUNTU_RELEASE
+
+        az network lb rule create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLBrule_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --frontend-ip-name dsLbFrontEnd_v6_$UBUNTU_RELEASE  \
+            --protocol Tcp  \
+            --frontend-port 22  \
+            --backend-port 22  \
+            --probe-name dsProbe_$UBUNTU_RELEASE \
+            --backend-pool-name dsLbBackEndPool_v6_$UBUNTU_RELEASE
+
+        az vm availability-set create \
+            --name dsAVset_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --location $AZURE_REGION \
+            --platform-fault-domain-count 2  \
+            --platform-update-domain-count 2
+
+        az network nic create \
+            --name $AZURE_NIC_NAME-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --network-security-group $AZURE_NETWORK_SECURITY_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+             --accelerated-networking true \
+            --subnet sruSubnet \
+            --private-ip-address-version IPv4 \
+            --lb-address-pools dsLbBackEndPool_v4_$UBUNTU_RELEASE  \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --public-ip-address vmPublicIP-IPv4-$UBUNTU_RELEASE
+
+        az network nic create \
+            --name ${AZURE_NIC_NAME}2-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --network-security-group $AZURE_NETWORK_SECURITY_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+            --accelerated-networking true \
+            --subnet sruSubnet \
+            --private-ip-address-version IPv4
+
+        # Add IPv6 on primary nic
+        az network nic ip-config create \
+            --name $AZURE_NIC_NAME-$UBUNTU_RELEASE-v6 \
+            --nic-name $AZURE_NIC_NAME-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+            --subnet sruSubnet \
+            --lb-address-pools dsLbBackEndPool_v6_$UBUNTU_RELEASE  \
+            --lb-name dsLB_$UBUNTU_RELEASE \
+            --private-ip-address-version IPv6
+
+    fi
+    az vm show --name $name -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 ||
+        az vm create --name=$name \
+            --image=$image_version:latest \
+            --admin-username=root --admin-username=ubuntu \
+            -g $AZURE_RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+            $AZURE_BOOT_DIAG_ARG \
+            --custom-data $SAMPLE_CLOUDCONFIG $nics
+    IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+
+    echo "Created $name: ubuntu@$IP"
+
+    ssh $sshopts $IP -- cloud-init status --wait --long
+    ssh $sshopts $IP -- dpkg-query --show cloud-init
+    ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+    ssh $sshopts $IP -- ! grep Trace /var/log/cloud-init.log
+    ssh $sshopts $IP -- systemd-analyze
+    ssh $sshopts $IP -- systemd-analyze blame
+    ssh $sshopts $IP -- cloud-init analyze show
+    ssh $sshopts $IP -- cloud-init analyze blame
+    echo 'Writing networking config: previous-network.out'
+    ssh $sshopts $IP -- cat $netcfg > previous-network.out
+    ssh $sshopts $IP -- ip -4 route >> previous-network.out
+    ssh $sshopts $IP -- ip -4 addr >> previous-network.out
+    ssh $sshopts $IP -- ip -6 route >> previous-network.out
+    ssh $sshopts $IP -- ip -6 addr >> previous-network.out
+    ssh $sshopts $IP -- grep DHCP /var/log/syslog >> previous-network.out
+
+    scp $sshopts PROPOSED_SCRIPT $IP:.
+    ssh $sshopts $IP -- sudo bash PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+    ssh $sshopts $IP -- dpkg-query --show cloud-init
+    ssh $sshopts $IP -- sudo hostname SRU-didnt-work
+    ssh $sshopts $IP -- sudo rm -f $netcfg
+    ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot || true
+    sleep 60
+
+    ssh $sshopts $IP -- cloud-init status --wait --long
+    ssh $sshopts $IP -- ! grep Trace /var/log/cloud-init.log
+    ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
+    ssh $sshopts $IP -- sudo systemd-analyze blame
+    ssh $sshopts $IP -- cloud-init analyze show
+    ssh $sshopts $IP -- cloud-init analyze blame
+    echo 'After upgrade write network config: upgrade-network.out'
+    ssh $sshopts $IP -- cat $netcfg > upgrade-network.out
+    ssh $sshopts $IP -- ip -4 route >> upgrade-network.out
+    ssh $sshopts $IP -- ip -4 addr >> upgrade-network.out
+    ssh $sshopts $IP -- ip -6 route >> upgrade-network.out
+    ssh $sshopts $IP -- ip -6 addr >> upgrade-network.out
+    ssh $sshopts $IP -- grep DHCP /var/log/syslog >> upgrade-network.out
+    echo '------- Diff previous-network to post-upgrade-network ------'
+    diff -urN previous-network.out upgrade-network.out
+    echo '------- Diff previous-network to post-upgrade-network ------'
+    ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+    echo 'Get cloud-id'
+    ssh $sshopts $IP -- cloud-id
+    ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+    echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to be Sytem Boot'
+    ssh $sshopts $IP -- sudo reboot || true
+    sleep 30
+    ssh $sshopts $IP -- cloud-init status --wait --long
+    echo 'After reboot'
+    ssh $sshopts $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+done
+echo "### END $UBUNTU_RELEASE"
