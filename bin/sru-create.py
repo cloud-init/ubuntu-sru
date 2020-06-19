@@ -66,9 +66,6 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries, sruLPUser):
        # Create lp-<bug-id> SRU templates
        subprocess.check_call(['gen-bug-sru-tmpl', str(bug_id)])
 
-    manual_template_replacements = {
-        '%SRU_SERIES%': sruSeries.replace(',', ' '),
-        '%SRU_LP_USER%': sruLPUser}
     manual_lines = []  # Manual verification doc lines
     for manual_tmpl in glob.glob(os.path.join(tmpl_dir, 'manual/*')):
        tmpl_basename = os.path.basename(manual_tmpl)
@@ -76,18 +73,9 @@ def create_sru_docs(sruDate, sruVersion, sruBug, bugs, sruSeries, sruLPUser):
        title = 'Manual {platform} test'.format(platform=platform)
        versioned_file = '{tmpl}-{sruVer}.txt'.format(
           tmpl=tmpl_basename, sruVer=sruVersion)
-       print('Creating manual sru test file: manual/{_file}'.format(
-                 _file=versioned_file))
        manual_lines.append(
            MANUAL_VERIFY_TMPL.format(title=title,
                                      versioned_file=versioned_file))
-       with open(manual_tmpl, 'rt') as fin:
-           manual_out = os.path.join(root_dir, 'manual', versioned_file)
-           with open(manual_out, 'wt') as fout:
-               for line in fin:
-                   for source, value in manual_template_replacements.items():
-                       line = line.replace(source, value)
-                   fout.write(line)
 
     readme_replacements = {
             '%SRU_PROCESS_BUG%': str(sruBug),
