@@ -1,0 +1,274 @@
+https://bugzilla.redhat.com/show_bug.cgi?id=1772505
+
+=== Begin cloud-init SRU Template ===
+[Impact]
+
+Configuring cloud-init's swap cloud-config and setting the 'size' key to
+'auto' causes and error and prevents a swap file from being created and
+enabled.  This issue is only found on the Ubuntu Focal release.
+
+[Test Case]
+#!/bin/bash
+# Create a swap device with size='auto' and confirm swap file is created
+# Notes:
+#  1. using VMs as many LXD deployments use ZFS on which swapfiles do not
+#     work.
+#  2. This bug only affects Ubuntu Focal, the commit which introduced the
+#     regression (the fix for fallocate, on Jan 23; 6603706e).  19.4-33 is
+#     not affect, therefore we're only validating Focal release.
+#
+read -r -d '' CLOUDCFG <<- EOM
+#cloud-config
+swap:
+  filename: /test-swapfile
+  size: auto
+  maxsize: 2G
+EOM
+SETUP_PROPOSED=$(mktemp ubuntu-sru.XXX)
+cat > ${SETUP_PROPOSED} <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+BUGNUM="rhbz-1772505"
+VM_SLEEP=30
+
+cleanup() {
+    if [ -n "${SETUP_PROPOSED}" -a -e "${SETUP_PROPOSED}" ]; then
+        rm -f "${SETUP_PROPOSED}";
+    fi
+    lxc delete --force $name &>/dev/null
+}
+trap cleanup EXIT
+
+recreate() {
+    release=$1
+    name=${release}-recreate-${BUGNUM}
+
+    # initialize the contaier
+    lxc init images:ubuntu/$release/cloud --vm $name
+    lxc config set $name user.user-data "${CLOUDCFG}"
+    lxc config device add $name config disk source=cloud-init:config
+
+    lxc start $name
+    sleep $VM_SLEEP
+    # wait for cloud-init to complete
+    lxc exec $name -- cloud-init status --wait
+
+    # check for error setting up swap
+    swap_failure=$(lxc exec $name -- grep -c "failed to setup swap" /var/log/cloud-init.log)
+    echo "Expecting: 1"
+    echo "Found    : [${swap_failure}]"
+    case $swap_failure in
+        1)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    # check no swaps enabled
+    swap_enabled=$(lxc exec $name -- grep -c test-swapfile /proc/swaps)
+    echo "Expecting: 0"
+    echo "Found    : [${swap_enabled}]"
+    case $swap_enabled in
+        0)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    if [ "$rc" = "0" ]; then
+        echo "Recreate OK!"
+        lxc delete --force ${name}
+    fi
+    return $rc
+}
+
+
+verify() {
+    release=$1
+    name=${release}-verify-${BUGNUM}
+
+    lxc init images:ubuntu/$release/cloud --vm $name
+    lxc config set $name user.user-data "${CLOUDCFG}"
+    lxc config device add $name config disk source=cloud-init:config
+
+    lxc start $name
+    sleep $VM_SLEEP
+    lxc exec $name -- cloud-init status --wait
+
+    # copy proposed script
+    lxc file push ${SETUP_PROPOSED} ${name}/setup_proposed.sh
+    lxc exec $name -- bash /setup_proposed.sh | grep cloud-init
+    lxc exec $name -- cloud-init clean --logs --reboot
+
+    sleep $VM_SLEEP
+    lxc exec $name -- cloud-init status --wait
+
+    # check for error setting up swap
+    swap_failure=$(lxc exec $name -- grep -c "failed to setup swap" /var/log/cloud-init.log)
+    echo "Expecting: 0"
+    echo "Found    : [${swap_failure}]"
+    case $swap_failure in
+        0)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    # check no swaps enabled
+    swap_enabled=$(lxc exec $name -- grep -c test-swapfile /proc/swaps)
+    echo "Expecting: 1"
+    echo "Found    : [${swap_enabled}]"
+    case $swap_enabled in
+        1)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+
+    if [ "$rc" = "0" ]; then
+        echo "Verification OK"
+        lxc delete --force ${name}
+    fi
+    return $rc
+}
+
+RELEASE=${1}
+[ -z "${RELEASE}" ] && { echo "usage: $0 <ubuntu release name>"; exit 1; }
+
+echo "Starting recreate for $RELEASE"
+recreate ${RELEASE} || { echo "Error recreating failure"; exit $?; }
+echo "done"
+
+echo "Starting verification for $RELEASE"
+verify ${RELEASE} || { echo "Error verifying fix"; exit $?; }
+echo "done"
+[Regression Potential]
+
+Users who used swap cloud-config with size=auto could now experience a
+different system behavior due to the swapfile being successfully created
+when previously this non-fatal error left the system without a swapfile.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+==== focal ====
++ read -r -d '' CLOUDCFG
+++ mktemp ubuntu-sru.XXX
++ SETUP_PROPOSED=ubuntu-sru.vJY
++ cat
++ BUGNUM=rhbz-1772505
++ VM_SLEEP=30
++ trap cleanup EXIT
++ RELEASE=focal
++ '[' -z focal ']'
++ echo 'Starting recreate for focal'
+Starting recreate for focal
++ recreate focal
++ release=focal
++ name=focal-recreate-rhbz-1772505
++ lxc init images:ubuntu/focal/cloud --vm focal-recreate-rhbz-1772505
+Creating focal-recreate-rhbz-1772505
++ lxc config set focal-recreate-rhbz-1772505 user.user-data '#cloud-config
+swap:
+  filename: /test-swapfile
+  size: auto
+  maxsize: 2G'
++ lxc config device add focal-recreate-rhbz-1772505 config disk source=cloud-init:config
+Device config added to focal-recreate-rhbz-1772505
++ lxc start focal-recreate-rhbz-1772505
++ sleep 30
++ lxc exec focal-recreate-rhbz-1772505 -- cloud-init status --wait
+
+status: done
+++ lxc exec focal-recreate-rhbz-1772505 -- grep -c 'failed to setup swap' /var/log/cloud-init.log
++ swap_failure=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $swap_failure in
++ rc=0
+++ lxc exec focal-recreate-rhbz-1772505 -- grep -c test-swapfile /proc/swaps
++ swap_enabled=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $swap_enabled in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Recreate OK!'
+Recreate OK!
++ lxc delete --force focal-recreate-rhbz-1772505
++ return 0
++ echo done
+done
++ echo 'Starting verification for focal'
+Starting verification for focal
++ verify focal
++ release=focal
++ name=focal-verify-rhbz-1772505
++ lxc init images:ubuntu/focal/cloud --vm focal-verify-rhbz-1772505
+Creating focal-verify-rhbz-1772505
++ lxc config set focal-verify-rhbz-1772505 user.user-data '#cloud-config
+swap:
+  filename: /test-swapfile
+  size: auto
+  maxsize: 2G'
++ lxc config device add focal-verify-rhbz-1772505 config disk source=cloud-init:config
+Device config added to focal-verify-rhbz-1772505
++ lxc start focal-verify-rhbz-1772505
++ sleep 30
++ lxc exec focal-verify-rhbz-1772505 -- cloud-init status --wait
+
+status: done
++ lxc file push ubuntu-sru.vJY focal-verify-rhbz-1772505/setup_proposed.sh
+Pushing /var/lib/snapd/hostfs/home/rharper/work/git/ubuntu-sru/bugs/ubuntu-sru.vJY to /setup_proposed.sh: 100% (932.69MB/s)                                                                                                                            + lxc exec focal-verify-rhbz-1772505 -- bash /setup_proposed.sh
++ grep cloud-init
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
++ lxc exec focal-verify-rhbz-1772505 -- cloud-init clean --logs --reboot
++ sleep 30
++ lxc exec focal-verify-rhbz-1772505 -- cloud-init status --wait
+
+status: done
+++ lxc exec focal-verify-rhbz-1772505 -- grep -c 'failed to setup swap' /var/log/cloud-init.log
++ swap_failure=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $swap_failure in
++ rc=0
+++ lxc exec focal-verify-rhbz-1772505 -- grep -c test-swapfile /proc/swaps
++ swap_enabled=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $swap_enabled in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Verification OK'
+Verification OK
++ lxc delete --force focal-verify-rhbz-1772505
++ return 0
++ echo done
+done
++ cleanup
++ '[' -n ubuntu-sru.vJY -a -e ubuntu-sru.vJY ']'
++ rm -f ubuntu-sru.vJY
++ lxc delete --force focal-verify-rhbz-1772505
