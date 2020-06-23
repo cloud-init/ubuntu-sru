@@ -25,8 +25,10 @@ EOF
 
 get_boot_load_time() {
     name=$1
+    echo "Running boot time analysis for $name"
     lxc exec $name -- systemd-analyze
     lxc exec $name -- systemd-analyze blame
+    lxc exec $name -- cloud-init analyze blame
 }
 
 verify_user() {
@@ -74,6 +76,7 @@ reproduce() {
    verify_user $name $series
    verify_password_change $name $series
    get_boot_load_time $name
+   lxc delete $name --force
 }
 
 verify() {
@@ -90,6 +93,7 @@ verify() {
    verify_user $name_proposed $series
    verify_password_change $name_proposed $series
    get_boot_load_time $name_proposed
+   lxc delete $name --force
 }
 
 for SERIES in bionic eoan focal xenial; do
@@ -134,9 +138,9 @@ chpasswd:
 Creating test-bionic-reproduce
 Starting test-bionic-reproduce
 + lxc exec test-bionic-reproduce -- cloud-init status --wait --long
-.................................................................
+...................................
 status: done
-time: Wed, 17 Jun 2020 14:00:29 +0000
+time: Tue, 23 Jun 2020 13:51:16 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-bionic-reproduce bionic
@@ -163,50 +167,113 @@ SUCCESS: bionic created the right user
 SUCCESS: bionic change password for testcloudinit
 + get_boot_load_time test-bionic-reproduce
 + name=test-bionic-reproduce
++ echo 'Running boot time analysis for test-bionic-reproduce'
+Running boot time analysis for test-bionic-reproduce
 + lxc exec test-bionic-reproduce -- systemd-analyze
-Startup finished in 16.632s (userspace) = 1h 38min 57.097s
-graphical.target reached after 15.381s in userspace
+Startup finished in 9.334s (userspace) = 1h 23min 3.362s
+graphical.target reached after 8.788s in userspace
 + lxc exec test-bionic-reproduce -- systemd-analyze blame
-         11.584s snapd.seeded.service
-          1.026s systemd-networkd-wait-online.service
-           852ms cloud-init.service
-           731ms cloud-config.service
-           727ms cloud-init-local.service
-           568ms apparmor.service
-           519ms cloud-final.service
-           203ms systemd-udev-trigger.service
-           197ms snapd.service
-           176ms networkd-dispatcher.service
-            93ms lxd-containers.service
-            88ms keyboard-setup.service
-            81ms ssh.service
-            78ms ebtables.service
-            78ms systemd-logind.service
-            76ms systemd-journal-flush.service
-            68ms accounts-daemon.service
-            63ms systemd-networkd.service
-            61ms systemd-journald.service
-            50ms systemd-hostnamed.service
-            47ms blk-availability.service
-            43ms rsyslog.service
-            42ms apport.service
+          5.018s rsyslog.service
+          2.551s snapd.seeded.service
+          1.097s systemd-networkd-wait-online.service
+           809ms cloud-init.service
+           713ms cloud-init-local.service
+           707ms cloud-config.service
+           635ms apparmor.service
+           603ms console-setup.service
+           529ms cloud-final.service
+           242ms systemd-udev-trigger.service
+           188ms snapd.service
+           141ms networkd-dispatcher.service
+           112ms keyboard-setup.service
+           102ms systemd-journal-flush.service
+            95ms lxd-containers.service
+            85ms accounts-daemon.service
+            74ms ebtables.service
+            69ms ssh.service
+            64ms systemd-logind.service
+            62ms systemd-networkd.service
+            58ms systemd-journald.service
+            55ms apport.service
+            51ms systemd-hostnamed.service
+            42ms systemd-tmpfiles-setup-dev.service
             40ms systemd-user-sessions.service
-            36ms polkit.service
-            27ms systemd-udevd.service
-            26ms plymouth-read-write.service
-            25ms systemd-tmpfiles-setup-dev.service
-            21ms systemd-tmpfiles-setup.service
-            21ms systemd-resolved.service
-            19ms systemd-update-utmp-runlevel.service
-            16ms systemd-sysctl.service
-            15ms systemd-modules-load.service
-            14ms plymouth-quit.service
-            14ms ufw.service
-            13ms plymouth-quit-wait.service
-            10ms console-setup.service
-             9ms systemd-update-utmp.service
-             6ms lxd.socket
-             4ms snapd.socket
+            35ms systemd-sysctl.service
+            33ms systemd-udevd.service
+            30ms systemd-resolved.service
+            29ms polkit.service
+            24ms systemd-update-utmp-runlevel.service
+            23ms plymouth-read-write.service
+            20ms plymouth-quit.service
+            18ms systemd-tmpfiles-setup.service
+            14ms systemd-update-utmp.service
+             9ms systemd-modules-load.service
+             9ms ufw.service
+             8ms blk-availability.service
+             4ms plymouth-quit-wait.service
+             3ms lxd.socket
+             1ms snapd.socket
++ lxc exec test-bionic-reproduce -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.15300s (init-network/config-ssh)
+     00.11200s (modules-config/config-grub-dpkg)
+     00.07700s (init-network/config-users-groups)
+     00.07000s (modules-config/config-apt-configure)
+     00.03000s (init-local/search-NoCloud)
+     00.01700s (modules-final/config-keys-to-console)
+     00.01500s (modules-config/config-set-passwords)
+     00.01300s (init-network/check-cache)
+     00.00700s (init-network/config-growpart)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/consume-user-data)
+     00.00500s (init-network/config-resizefs)
+     00.00400s (init-network/consume-vendor-data)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-ssh-authkey-fingerprints)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-disable-ec2-metadata)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/setup-datasource)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-ca-certs)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-config/config-ubuntu-advantage)
+     00.00000s (modules-config/config-runcmd)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/config-seed_random)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-disk_setup)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-bionic-reproduce --force
 + echo 'bionic(Proposed cloud-init): Check boot time for when user sets a random password'
 bionic(Proposed cloud-init): Check boot time for when user sets a random password
 + verify bionic
@@ -215,14 +282,14 @@ bionic(Proposed cloud-init): Check boot time for when user sets a random passwor
 + name_proposed=test-bionic-proposed
 + lxc delete test-bionic-proposed --force
 + lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
-Creating bionic-proposed-2380611431
-Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
-Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Creating bionic-proposed-461715283
+Get:1 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
 Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
 Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [748 kB]
 Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
-Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
-Get:7 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:6 http://security.ubuntu.com/ubuntu bionic-security/main Translation-en [237 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
 Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
 Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
 Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
@@ -241,11 +308,11 @@ Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [75
 Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
 Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
 Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
-Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [92.2 kB]
-Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [36.4 kB]
-Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [30.7 kB]
-Get:29 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [16.9 kB]
-Fetched 19.1 MB in 26s (721 kB/s)
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [88.0 kB]
+Get:27 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [33.1 kB]
+Get:28 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [19.9 kB]
+Get:29 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [12.1 kB]
+Fetched 19.1 MB in 30s (645 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -255,12 +322,12 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 16 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 10 not upgraded.
 Need to get 422 kB of archives.
 After this operation, 68.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
 Preconfiguring packages ...
-Fetched 422 kB in 7s (59.8 kB/s)
+Fetched 422 kB in 2s (196 kB/s)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
 Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
 Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
@@ -280,9 +347,9 @@ chpasswd:
     - testcloudinit:RANDOM'
 Creating test-bionic-proposed
 + lxc exec test-bionic-proposed -- cloud-init status --wait --long
-...................................
+............................................
 status: done
-time: Wed, 17 Jun 2020 14:02:16 +0000
+time: Tue, 23 Jun 2020 13:53:10 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-bionic-proposed bionic
@@ -309,50 +376,113 @@ SUCCESS: bionic created the right user
 SUCCESS: bionic change password for testcloudinit
 + get_boot_load_time test-bionic-proposed
 + name=test-bionic-proposed
++ echo 'Running boot time analysis for test-bionic-proposed'
+Running boot time analysis for test-bionic-proposed
 + lxc exec test-bionic-proposed -- systemd-analyze
-Startup finished in 9.228s (userspace) = 1h 40min 44.488s
-graphical.target reached after 8.658s in userspace
+Startup finished in 11.623s (userspace) = 1h 24min 56.759s
+graphical.target reached after 10.349s in userspace
 + lxc exec test-bionic-proposed -- systemd-analyze blame
-          5.023s rsyslog.service
-          2.622s snapd.seeded.service
-          1.068s systemd-networkd-wait-online.service
-           783ms cloud-init-local.service
-           779ms cloud-init.service
-           743ms cloud-config.service
-           635ms apparmor.service
-           563ms cloud-final.service
-           208ms systemd-udev-trigger.service
-           190ms snapd.service
-           165ms networkd-dispatcher.service
-           148ms lxd-containers.service
-           110ms accounts-daemon.service
+          5.559s snapd.seeded.service
+          1.778s systemd-networkd-wait-online.service
+           791ms apparmor.service
+           783ms cloud-init.service
+           772ms cloud-init-local.service
+           755ms console-setup.service
+           738ms cloud-config.service
+           534ms cloud-final.service
+           248ms systemd-udev-trigger.service
+           235ms snapd.service
+           175ms networkd-dispatcher.service
+           114ms lxd-containers.service
+           102ms accounts-daemon.service
             99ms keyboard-setup.service
-            88ms systemd-journal-flush.service
-            76ms ebtables.service
-            63ms systemd-networkd.service
-            58ms ssh.service
-            55ms systemd-hostnamed.service
-            51ms systemd-logind.service
-            49ms apport.service
-            47ms systemd-journald.service
-            46ms systemd-user-sessions.service
-            42ms systemd-resolved.service
-            34ms systemd-udevd.service
-            31ms polkit.service
-            27ms plymouth-read-write.service
-            23ms systemd-tmpfiles-setup.service
-            22ms plymouth-quit.service
-            21ms systemd-sysctl.service
-            19ms systemd-update-utmp.service
-            18ms systemd-tmpfiles-setup-dev.service
-            16ms ufw.service
-            12ms systemd-modules-load.service
-            12ms systemd-update-utmp-runlevel.service
-             9ms blk-availability.service
-             8ms snapd.socket
-             7ms lxd.socket
-             6ms console-setup.service
-             1ms plymouth-quit-wait.service
+            75ms ssh.service
+            74ms systemd-journal-flush.service
+            61ms ebtables.service
+            52ms systemd-hostnamed.service
+            46ms apport.service
+            46ms systemd-networkd.service
+            44ms systemd-logind.service
+            41ms systemd-tmpfiles-setup-dev.service
+            38ms systemd-udevd.service
+            37ms systemd-user-sessions.service
+            30ms systemd-journald.service
+            30ms polkit.service
+            28ms rsyslog.service
+            25ms plymouth-read-write.service
+            25ms systemd-tmpfiles-setup.service
+            25ms systemd-update-utmp-runlevel.service
+            25ms systemd-resolved.service
+            22ms systemd-sysctl.service
+            20ms systemd-update-utmp.service
+            15ms ufw.service
+            15ms plymouth-quit.service
+            11ms systemd-modules-load.service
+            11ms plymouth-quit-wait.service
+             8ms blk-availability.service
+             4ms lxd.socket
+             3ms snapd.socket
++ lxc exec test-bionic-proposed -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.11100s (modules-config/config-grub-dpkg)
+     00.09100s (init-network/config-ssh)
+     00.07100s (modules-config/config-apt-configure)
+     00.04900s (init-network/config-users-groups)
+     00.02600s (init-local/search-NoCloud)
+     00.01700s (modules-final/config-keys-to-console)
+     00.01400s (modules-config/config-set-passwords)
+     00.00900s (init-network/config-growpart)
+     00.00600s (modules-final/config-final-message)
+     00.00600s (modules-config/config-locale)
+     00.00600s (init-network/consume-user-data)
+     00.00600s (init-network/config-resizefs)
+     00.00500s (init-network/consume-vendor-data)
+     00.00200s (init-network/config-mounts)
+     00.00200s (init-network/check-cache)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ssh-authkey-fingerprints)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-local/check-cache)
+     00.00000s (modules-final/config-ubuntu-drivers)
+     00.00000s (modules-final/config-scripts-user)
+     00.00000s (modules-final/config-scripts-per-instance)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-lxd)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-ubuntu-advantage)
+     00.00000s (modules-config/config-timezone)
+     00.00000s (modules-config/config-ntp)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-bootcmd)
+
+1 boot records analyzed
++ lxc delete test-bionic-proposed --force
 + echo '=== END ' bionic
 === END  bionic
 + for SERIES in bionic eoan focal xenial
@@ -377,9 +507,9 @@ chpasswd:
 Creating test-eoan-reproduce
 Starting test-eoan-reproduce
 + lxc exec test-eoan-reproduce -- cloud-init status --wait --long
-...........................................................................................
+.............................................................................................................
 status: done
-time: Wed, 17 Jun 2020 14:02:44 +0000
+time: Tue, 23 Jun 2020 13:53:44 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-eoan-reproduce eoan
@@ -406,57 +536,120 @@ SUCCESS: eoan created the right user
 SUCCESS: eoan change password for testcloudinit
 + get_boot_load_time test-eoan-reproduce
 + name=test-eoan-reproduce
++ echo 'Running boot time analysis for test-eoan-reproduce'
+Running boot time analysis for test-eoan-reproduce
 + lxc exec test-eoan-reproduce -- systemd-analyze
-Startup finished in 23.254s (userspace) 
-graphical.target reached after 22.064s in userspace
+Startup finished in 27.528s (userspace) 
+graphical.target reached after 26.359s in userspace
 + lxc exec test-eoan-reproduce -- systemd-analyze blame
-         17.107s snapd.seeded.service
-          1.403s systemd-networkd-wait-online.service
-          1.344s cloud-init.service
-          1.045s snapd.service
-           718ms cloud-config.service
-           682ms cloud-init-local.service
-           623ms snap.lxd.activate.service
-           526ms console-setup.service
-           470ms apparmor.service
-           469ms cloud-final.service
-           380ms systemd-hostnamed.service
-           377ms systemd-logind.service
-           273ms systemd-journald.service
-           232ms systemd-resolved.service
-           227ms systemd-networkd.service
-           185ms accounts-daemon.service
-           177ms systemd-udev-trigger.service
-           149ms networkd-dispatcher.service
-           139ms systemd-udev-settle.service
-           106ms secureboot-db.service
-           103ms apport.service
-           101ms ssh.service
-            94ms systemd-journal-flush.service
-            81ms keyboard-setup.service
-            77ms rsyslog.service
-            55ms atd.service
-            53ms systemd-user-sessions.service
-            46ms plymouth-quit.service
-            37ms systemd-remount-fs.service
-            31ms systemd-sysusers.service
-            30ms blk-availability.service
-            28ms systemd-udevd.service
-            25ms polkit.service
-            24ms plymouth-read-write.service
-            24ms systemd-tmpfiles-setup.service
-            22ms systemd-update-utmp-runlevel.service
-            18ms systemd-update-utmp.service
-            15ms ufw.service
-            14ms finalrd.service
-            13ms systemd-sysctl.service
-            13ms plymouth-quit-wait.service
+         21.619s snapd.seeded.service
+          1.153s cloud-init.service
+          1.129s systemd-networkd-wait-online.service
+          1.110s snapd.service
+           744ms cloud-init-local.service
+           668ms cloud-config.service
+           641ms snap.lxd.activate.service
+           563ms console-setup.service
+           499ms cloud-final.service
+           486ms apparmor.service
+           449ms systemd-logind.service
+           401ms systemd-hostnamed.service
+           321ms systemd-journald.service
+           250ms systemd-resolved.service
+           243ms systemd-networkd.service
+           210ms systemd-udev-trigger.service
+           200ms networkd-dispatcher.service
+           180ms accounts-daemon.service
+           130ms systemd-udev-settle.service
+           117ms keyboard-setup.service
+           109ms apport.service
+           103ms ssh.service
+            86ms secureboot-db.service
+            68ms rsyslog.service
+            64ms systemd-journal-flush.service
+            41ms polkit.service
+            40ms systemd-udevd.service
+            37ms systemd-tmpfiles-setup.service
+            36ms blk-availability.service
+            30ms systemd-user-sessions.service
+            28ms systemd-sysusers.service
+            27ms systemd-remount-fs.service
+            27ms atd.service
+            21ms snap-snapd-7777.mount
+            18ms systemd-update-utmp-runlevel.service
+            18ms plymouth-quit-wait.service
+            17ms systemd-update-utmp.service
+            15ms plymouth-quit.service
+            14ms plymouth-read-write.service
             13ms systemd-tmpfiles-setup-dev.service
-            10ms snap-snapd-7777.mount
-             8ms snap-lxd-15457.mount
-             8ms snap-core18-1754.mount
+            11ms snap-lxd-15457.mount
+            10ms systemd-sysctl.service
+             9ms snap-core18-1754.mount
+             7ms ufw.service
              7ms snap.mount
-             1ms snapd.socket
+             6ms finalrd.service
+             2ms snapd.socket
++ lxc exec test-eoan-reproduce -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.48100s (init-network/config-ssh)
+     00.11200s (modules-config/config-grub-dpkg)
+     00.06300s (modules-config/config-apt-configure)
+     00.04100s (init-network/config-users-groups)
+     00.03700s (init-local/search-NoCloud)
+     00.02300s (modules-final/config-keys-to-console)
+     00.01700s (modules-config/config-set-passwords)
+     00.01000s (init-network/config-growpart)
+     00.00600s (init-network/consume-user-data)
+     00.00500s (init-network/consume-vendor-data)
+     00.00500s (init-network/config-resizefs)
+     00.00400s (modules-final/config-final-message)
+     00.00200s (modules-final/config-ssh-authkey-fingerprints)
+     00.00200s (init-network/check-cache)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00000s (modules-final/config-ubuntu-drivers)
+     00.00000s (modules-final/config-scripts-vendor)
+     00.00000s (modules-final/config-scripts-per-once)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-rightscale_userdata)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-phone-home)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-lxd)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-timezone)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-seed_random)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-eoan-reproduce --force
 + echo 'eoan(Proposed cloud-init): Check boot time for when user sets a random password'
 eoan(Proposed cloud-init): Check boot time for when user sets a random password
 + verify eoan
@@ -465,30 +658,30 @@ eoan(Proposed cloud-init): Check boot time for when user sets a random password
 + name_proposed=test-eoan-proposed
 + lxc delete test-eoan-proposed --force
 + lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
-Creating eoan-proposed-929013630
+Creating eoan-proposed-1175718621
 Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
 Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
 Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
-Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [229 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [230 kB]
 Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
-Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [80.2 kB]
-Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5980 B]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [80.8 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [6116 B]
 Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [173 kB]
-Get:9 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
-Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.7 kB]
-Get:11 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6648 B]
-Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
-Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
-Get:14 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.7 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6648 B]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
 Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
 Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
 Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
 Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
 Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
 Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
-Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [308 kB]
-Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [113 kB]
-Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9520 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [310 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [114 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9680 B]
 Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
 Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.7 kB]
 Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
@@ -503,13 +696,13 @@ Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [
 Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
 Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
 Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
-Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [30.2 kB]
-Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [14.1 kB]
-Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1140 B]
-Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.1 kB]
-Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [12.2 kB]
-Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1208 B]
-Fetched 16.3 MB in 18s (906 kB/s)
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [32.6 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [15.0 kB]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1276 B]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.7 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [13.5 kB]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1164 B]
+Fetched 16.3 MB in 20s (819 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -519,12 +712,12 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 18 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 19 not upgraded.
 Need to get 420 kB of archives.
 After this operation, 69.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
 Preconfiguring packages ...
-Fetched 420 kB in 2s (206 kB/s)
+Fetched 420 kB in 2s (177 kB/s)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
 Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
 Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
@@ -544,9 +737,9 @@ chpasswd:
     - testcloudinit:RANDOM'
 Creating test-eoan-proposed
 + lxc exec test-eoan-proposed -- cloud-init status --wait --long
-.............................................................................................
+.......................................................................................
 status: done
-time: Wed, 17 Jun 2020 14:04:40 +0000
+time: Tue, 23 Jun 2020 13:55:46 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-eoan-proposed eoan
@@ -573,57 +766,120 @@ SUCCESS: eoan created the right user
 SUCCESS: eoan change password for testcloudinit
 + get_boot_load_time test-eoan-proposed
 + name=test-eoan-proposed
++ echo 'Running boot time analysis for test-eoan-proposed'
+Running boot time analysis for test-eoan-proposed
 + lxc exec test-eoan-proposed -- systemd-analyze
-Startup finished in 23.736s (userspace) 
-graphical.target reached after 22.561s in userspace
+Startup finished in 22.252s (userspace) 
+graphical.target reached after 21.052s in userspace
 + lxc exec test-eoan-proposed -- systemd-analyze blame
-         18.327s snapd.seeded.service
-          5.031s rsyslog.service
-          1.090s systemd-networkd-wait-online.service
-           994ms snapd.service
-           861ms cloud-init.service
-           705ms cloud-config.service
-           685ms cloud-init-local.service
-           617ms snap.lxd.activate.service
-           565ms console-setup.service
-           523ms apparmor.service
-           469ms cloud-final.service
-           370ms systemd-logind.service
-           362ms systemd-hostnamed.service
-           299ms systemd-journald.service
-           242ms systemd-resolved.service
-           236ms systemd-networkd.service
-           212ms accounts-daemon.service
-           173ms systemd-udev-trigger.service
-           140ms systemd-udev-settle.service
-           131ms networkd-dispatcher.service
-           107ms apport.service
-            94ms secureboot-db.service
-            84ms ssh.service
-            67ms keyboard-setup.service
-            65ms systemd-journal-flush.service
-            44ms systemd-tmpfiles-setup.service
-            38ms systemd-sysusers.service
-            38ms atd.service
-            37ms systemd-update-utmp-runlevel.service
-            36ms polkit.service
-            29ms plymouth-quit-wait.service
+         15.975s snapd.seeded.service
+          1.975s systemd-networkd-wait-online.service
+          1.066s snapd.service
+           882ms cloud-init.service
+           721ms cloud-config.service
+           681ms cloud-init-local.service
+           651ms snap.lxd.activate.service
+           590ms console-setup.service
+           499ms apparmor.service
+           477ms cloud-final.service
+           402ms systemd-hostnamed.service
+           376ms systemd-logind.service
+           287ms systemd-journald.service
+           270ms systemd-resolved.service
+           252ms systemd-networkd.service
+           197ms systemd-udev-trigger.service
+           177ms networkd-dispatcher.service
+           145ms accounts-daemon.service
+           121ms systemd-udev-settle.service
+           117ms apport.service
+            82ms keyboard-setup.service
+            78ms ssh.service
+            66ms systemd-journal-flush.service
+            64ms secureboot-db.service
+            58ms rsyslog.service
+            48ms polkit.service
+            45ms systemd-update-utmp.service
+            44ms systemd-remount-fs.service
+            43ms systemd-tmpfiles-setup.service
+            42ms systemd-udevd.service
+            31ms systemd-user-sessions.service
+            29ms systemd-sysusers.service
             29ms plymouth-quit.service
-            29ms blk-availability.service
-            28ms systemd-udevd.service
-            28ms systemd-user-sessions.service
-            26ms systemd-remount-fs.service
-            15ms plymouth-read-write.service
-            15ms systemd-sysctl.service
-            13ms systemd-update-utmp.service
-            12ms snap-snapd-7777.mount
+            28ms atd.service
+            26ms systemd-update-utmp-runlevel.service
+            25ms blk-availability.service
+            23ms systemd-sysctl.service
+            19ms plymouth-read-write.service
+            14ms plymouth-quit-wait.service
             12ms ufw.service
-            10ms systemd-tmpfiles-setup-dev.service
-            10ms snap.mount
-             8ms snap-core18-1754.mount
-             8ms snap-lxd-15457.mount
-             7ms snapd.socket
-             4ms finalrd.service
+            11ms systemd-tmpfiles-setup-dev.service
+            11ms snap-snapd-7777.mount
+            10ms snap-lxd-15457.mount
+             9ms snap-core18-1754.mount
+             5ms snap.mount
+             2ms finalrd.service
+             1ms snapd.socket
++ lxc exec test-eoan-proposed -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.23900s (init-network/config-ssh)
+     00.13400s (modules-config/config-grub-dpkg)
+     00.06800s (init-network/config-users-groups)
+     00.06600s (modules-config/config-apt-configure)
+     00.02700s (init-local/search-NoCloud)
+     00.02200s (modules-final/config-keys-to-console)
+     00.02000s (modules-config/config-set-passwords)
+     00.01500s (modules-config/config-locale)
+     00.00800s (init-network/config-growpart)
+     00.00600s (init-network/config-resizefs)
+     00.00500s (init-network/consume-user-data)
+     00.00400s (modules-final/config-final-message)
+     00.00400s (init-network/consume-vendor-data)
+     00.00200s (modules-final/config-ssh-authkey-fingerprints)
+     00.00200s (init-network/check-cache)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-disable-ec2-metadata)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-ubuntu-drivers)
+     00.00000s (modules-final/config-scripts-per-once)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-puppet)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-phone-home)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-ssh-import-id)
+     00.00000s (modules-config/config-snap)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-write-files)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-eoan-proposed --force
 + echo '=== END ' eoan
 === END  eoan
 + for SERIES in bionic eoan focal xenial
@@ -648,9 +904,9 @@ chpasswd:
 Creating test-focal-reproduce
 Starting test-focal-reproduce
 + lxc exec test-focal-reproduce -- cloud-init status --wait --long
-.............................................................................................
+......................................................................................................................
 status: done
-time: Wed, 17 Jun 2020 14:05:09 +0000
+time: Tue, 23 Jun 2020 13:56:23 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-focal-reproduce focal
@@ -677,59 +933,122 @@ SUCCESS: focal created the right user
 SUCCESS: focal change password for testcloudinit
 + get_boot_load_time test-focal-reproduce
 + name=test-focal-reproduce
++ echo 'Running boot time analysis for test-focal-reproduce'
+Running boot time analysis for test-focal-reproduce
 + lxc exec test-focal-reproduce -- systemd-analyze
-Startup finished in 23.608s (userspace) 
-graphical.target reached after 22.442s in userspace
+Startup finished in 30.157s (userspace) 
+graphical.target reached after 28.991s in userspace
 + lxc exec test-focal-reproduce -- systemd-analyze blame
-17.469s snapd.seeded.service                
- 1.758s systemd-networkd-wait-online.service
- 1.007s snapd.service                       
-  947ms cloud-init.service                  
-  719ms cloud-init-local.service            
-  696ms cloud-config.service                
-  639ms console-setup.service               
-  610ms snap.lxd.activate.service           
-  537ms apparmor.service                    
-  469ms cloud-final.service                 
-  453ms systemd-hostnamed.service           
-  428ms systemd-journald.service            
-  387ms systemd-logind.service              
-  283ms systemd-networkd.service            
-  270ms systemd-resolved.service            
-  188ms accounts-daemon.service             
-  185ms systemd-udev-trigger.service        
-  172ms networkd-dispatcher.service         
-  118ms ssh.service                         
-   90ms e2scrub_reap.service                
-   88ms apport.service                      
-   81ms keyboard-setup.service              
-   75ms secureboot-db.service               
-   57ms systemd-journal-flush.service       
-   40ms systemd-udevd.service               
-   39ms systemd-remount-fs.service          
-   37ms systemd-update-utmp-runlevel.service
-   36ms systemd-sysusers.service            
-   34ms polkit.service                      
-   29ms systemd-sysctl.service              
-   27ms plymouth-quit.service               
-   27ms blk-availability.service            
-   24ms systemd-user-sessions.service       
-   24ms atd.service                         
-   21ms plymouth-read-write.service         
-   20ms rsyslog.service                     
-   20ms systemd-tmpfiles-setup.service      
-   16ms systemd-udev-settle.service         
-   15ms snapd.apparmor.service              
-   12ms systemd-tmpfiles-setup-dev.service  
-   12ms ufw.service                         
-   11ms systemd-update-utmp.service         
-   10ms snap-snapd-7777.mount               
-   10ms finalrd.service                     
-    9ms plymouth-quit-wait.service          
-    9ms snap-lxd-15457.mount                
-    8ms snap-core18-1754.mount              
-    4ms snap.mount                          
-    2ms snapd.socket                        
+23.867s snapd.seeded.service                
+ 2.793s snapd.service                       
+ 1.643s systemd-networkd-wait-online.service
+ 1.232s cloud-init.service                  
+  698ms cloud-init-local.service            
+  697ms cloud-config.service                
+  667ms snap.lxd.activate.service           
+  523ms apparmor.service                    
+  468ms cloud-final.service                 
+  462ms systemd-hostnamed.service           
+  436ms systemd-logind.service              
+  412ms systemd-journald.service            
+  263ms systemd-resolved.service            
+  256ms systemd-networkd.service            
+  226ms accounts-daemon.service             
+  216ms e2scrub_reap.service                
+  216ms networkd-dispatcher.service         
+  196ms systemd-udev-trigger.service        
+  122ms ssh.service                         
+  108ms keyboard-setup.service              
+   97ms systemd-journal-flush.service       
+   96ms rsyslog.service                     
+   58ms secureboot-db.service               
+   57ms apport.service                      
+   40ms polkit.service                      
+   38ms blk-availability.service            
+   35ms atd.service                         
+   34ms systemd-udevd.service               
+   34ms systemd-sysusers.service            
+   34ms systemd-update-utmp-runlevel.service
+   33ms systemd-remount-fs.service          
+   32ms plymouth-quit.service               
+   24ms plymouth-read-write.service         
+   22ms systemd-sysctl.service              
+   22ms snap-lxd-15564.mount                
+   21ms systemd-user-sessions.service       
+   17ms systemd-tmpfiles-setup-dev.service  
+   17ms snap-core18-1754.mount              
+   17ms systemd-udev-settle.service         
+   16ms systemd-tmpfiles-setup.service      
+   14ms plymouth-quit-wait.service          
+   14ms snapd.apparmor.service              
+   10ms systemd-update-utmp.service         
+    9ms snap-snapd-8140.mount               
+    8ms ufw.service                         
+    7ms console-setup.service               
+    6ms finalrd.service                     
+    5ms snap.mount                          
+    1ms snapd.socket                        
++ lxc exec test-focal-reproduce -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.50700s (init-network/config-ssh)
+     00.11900s (modules-config/config-grub-dpkg)
+     00.08300s (init-network/config-users-groups)
+     00.06200s (modules-config/config-apt-configure)
+     00.04300s (init-local/search-NoCloud)
+     00.03100s (modules-config/config-set-passwords)
+     00.02400s (init-network/config-resizefs)
+     00.02300s (modules-final/config-keys-to-console)
+     00.00900s (init-network/config-growpart)
+     00.00500s (init-network/consume-user-data)
+     00.00400s (modules-final/config-final-message)
+     00.00400s (init-network/consume-vendor-data)
+     00.00200s (init-network/check-cache)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-ssh-authkey-fingerprints)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-locale)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-runcmd)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-seed_random)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-focal-reproduce --force
 + echo 'focal(Proposed cloud-init): Check boot time for when user sets a random password'
 focal(Proposed cloud-init): Check boot time for when user sets a random password
 + verify focal
@@ -738,53 +1057,48 @@ focal(Proposed cloud-init): Check boot time for when user sets a random password
 + name_proposed=test-focal-proposed
 + lxc delete test-focal-proposed --force
 + lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
-Creating focal-proposed-2434930241
-Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
-Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Creating focal-proposed-1815211057
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
 Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
-Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
-Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [106 kB]
-Get:6 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
-Get:7 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [40.1 kB]
-Get:8 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
-Get:9 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2764 B]
-Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [11.0 kB]
-Get:11 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [3000 B]
-Get:12 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [35.5 kB]
-Get:13 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.7 kB]
-Get:14 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1612 B]
-Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
-Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
-Get:17 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
-Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
-Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
-Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
-Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
-Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
-Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [197 kB]
-Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [77.7 kB]
-Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5676 B]
-Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.0 kB]
-Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3000 B]
-Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [110 kB]
-Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [51.9 kB]
-Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [4092 B]
-Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
-Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
-Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
-Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
-Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
-Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
-Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
-Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
-Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
-Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [53.8 kB]
-Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [27.4 kB]
-Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1948 B]
-Get:43 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [27.1 kB]
-Get:44 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [20.4 kB]
-Get:45 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1768 B]
-Fetched 15.7 MB in 19s (823 kB/s)
+Get:4 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [35.5 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.7 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1612 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:11 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:12 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:13 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:14 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:15 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:16 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:18 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [201 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [80.2 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5912 B]
+Get:21 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [11.1 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [3036 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [114 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [54.0 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [4144 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [81.6 kB]
+Get:36 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [34.7 kB]
+Get:37 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1636 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [35.2 kB]
+Get:39 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [24.3 kB]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1764 B]
+Fetched 15.6 MB in 21s (733 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -794,12 +1108,12 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 35 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 17 not upgraded.
 Need to get 416 kB of archives.
 After this operation, 52.2 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
 Preconfiguring packages ...
-Fetched 416 kB in 2s (202 kB/s)
+Fetched 416 kB in 2s (219 kB/s)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
 Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
 Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
@@ -819,9 +1133,9 @@ chpasswd:
     - testcloudinit:RANDOM'
 Creating test-focal-proposed
 + lxc exec test-focal-proposed -- cloud-init status --wait --long
-................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+....................................................................................
 status: done
-time: Wed, 17 Jun 2020 14:12:21 +0000
+time: Tue, 23 Jun 2020 13:58:29 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-focal-proposed focal
@@ -848,58 +1162,122 @@ SUCCESS: focal created the right user
 SUCCESS: focal change password for testcloudinit
 + get_boot_load_time test-focal-proposed
 + name=test-focal-proposed
++ echo 'Running boot time analysis for test-focal-proposed'
+Running boot time analysis for test-focal-proposed
 + lxc exec test-focal-proposed -- systemd-analyze
-Startup finished in 5min 34.563s (userspace) 
-graphical.target reached after 5min 33.321s in userspace
+Startup finished in 21.444s (userspace) 
+graphical.target reached after 20.247s in userspace
 + lxc exec test-focal-proposed -- systemd-analyze blame
-5min 28.374s snapd.seeded.service                
-      1.427s systemd-networkd-wait-online.service
-      1.140s cloud-init.service                  
-       956ms snapd.service                       
-       760ms cloud-config.service                
-       742ms cloud-init-local.service            
-       692ms console-setup.service               
-       575ms snap.lxd.activate.service           
-       557ms apparmor.service                    
-       481ms cloud-final.service                 
-       465ms systemd-journald.service            
-       431ms systemd-logind.service              
-       294ms systemd-resolved.service            
-       287ms systemd-networkd.service            
-       202ms systemd-udev-trigger.service        
-       189ms accounts-daemon.service             
-       144ms networkd-dispatcher.service         
-       130ms ssh.service                         
-       110ms systemd-journal-flush.service       
-       100ms e2scrub_reap.service                
-        87ms keyboard-setup.service              
-        65ms secureboot-db.service               
-        59ms apport.service                      
-        41ms systemd-udevd.service               
-        41ms systemd-sysusers.service            
-        37ms polkit.service                      
-        32ms blk-availability.service            
-        31ms systemd-update-utmp-runlevel.service
-        28ms atd.service                         
-        27ms rsyslog.service                     
-        26ms systemd-udev-settle.service         
-        26ms systemd-remount-fs.service          
-        26ms systemd-user-sessions.service       
-        21ms systemd-tmpfiles-setup.service      
-        21ms systemd-sysctl.service              
-        20ms snapd.apparmor.service              
-        20ms plymouth-quit.service               
-        19ms plymouth-read-write.service         
-        16ms systemd-update-utmp.service         
-        13ms systemd-tmpfiles-setup-dev.service  
-        10ms ufw.service                         
-        10ms finalrd.service                     
-         8ms snap-lxd-15457.mount                
-         8ms snap-core18-1754.mount              
-         7ms plymouth-quit-wait.service          
-         6ms snap.mount                          
-         4ms snap-snapd-7777.mount               
-         1ms snapd.socket                        
+14.525s snapd.seeded.service                
+ 1.799s systemd-networkd-wait-online.service
+ 1.433s cloud-init.service                  
+ 1.111s snapd.service                       
+  759ms cloud-init-local.service            
+  737ms console-setup.service               
+  723ms cloud-config.service                
+  616ms snap.lxd.activate.service           
+  602ms apparmor.service                    
+  533ms systemd-hostnamed.service           
+  498ms systemd-logind.service              
+  473ms cloud-final.service                 
+  458ms systemd-journald.service            
+  315ms systemd-networkd.service            
+  311ms systemd-resolved.service            
+  202ms systemd-udev-trigger.service        
+  200ms accounts-daemon.service             
+  190ms networkd-dispatcher.service         
+  155ms keyboard-setup.service              
+  125ms e2scrub_reap.service                
+   97ms systemd-journal-flush.service       
+   79ms ssh.service                         
+   61ms polkit.service                      
+   59ms secureboot-db.service               
+   56ms apport.service                      
+   40ms systemd-udevd.service               
+   38ms blk-availability.service            
+   37ms systemd-user-sessions.service       
+   36ms systemd-remount-fs.service          
+   36ms systemd-sysusers.service            
+   31ms ufw.service                         
+   31ms atd.service                         
+   31ms rsyslog.service                     
+   30ms systemd-update-utmp-runlevel.service
+   27ms plymouth-quit.service               
+   24ms systemd-tmpfiles-setup.service      
+   20ms plymouth-read-write.service         
+   20ms snapd.apparmor.service              
+   19ms systemd-sysctl.service              
+   19ms systemd-update-utmp.service         
+   18ms systemd-udev-settle.service         
+   15ms snap-snapd-8140.mount               
+   14ms systemd-tmpfiles-setup-dev.service  
+   12ms plymouth-quit-wait.service          
+    9ms snap-lxd-15675.mount                
+    8ms snap-core18-1754.mount              
+    6ms snap.mount                          
+    2ms finalrd.service                     
+    1ms snapd.socket                        
++ lxc exec test-focal-proposed -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.71100s (init-network/config-ssh)
+     00.12700s (modules-config/config-grub-dpkg)
+     00.09300s (init-network/config-users-groups)
+     00.06700s (modules-config/config-apt-configure)
+     00.04000s (init-local/search-NoCloud)
+     00.02400s (init-network/config-resizefs)
+     00.02300s (modules-config/config-locale)
+     00.02100s (modules-final/config-keys-to-console)
+     00.01500s (modules-config/config-set-passwords)
+     00.00900s (init-network/config-growpart)
+     00.00400s (modules-final/config-final-message)
+     00.00400s (init-network/consume-vendor-data)
+     00.00400s (init-network/consume-user-data)
+     00.00200s (init-network/check-cache)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-ssh-authkey-fingerprints)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-salt-minion)
+     00.00000s (modules-final/config-phone-home)
+     00.00000s (modules-final/config-package-update-upgrade-install)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-fan)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-runcmd)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-focal-proposed --force
 + echo '=== END ' focal
 === END  focal
 + for SERIES in bionic eoan focal xenial
@@ -924,9 +1302,9 @@ chpasswd:
 Creating test-xenial-reproduce
 Starting test-xenial-reproduce
 + lxc exec test-xenial-reproduce -- cloud-init status --wait --long
-.........................
+............................
 status: done
-time: Wed, 17 Jun 2020 14:12:32 +0000
+time: Tue, 23 Jun 2020 13:58:43 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-xenial-reproduce xenial
@@ -953,52 +1331,115 @@ SUCCESS: xenial created the right user
 SUCCESS: xenial change password for testcloudinit
 + get_boot_load_time test-xenial-reproduce
 + name=test-xenial-reproduce
++ echo 'Running boot time analysis for test-xenial-reproduce'
+Running boot time analysis for test-xenial-reproduce
 + lxc exec test-xenial-reproduce -- systemd-analyze
-Startup finished in 6.733s (userspace) = 1h 51min 143ms
+Startup finished in 7.419s (userspace) = 1h 30min 30.210s
 + lxc exec test-xenial-reproduce -- systemd-analyze blame
-          2.583s snapd.seeded.service
-          1.363s cloud-config.service
-           676ms cloud-init-local.service
-           625ms cloud-init.service
-           612ms apparmor.service
-           449ms cloud-final.service
-           357ms networking.service
-           265ms snapd.service
-           232ms lvm2-monitor.service
-           177ms lxd-containers.service
-           138ms systemd-udev-trigger.service
-           101ms iscsid.service
-            88ms ssh.service
-            80ms accounts-daemon.service
-            78ms systemd-journal-flush.service
-            65ms resolvconf.service
-            64ms systemd-udevd.service
-            56ms ufw.service
-            55ms dev-hugepages.mount
-            54ms systemd-remount-fs.service
-            54ms systemd-modules-load.service
-            50ms systemd-tmpfiles-setup-dev.service
-            39ms systemd-journald.service
-            39ms mdadm.service
-            33ms systemd-logind.service
-            33ms ondemand.service
-            32ms irqbalance.service
-            31ms rsyslog.service
-            29ms apport.service
-            26ms plymouth-read-write.service
-            23ms systemd-update-utmp-runlevel.service
+          3.086s snapd.seeded.service
+          1.570s cloud-config.service
+           724ms cloud-init.service
+           703ms cloud-init-local.service
+           668ms apparmor.service
+           426ms cloud-final.service
+           267ms networking.service
+           262ms snapd.service
+           223ms lvm2-monitor.service
+           179ms lxd-containers.service
+           157ms systemd-udev-trigger.service
+            99ms iscsid.service
+            92ms accounts-daemon.service
+            83ms ssh.service
+            62ms apport.service
+            58ms irqbalance.service
+            56ms ondemand.service
+            51ms rsyslog.service
+            44ms systemd-logind.service
+            38ms systemd-modules-load.service
+            37ms resolvconf.service
+            31ms systemd-journal-flush.service
+            30ms systemd-udevd.service
+            28ms ufw.service
+            28ms systemd-update-utmp-runlevel.service
+            28ms systemd-remount-fs.service
+            26ms plymouth-quit.service
+            26ms systemd-tmpfiles-setup-dev.service
+            23ms plymouth-read-write.service
+            22ms dev-hugepages.mount
             21ms polkitd.service
-            20ms systemd-update-utmp.service
-            18ms systemd-tmpfiles-setup.service
+            21ms mdadm.service
+            21ms systemd-journald.service
+            16ms systemd-update-utmp.service
             13ms systemd-sysctl.service
-            13ms plymouth-quit.service
-            13ms open-iscsi.service
-             8ms rc-local.service
+            11ms systemd-tmpfiles-setup.service
+            10ms rc-local.service
              7ms systemd-random-seed.service
-             7ms plymouth-quit-wait.service
-             4ms systemd-user-sessions.service
-             2ms lxd.socket
-             1ms snapd.socket
+             6ms plymouth-quit-wait.service
+             6ms systemd-user-sessions.service
+             5ms open-iscsi.service
+             4ms lxd.socket
+             4ms snapd.socket
++ lxc exec test-xenial-reproduce -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.89300s (modules-config/config-locale)
+     00.15700s (modules-config/config-grub-dpkg)
+     00.14100s (init-network/config-ssh)
+     00.07600s (modules-config/config-apt-configure)
+     00.03700s (init-network/config-users-groups)
+     00.03200s (init-local/search-NoCloud)
+     00.02000s (modules-config/config-set-passwords)
+     00.01800s (modules-final/config-keys-to-console)
+     00.00700s (init-network/consume-user-data)
+     00.00600s (init-network/consume-vendor-data)
+     00.00600s (init-network/config-growpart)
+     00.00400s (modules-final/config-final-message)
+     00.00300s (init-network/check-cache)
+     00.00200s (modules-final/config-ssh-authkey-fingerprints)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-resizefs)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (modules-config/config-byobu)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-disk_setup)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-xenial-reproduce --force
 + echo 'xenial(Proposed cloud-init): Check boot time for when user sets a random password'
 xenial(Proposed cloud-init): Check boot time for when user sets a random password
 + verify xenial
@@ -1007,14 +1448,14 @@ xenial(Proposed cloud-init): Check boot time for when user sets a random passwor
 + name_proposed=test-xenial-proposed
 + lxc delete test-xenial-proposed --force
 + lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
-Creating xenial-proposed-1522030209
+Creating xenial-proposed-2631921947
 Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
 Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
 Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
-Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [884 kB]
 Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
-Get:6 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
-Get:7 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
 Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
 Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
 Get:10 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
@@ -1024,20 +1465,19 @@ Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
 Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
 Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
 Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
-Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [437 kB]
-Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
-Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
-Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
-Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
-Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
-Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
-Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
-Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
-Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [40.2 kB]
-Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [16.7 kB]
-Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [7740 B]
-Get:29 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6092 B]
-Fetched 17.5 MB in 25s (699 kB/s)
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [41.1 kB]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [17.2 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [9064 B]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [7172 B]
+Fetched 17.1 MB in 20s (844 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -1047,12 +1487,12 @@ The following package was automatically installed and is no longer required:
 Use 'apt autoremove' to remove it.
 The following packages will be upgraded:
   cloud-init
-1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+1 upgraded, 0 newly installed, 0 to remove and 13 not upgraded.
 Need to get 425 kB of archives.
 After this operation, 68.6 kB of additional disk space will be used.
 Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
 Preconfiguring packages ...
-Fetched 425 kB in 2s (193 kB/s)
+Fetched 425 kB in 2s (191 kB/s)
 Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
 Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
 Processing triggers for ureadahead (0.100.0-19.1) ...
@@ -1072,9 +1512,9 @@ chpasswd:
     - testcloudinit:RANDOM'
 Creating test-xenial-proposed
 + lxc exec test-xenial-proposed -- cloud-init status --wait --long
-...........................
+..............................
 status: done
-time: Wed, 17 Jun 2020 14:14:04 +0000
+time: Tue, 23 Jun 2020 14:00:13 +0000
 detail:
 DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
 + verify_user test-xenial-proposed xenial
@@ -1101,51 +1541,114 @@ SUCCESS: xenial created the right user
 SUCCESS: xenial change password for testcloudinit
 + get_boot_load_time test-xenial-proposed
 + name=test-xenial-proposed
++ echo 'Running boot time analysis for test-xenial-proposed'
+Running boot time analysis for test-xenial-proposed
 + lxc exec test-xenial-proposed -- systemd-analyze
-Startup finished in 7.115s (userspace) = 1h 52min 32.002s
+Startup finished in 7.913s (userspace) = 1h 32min 195ms
 + lxc exec test-xenial-proposed -- systemd-analyze blame
-          3.070s snapd.seeded.service
-          1.335s cloud-config.service
-           734ms cloud-init.service
-           688ms cloud-init-local.service
-           641ms apparmor.service
-           433ms cloud-final.service
-           282ms networking.service
+          3.574s snapd.seeded.service
+          1.429s cloud-config.service
+           748ms cloud-init.service
+           701ms cloud-init-local.service
+           681ms apparmor.service
+           481ms cloud-final.service
+           347ms networking.service
+           256ms snapd.service
            233ms lvm2-monitor.service
-           230ms snapd.service
-           154ms systemd-udev-trigger.service
-            90ms ssh.service
-            76ms lxd-containers.service
-            76ms accounts-daemon.service
-            58ms resolvconf.service
-            58ms iscsid.service
-            53ms mdadm.service
-            48ms systemd-remount-fs.service
-            48ms systemd-modules-load.service
-            46ms systemd-tmpfiles-setup-dev.service
-            45ms ufw.service
-            45ms ondemand.service
-            45ms dev-hugepages.mount
-            44ms irqbalance.service
-            41ms systemd-journal-flush.service
-            38ms systemd-journald.service
-            33ms apport.service
-            32ms systemd-logind.service
-            27ms systemd-update-utmp-runlevel.service
-            25ms systemd-udevd.service
-            22ms systemd-update-utmp.service
-            22ms rsyslog.service
-            22ms rc-local.service
-            20ms polkitd.service
-            19ms systemd-sysctl.service
-            17ms plymouth-read-write.service
-            14ms plymouth-quit.service
-            12ms systemd-tmpfiles-setup.service
+           163ms systemd-udev-trigger.service
+            81ms iscsid.service
+            79ms accounts-daemon.service
+            72ms ssh.service
+            67ms lxd-containers.service
+            65ms resolvconf.service
+            63ms ufw.service
+            62ms dev-hugepages.mount
+            62ms systemd-modules-load.service
+            62ms systemd-remount-fs.service
+            60ms systemd-tmpfiles-setup-dev.service
+            44ms mdadm.service
+            42ms rc-local.service
+            41ms apport.service
+            41ms irqbalance.service
+            41ms systemd-logind.service
+            38ms systemd-udevd.service
+            36ms systemd-journald.service
+            36ms ondemand.service
+            35ms rsyslog.service
+            28ms systemd-journal-flush.service
+            26ms polkitd.service
+            21ms systemd-tmpfiles-setup.service
+            20ms plymouth-read-write.service
+            17ms plymouth-quit.service
+            16ms systemd-update-utmp-runlevel.service
+            15ms systemd-update-utmp.service
+            12ms systemd-user-sessions.service
+            11ms systemd-sysctl.service
+             8ms plymouth-quit-wait.service
              8ms open-iscsi.service
-             7ms systemd-random-seed.service
-             5ms plymouth-quit-wait.service
-             5ms systemd-user-sessions.service
-             3ms snapd.socket
-             3ms lxd.socket
+             6ms systemd-random-seed.service
+             2ms lxd.socket
+             1ms snapd.socket
++ lxc exec test-xenial-proposed -- cloud-init analyze blame
+-- Boot Record 01 --
+     00.73800s (modules-config/config-locale)
+     00.16000s (init-network/config-ssh)
+     00.12500s (modules-config/config-grub-dpkg)
+     00.09600s (modules-config/config-apt-configure)
+     00.05900s (init-network/config-users-groups)
+     00.03100s (init-local/search-NoCloud)
+     00.01800s (modules-final/config-keys-to-console)
+     00.01600s (modules-config/config-set-passwords)
+     00.00600s (init-network/consume-vendor-data)
+     00.00600s (init-network/config-growpart)
+     00.00500s (modules-final/config-final-message)
+     00.00500s (init-network/consume-user-data)
+     00.00300s (modules-final/config-ssh-authkey-fingerprints)
+     00.00300s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/config-mounts)
+     00.00200s (init-network/check-cache)
+     00.00200s (init-network/activate-datasource)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-vendor)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-phone-home)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-landscape)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-final/config-chef)
+     00.00100s (modules-config/config-ubuntu-advantage)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-resizefs)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00000s (modules-config/config-timezone)
+     00.00000s (modules-config/config-ntp)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+1 boot records analyzed
++ lxc delete test-xenial-proposed --force
 + echo '=== END ' xenial
 === END  xenial
