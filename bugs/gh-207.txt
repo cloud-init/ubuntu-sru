@@ -1,0 +1,309 @@
+=== Begin SRU Template ===
+[Impact]
+A force flag (-f) was added to command line args when creating a swap
+filesystem
+
+[Test Case]
+#!/bin/bash
+
+cat >vm_profile.yaml <<EOF
+config: {}
+description: Default LXD profile for VMs
+devices:
+  config:
+    source: cloud-init:config
+    type: disk
+  eth0:
+    name: eth0
+    network: lxdbr0
+    type: nic
+  root:
+    path: /
+    pool: default
+    type: disk
+name: vm
+EOF
+
+cat >test-case.yaml <<EOF
+#cloud-config
+ssh_authorized_keys:
+ - |
+  ssh-rsa <your ssh key>
+
+disk_setup:
+    /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk:
+        table_type: gpt
+        layout: [[100, 82]]
+        overwrite: True
+fs_setup:
+    - device: /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk
+      partition: 1
+      filesystem: swap
+      overwrite: True
+mounts:
+    - ["/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk", "none", "swap", "sw", "0", "0"]
+
+EOF
+
+SERIES_LIST='focal eoan bionic'  # Xenial was verified manually due to lxd-agent issues
+
+function wait_till_ready() {
+  name=$1
+  lxc exec $name -- /bin/bash -c ":"
+  while [ $? -ne 0 ]; do
+    lxc exec $name -- /bin/bash -c ":"
+  done
+}
+
+lxc profile delete sru_vm &> /dev/null
+lxc profile create sru_vm
+cat vm_profile.yaml | lxc profile edit sru_vm
+dd if=/dev/zero of=/tmp/empty_disk bs=512 count=100000
+
+for SERIES in $SERIES_LIST; do
+  echo "--- Starting $SERIES"
+  ref="${SERIES}-proposed-vm"
+  name="test-${SERIES}"
+  lxc image list | grep "$ref"
+  if [ $? -eq 1 ]; then
+    echo "Build the ${SERIES}-proposed-vm VM"  # This needs to be done manually
+    exit
+  fi
+  lxc init ${SERIES}-proposed-vm $name -c user.user-data="$(cat test-case.yaml)" --profile vm
+  lxc config device add $name extra-disk disk source=/tmp/empty_disk
+  lxc start $name
+  wait_till_ready $name
+  lxc exec $name -- /usr/bin/cloud-init status --wait --long
+
+  echo "--- Expecting mkswap called with -f in log"
+  lxc exec $name -- grep "mkswap.*-f" -C 2 /var/log/cloud-init.log
+  rc1=$?
+
+  echo "--- Expecting swapon to pass"
+  lxc exec $name -- grep "PASS:swapon" /var/log/cloud-init.log
+  rc2=$?
+
+  echo "--- Expecting swap partition to be mounted"
+  lxc exec $name -- grep "/dev/sd.1.*partition" /proc/swaps
+  rc3=$?
+
+  if [ $rc1 -ne 0 ] || [ $rc2 -ne 0 ] || [ $rc3 -ne 0 ]; then
+    echo "TEST FAILED FOR ${SERIES}"
+    continue
+  fi
+
+  echo "TEST PASSED FOR ${SERIES}"
+
+  lxc stop $name
+  lxc delete $name
+done
+
+
+[Regression Potential]
+A poorly constructed swap command may now be executed whereas it wouldn't have
+before.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+Profile sru_vm created
+100000+0 records in
+100000+0 records out
+51200000 bytes (51 MB, 49 MiB) copied, 0.131552 s, 389 MB/s
+--- Starting focal
+| focal-proposed-vm  | f2a722942d25 | no     |                                               | x86_64       | VIRTUAL-MACHINE | 586.72MB | Jun 19, 2020 at 9:38pm (UTC) |
+Creating test-focal
+Device extra-disk added to test-focal
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+................................................
+status: done
+time: Mon, 22 Jun 2020 19:56:16 +0000
+detail:
+DataSourceNoCloud [seed=/dev/sdb][dsmode=net]
+--- Expecting mkswap called with -f in log
+2020-06-22 19:56:10,132 - cc_disk_setup.py[DEBUG]: File system type 'swap' with label 'None' will be created on /dev/sdc1
+2020-06-22 19:56:10,132 - cc_disk_setup.py[DEBUG]: Creating file system None on /dev/sdc1
+2020-06-22 19:56:10,132 - cc_disk_setup.py[DEBUG]:      Using cmd: ['/usr/sbin/mkswap', '/dev/sdc1', '-f']
+2020-06-22 19:56:10,132 - util.py[DEBUG]: Running command ['/usr/sbin/mkswap', '/dev/sdc1', '-f'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-22 19:56:10,142 - util.py[DEBUG]: Creating fs for /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk took 0.032 seconds
+2020-06-22 19:56:10,142 - handlers.py[DEBUG]: finish: init-network/config-disk_setup: SUCCESS: config-disk_setup ran successfully
+--- Expecting swapon to pass
+2020-06-22 19:56:10,149 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+--- Expecting swap partition to be mounted
+/dev/sdc1                               partition	48952	0	-2
+TEST PASSED FOR focal
+--- Starting eoan
+| eoan-proposed-vm   | 658e32fea0df | no     |                                               | x86_64       | VIRTUAL-MACHINE | 614.05MB | Jun 22, 2020 at 8:35pm (UTC) |
+Creating test-eoan
+Device extra-disk added to test-eoan
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+........................................
+status: done
+time: Mon, 22 Jun 2020 20:38:19 +0000
+detail:
+DataSourceNoCloud [seed=/dev/sdc][dsmode=net]
+--- Expecting mkswap called with -f in log
+2020-06-22 20:38:15,790 - cc_disk_setup.py[DEBUG]: File system type 'swap' with label 'None' will be created on /dev/sdb1
+2020-06-22 20:38:15,790 - cc_disk_setup.py[DEBUG]: Creating file system None on /dev/sdb1
+2020-06-22 20:38:15,790 - cc_disk_setup.py[DEBUG]:      Using cmd: ['/usr/sbin/mkswap', '/dev/sdb1', '-f']
+2020-06-22 20:38:15,790 - util.py[DEBUG]: Running command ['/usr/sbin/mkswap', '/dev/sdb1', '-f'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-22 20:38:15,800 - util.py[DEBUG]: Creating fs for /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk took 0.031 seconds
+2020-06-22 20:38:15,800 - handlers.py[DEBUG]: finish: init-network/config-disk_setup: SUCCESS: config-disk_setup ran successfully
+--- Expecting swapon to pass
+2020-06-22 20:38:15,812 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+--- Expecting swap partition to be mounted
+/dev/sdb1                               partition       48952   0       -2
+TEST PASSED FOR eoan
+--- Starting bionic
+| bionic-proposed-vm | 77375090fdfc | no     |                                               | x86_64       | VIRTUAL-MACHINE | 417.07MB | Jun 22, 2020 at 8:47pm (UTC) |
+Creating test-bionic
+Device extra-disk added to test-bionic
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Instance is not running
+Error: Instance is not running
+Error: Instance is not running
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+Error: Failed to connect to lxd-agent
+..............................
+status: done
+time: Mon, 22 Jun 2020 21:42:23 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net,/dev/sdb][dsmode=net]
+--- Expecting mkswap called with -f in log
+2020-06-22 21:42:21,034 - cc_disk_setup.py[DEBUG]: File system type 'swap' with label 'None' will be created on /dev/sdc1
+2020-06-22 21:42:21,034 - cc_disk_setup.py[DEBUG]: Creating file system None on /dev/sdc1
+2020-06-22 21:42:21,035 - cc_disk_setup.py[DEBUG]:      Using cmd: ['/sbin/mkswap', '/dev/sdc1', '-f']
+2020-06-22 21:42:21,035 - util.py[DEBUG]: Running command ['/sbin/mkswap', '/dev/sdc1', '-f'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-22 21:42:21,044 - util.py[DEBUG]: Creating fs for /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk took 0.032 seconds
+2020-06-22 21:42:21,044 - handlers.py[DEBUG]: finish: init-network/config-disk_setup: SUCCESS: config-disk_setup ran successfully
+--- Expecting swapon to pass
+2020-06-22 21:42:21,051 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+--- Expecting swap partition to be mounted
+/dev/sdc1                               partition	48952	0	-2
+TEST PASSED FOR bionic
+
+Manual verification for xenial:
+newt:bugs (gh-207.txt*) $ export SERIES=xenial
+newt:bugs (gh-207.txt*) $ export ref="${SERIES}-proposed-vm"
+newt:bugs (gh-207.txt*) $ export name="test-${SERIES}"
+newt:bugs (gh-207.txt*) $ lxc init ${SERIES}-proposed-vm $name -c user.user-data="$(cat test-case.yaml)" --profile vm
+Creating test-xenial
+newt:bugs (gh-207.txt*) $ dd if=/dev/zero of=/tmp/empty_disk bs=512 count=100000
+100000+0 records in
+100000+0 records out
+51200000 bytes (51 MB, 49 MiB) copied, 0.208823 s, 245 MB/s
+newt:bugs (gh-207.txt*) $ lxc config device add $name extra-disk disk source=/tmp/empty_disk
+Device extra-disk added to test-xenial
+newt:bugs (gh-207.txt*) $ lxc start $name
+newt:bugs (gh-207.txt*) $ lxc list test-xenial
++-------------+---------+----------------------+-----------------------------------------------+-----------------+-----------+
+|    NAME     |  STATE  |         IPV4         |                     IPV6                      |      TYPE       | SNAPSHOTS |
++-------------+---------+----------------------+-----------------------------------------------+-----------------+-----------+
+| test-xenial | RUNNING | 10.37.179.150 (eth0) | fd42:cb51:83c7:918a:216:3eff:fec8:a1ec (eth0) | VIRTUAL-MACHINE | 0         |
++-------------+---------+----------------------+-----------------------------------------------+-----------------+-----------+
+newt:bugs (gh-207.txt*) $ ssh ubuntu@10.37.179.150
+Welcome to Ubuntu 16.04.6 LTS (GNU/Linux 4.4.0-184-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+ * "If you've been waiting for the perfect Kubernetes dev solution for
+   macOS, the wait is over. Learn how to install Microk8s on macOS."
+
+   https://www.techrepublic.com/article/how-to-install-microk8s-on-macos/
+
+23 packages can be updated.
+0 updates are security updates.
+
+New release '18.04.4 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+*** System restart required ***
+Last login: Tue Jun 23 12:51:02 2020 from 10.37.179.1
+ubuntu@test-xenial:~$ sudo su
+root@test-xenial:/home/ubuntu# cloud-init status --wait --long
+
+status: done
+time: Tue, 23 Jun 2020 12:47:20 +0000
+detail:
+DataSourceNoCloud [seed=/dev/sdb][dsmode=net]
+root@test-xenial:/home/ubuntu# echo "--- Expecting mkswap called with -f in log"
+--- Expecting mkswap called with -f in log
+root@test-xenial:/home/ubuntu# grep "mkswap.*-f" -C 2 /var/log/cloud-init.log
+2020-06-23 12:47:17,932 - cc_disk_setup.py[DEBUG]: File system type 'swap' with label 'None' will be created on /dev/sdc1
+2020-06-23 12:47:17,932 - cc_disk_setup.py[DEBUG]: Creating file system None on /dev/sdc1
+2020-06-23 12:47:17,932 - cc_disk_setup.py[DEBUG]:      Using cmd: ['/sbin/mkswap', '/dev/sdc1', '-f']
+2020-06-23 12:47:17,932 - util.py[DEBUG]: Running command ['/sbin/mkswap', '/dev/sdc1', '-f'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-23 12:47:17,941 - util.py[DEBUG]: Creating fs for /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_lxd_extra-disk took 0.016 seconds
+2020-06-23 12:47:17,941 - handlers.py[DEBUG]: finish: init-network/config-disk_setup: SUCCESS: config-disk_setup ran successfully
+root@test-xenial:/home/ubuntu# echo "--- Expecting swapon to pass"
+--- Expecting swapon to pass
+root@test-xenial:/home/ubuntu# grep "PASS:swapon" /var/log/cloud-init.log
+2020-06-23 12:47:17,949 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+root@test-xenial:/home/ubuntu# echo "--- Expecting swap partition to be mounted"
+--- Expecting swap partition to be mounted
+root@test-xenial:/home/ubuntu# grep "/dev/sd.1.*partition" /proc/swaps
+/dev/sdc1                               partition	48952	0	-1
