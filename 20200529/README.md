@@ -15,8 +15,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | -------- |  -------- |
 | [# gh-328](http://github.com/canonical/cloud-init/pull/328) | [verification output](../bugs/gh-328.txt) |
 | [# gh-296](https://github.com/canonical/cloud-init/pull/296) | [verification output](../bugs/gh-296.txt) |
-| [# gh-364](http://github.com/canonical/cloud-init/pull/364) and [# gh-370](http://github.com/canonical/cloud-init/pull/370) | [verification output](../bugs/gh-364.txt) 
+| [# gh-364](http://github.com/canonical/cloud-init/pull/364) and [# gh-370](http://github.com/canonical/cloud-init/pull/370) | [verification output](../bugs/gh-364.txt)
 | [# gh-353](http://github.com/canonical/cloud-init/pull/353)| [verification output](../bugs/gh-353.txt) |
+| [# rhbz-1772505](https://bugzilla.redhat.com/show_bug.cgi?id=1772505) | [verification output](../bugs/rhbz-1772505.txt) |
 | [# 1872836](http://pad.lv/1872836) | [verification output](../bugs/lp-1872836.txt) |
 | [# 1880279](http://pad.lv/1880279) | [verification output](../bugs/lp-1880279.txt) |
 | [# 1858884](http://pad.lv/1858884) | [verification output](../bugs/lp-1858884.txt) |
