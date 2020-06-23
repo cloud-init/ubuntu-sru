@@ -1,0 +1,282 @@
+=== Begin SRU Template ===
+[Impact]
+When creating a swap file on an xfs filesystem, fallocate cannot be used.
+Doing so results in failure of swapon and a message like:
+swapon: swapfile has holes
+
+The solution here is to maintain a list (currently containing XFS and BTRFS)
+of filesystems where fallocate cannot be used. Then, on those fileystems
+use the slower but functional 'dd' method.
+
+Note that https://bugs.launchpad.net/cloud-init/+bug/1884127 still prevents
+swap creation on btrfs.
+
+[Test Case]
+Create proposed VM images:
+get-proposed-cloudimg -P [release] [release]-proposed
+
+Create image with filesystem for xfs, and ext4:
+cat > make_fs.sh <<EOF
+  img="$1.img"
+  dd if=/dev/zero of="$img" bs=512 count=300000
+  sudo mkfs.$1 "$img"
+EOF
+
+make_fs.sh xfs  # For xenial xfs, used mkfs.xfs -m crc=0,finobt=0 xfs2.img
+make_fs.sh ext4
+
+
+Create seed image for VM:
+cat > my-meta-data <<EOF
+instance-id: 5be37bc4-195b-4d04-bf83-3f870eccf918
+EOF
+
+cat > my-user-data <<EOF
+#cloud-config
+ssh_authorized_keys:
+ - |
+  ssh-rsa <relevant ssh key>
+
+swap:
+  filename: /mnt/swap.img
+  size: 50000000
+  maxsize: 50000000
+EOF
+
+Create VM with proposed OS image, seed image, and filesystem image:
+qemu-system-x86_64 -snapshot -enable-kvm -m 512 \
+-drive "file=[release]-proposed,if=virtio" \
+-drive "file=seed.img,format=raw,if=virtio" \
+-drive "file=[fs].img,if=virtio" \
+-net nic -net user,hostfwd=tcp::2222-:22 \
+-nographic
+
+Connect to VM as root
+
+If using ext4, execute verification procedure at the bottom of this test case.
+At this point, ext4 verification is finished.
+If using xfs, proceed with remaining steps
+
+Remove swap created on first boot:
+swapoff -a
+rm /mnt/swap.img
+Remove swap line from /etc/fstab
+
+Add xfs filesystem /etc/fstab:
+/dev/vdc /mnt/ xfs defaults 0 0  # Use relevant device if not /dev/vdc
+
+In /etc/cloud/cloud.cfg:
+Replace "- mounts" with "- [mounts, always]"
+
+Clear cloud-init.log so we don't accidentally see previous boot log:
+echo '' > /var/log/cloud-init.log
+
+reboot
+
+After reboot, execute verification procedure
+
+Verification procedure (see verification output for evidence):
+  - df -hT shows correct filesystem mounted
+  - swap file is listed in /proc/swaps
+  - Log file indicates swap created successfully using fallocate for
+    ext4 and dd for xfs
+
+[Regression Potential]
+None
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/6603706eec1c39d9d591c8ffa0ef7171b74d84d6
+
+== End SRU Template ===
+
+=== Truncated Verification Output ===
+--- Focal ext4 verification:
+ubuntu@ubuntu:~$ df -hT | grep ext4
+/dev/vda1      ext4      2.0G  1.4G  574M  72% /
+
+ubuntu@ubuntu:~$ cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	524	-2
+
+Log:
+2020-06-17 20:52:14,179 - cc_mounts.py[DEBUG]: Attempting to determine the real name of swap
+2020-06-17 20:52:14,179 - cc_mounts.py[DEBUG]: changed default device swap => None
+2020-06-17 20:52:14,179 - cc_mounts.py[DEBUG]: Ignoring nonexistent default named mount swap
+2020-06-17 20:52:14,179 - util.py[DEBUG]: Reading from /proc/537/mountinfo (quiet=False)
+2020-06-17 20:52:14,179 - util.py[DEBUG]: Read 3299 bytes from /proc/537/mountinfo
+2020-06-17 20:52:14,179 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'ext4' using 'fallocate'
+2020-06-17 20:52:14,179 - util.py[DEBUG]: Running command ['fallocate', '-l', '47M', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:52:14,185 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:52:14,191 - util.py[DEBUG]: Setting up swap file took 0.011 seconds
+2020-06-17 20:52:14,191 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-17 20:52:14,191 - util.py[DEBUG]: Read 2517 bytes from /proc/mounts
+2020-06-17 20:52:14,191 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,noexec,relatime,size=227592k,nr_inodes=56898,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup2': {'fstype': 'cgroup2', 'mountpoint': '/sys/fs/cgroup/unified', 'opts': 'rw,nosuid,nodev,noexec,relatime,nsdelegate'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/perf_event', 'opts': 'rw,nosuid,nodev,noexec,relatime,perf_event'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'none': {'fstype': 'bpf', 'mountpoint': '/sys/fs/bpf', 'opts': 'rw,nosuid,nodev,noexec,relatime,mode=700'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=28,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=13168'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'tracefs': {'fstype': 'tracefs', 'mountpoint': '/sys/kernel/tracing', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}} mounts from proc
+2020-06-17 20:52:14,191 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 133 bytes
+2020-06-17 20:52:14,192 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-17 20:52:14,192 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:52:14,198 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-17 20:52:14,198 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:52:14,201 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Focal XFS verification:
+ubuntu@ubuntu:~$ df -hT | grep xfs
+/dev/vdc       xfs       483M   76M  408M  16% /mnt
+
+ubuntu@ubuntu:~$ cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	0	-2
+
+Log:
+2020-06-17 20:47:43,794 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'xfs' using 'dd'
+2020-06-17 20:47:43,794 - util.py[DEBUG]: Running command ['dd', 'if=/dev/zero', 'of=/mnt/swap.img', 'bs=1M', 'count=47'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:47:43,831 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:47:43,859 - util.py[DEBUG]: Setting up swap file took 0.065 seconds
+2020-06-17 20:47:43,859 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-17 20:47:43,859 - util.py[DEBUG]: Read 2773 bytes from /proc/mounts
+2020-06-17 20:47:43,859 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,noexec,relatime,size=227584k,nr_inodes=56896,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup2': {'fstype': 'cgroup2', 'mountpoint': '/sys/fs/cgroup/unified', 'opts': 'rw,nosuid,nodev,noexec,relatime,nsdelegate'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/perf_event', 'opts': 'rw,nosuid,nodev,noexec,relatime,perf_event'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'none': {'fstype': 'bpf', 'mountpoint': '/sys/fs/bpf', 'opts': 'rw,nosuid,nodev,noexec,relatime,mode=700'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=28,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=13222'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'tracefs': {'fstype': 'tracefs', 'mountpoint': '/sys/kernel/tracing', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}, '/dev/loop0': {'fstype': 'squashfs', 'mountpoint': '/snap/core18/1754', 'opts': 'ro,nodev,relatime'}, '/dev/loop1': {'fstype': 'squashfs', 'mountpoint': '/snap/lxd/15564', 'opts': 'ro,nodev,relatime'}, '/dev/loop2': {'fstype': 'squashfs', 'mountpoint': '/snap/snapd/8140', 'opts': 'ro,nodev,relatime'}, '/dev/vdc': {'fstype': 'xfs', 'mountpoint': '/mnt', 'opts': 'rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota'}} mounts from proc
+2020-06-17 20:47:43,860 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 165 bytes
+2020-06-17 20:47:43,861 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-17 20:47:43,861 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:47:43,865 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-17 20:47:43,866 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-17 20:47:43,868 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Eoan ext4 verification:
+root@ubuntu:/home/ubuntu# df -hT | grep ext4
+/dev/vda1      ext4      2.0G  1.4G  601M  70% /
+
+root@ubuntu:/home/ubuntu# cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	268	-2
+
+Log:
+2020-06-18 19:15:05,573 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'ext4' using 'fallocate'
+2020-06-18 19:15:05,573 - util.py[DEBUG]: Running command ['fallocate', '-l', '47M', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:15:05,578 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:15:05,583 - util.py[DEBUG]: Setting up swap file took 0.011 seconds
+2020-06-18 19:15:05,584 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:15:05,584 - util.py[DEBUG]: Read 2431 bytes from /proc/mounts
+2020-06-18 19:15:05,584 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,relatime,size=227508k,nr_inodes=56877,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup2': {'fstype': 'cgroup2', 'mountpoint': '/sys/fs/cgroup/unified', 'opts': 'rw,nosuid,nodev,noexec,relatime,nsdelegate'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/cpu,cpuacct', 'opts': 'rw,nosuid,nodev,noexec,relatime,cpu,cpuacct'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'bpf': {'fstype': 'bpf', 'mountpoint': '/sys/fs/bpf', 'opts': 'rw,nosuid,nodev,noexec,relatime,mode=700'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=45,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=13556'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}} mounts from proc
+2020-06-18 19:15:05,584 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 133 bytes
+2020-06-18 19:15:05,585 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:15:05,585 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:15:05,590 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:15:05,591 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:15:05,593 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Eoan XFS verification:
+root@ubuntu:/home/ubuntu# df -hT | grep xfs
+/dev/vdc       xfs       483M   76M  408M  16% /mnt
+
+root@ubuntu:/home/ubuntu# cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	0	-2
+
+Log:
+2020-06-18 19:21:37,197 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'xfs' using 'dd'
+2020-06-18 19:21:37,197 - util.py[DEBUG]: Running command ['dd', 'if=/dev/zero', 'of=/mnt/swap.img', 'bs=1M', 'count=47'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:21:37,219 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:21:37,244 - util.py[DEBUG]: Setting up swap file took 0.048 seconds
+2020-06-18 19:21:37,245 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:21:37,245 - util.py[DEBUG]: Read 2687 bytes from /proc/mounts
+2020-06-18 19:21:37,245 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,relatime,size=227508k,nr_inodes=56877,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup2': {'fstype': 'cgroup2', 'mountpoint': '/sys/fs/cgroup/unified', 'opts': 'rw,nosuid,nodev,noexec,relatime,nsdelegate'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/cpuset', 'opts': 'rw,nosuid,nodev,noexec,relatime,cpuset'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'bpf': {'fstype': 'bpf', 'mountpoint': '/sys/fs/bpf', 'opts': 'rw,nosuid,nodev,noexec,relatime,mode=700'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=38,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=13362'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, '/dev/loop0': {'fstype': 'squashfs', 'mountpoint': '/snap/snapd/7777', 'opts': 'ro,nodev,relatime'}, '/dev/loop1': {'fstype': 'squashfs', 'mountpoint': '/snap/core18/1754', 'opts': 'ro,nodev,relatime'}, '/dev/loop2': {'fstype': 'squashfs', 'mountpoint': '/snap/lxd/15457', 'opts': 'ro,nodev,relatime'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}, '/dev/vdc': {'fstype': 'xfs', 'mountpoint': '/mnt', 'opts': 'rw,relatime,attr2,inode64,logbufs=8,logbsize=32k,noquota'}} mounts from proc
+2020-06-18 19:21:37,245 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 166 bytes
+2020-06-18 19:21:37,246 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:21:37,246 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:21:37,251 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:21:37,251 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:21:37,255 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Bionic ext4 verification:
+root@ubuntu:/home/ubuntu# df -hT | grep ext4
+/dev/vda1      ext4      2.0G  1.2G  787M  61% /
+
+root@ubuntu:/home/ubuntu# cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	268	-2
+
+Log:
+2020-06-18 19:28:57,605 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'ext4' using 'fallocate'
+2020-06-18 19:28:57,606 - util.py[DEBUG]: Running command ['fallocate', '-l', '47M', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:28:57,611 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:28:57,616 - util.py[DEBUG]: Setting up swap file took 0.011 seconds
+2020-06-18 19:28:57,616 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:28:57,617 - util.py[DEBUG]: Read 2298 bytes from /proc/mounts
+2020-06-18 19:28:57,617 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,relatime,size=233536k,nr_inodes=58384,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime,data=ordered'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/perf_event', 'opts': 'rw,nosuid,nodev,noexec,relatime,perf_event'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=36,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=11977'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,relatime'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,relatime'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,relatime'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}} mounts from proc
+2020-06-18 19:28:57,617 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 133 bytes
+2020-06-18 19:28:57,618 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:28:57,618 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:28:57,623 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:28:57,623 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:28:57,625 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Bionic XFS verification:
+ubuntu@ubuntu:~$ df -hT | grep xfs
+/dev/vdc       xfs       483M   76M  408M  16% /mnt
+
+ubuntu@ubuntu:~$ cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	0	-2
+
+Log:
+2020-06-18 19:32:26,812 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'xfs' using 'dd'
+2020-06-18 19:32:26,812 - util.py[DEBUG]: Running command ['dd', 'if=/dev/zero', 'of=/mnt/swap.img', 'bs=1M', 'count=47'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:32:26,834 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:32:26,868 - util.py[DEBUG]: Setting up swap file took 0.056 seconds
+2020-06-18 19:32:26,868 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:32:26,868 - util.py[DEBUG]: Read 2354 bytes from /proc/mounts
+2020-06-18 19:32:26,868 - util.py[DEBUG]: Fetched {'sysfs': {'fstype': 'sysfs', 'mountpoint': '/sys', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'fstype': 'proc', 'mountpoint': '/proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'udev': {'fstype': 'devtmpfs', 'mountpoint': '/dev', 'opts': 'rw,nosuid,relatime,size=233536k,nr_inodes=58384,mode=755'}, 'devpts': {'fstype': 'devpts', 'mountpoint': '/dev/pts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'tmpfs': {'fstype': 'tmpfs', 'mountpoint': '/sys/fs/cgroup', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, '/dev/vda1': {'fstype': 'ext4', 'mountpoint': '/', 'opts': 'rw,relatime,data=ordered'}, 'securityfs': {'fstype': 'securityfs', 'mountpoint': '/sys/kernel/security', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'cgroup': {'fstype': 'cgroup', 'mountpoint': '/sys/fs/cgroup/perf_event', 'opts': 'rw,nosuid,nodev,noexec,relatime,perf_event'}, 'pstore': {'fstype': 'pstore', 'mountpoint': '/sys/fs/pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'mqueue': {'fstype': 'mqueue', 'mountpoint': '/dev/mqueue', 'opts': 'rw,relatime'}, 'hugetlbfs': {'fstype': 'hugetlbfs', 'mountpoint': '/dev/hugepages', 'opts': 'rw,relatime,pagesize=2M'}, 'systemd-1': {'fstype': 'autofs', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'opts': 'rw,relatime,fd=43,pgrp=1,timeout=0,minproto=5,maxproto=5,direct,pipe_ino=12039'}, 'debugfs': {'fstype': 'debugfs', 'mountpoint': '/sys/kernel/debug', 'opts': 'rw,relatime'}, 'configfs': {'fstype': 'configfs', 'mountpoint': '/sys/kernel/config', 'opts': 'rw,relatime'}, 'fusectl': {'fstype': 'fusectl', 'mountpoint': '/sys/fs/fuse/connections', 'opts': 'rw,relatime'}, '/dev/vdc': {'fstype': 'xfs', 'mountpoint': '/mnt', 'opts': 'rw,relatime,attr2,inode64,noquota'}, '/dev/vda15': {'fstype': 'vfat', 'mountpoint': '/boot/efi', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}} mounts from proc
+2020-06-18 19:32:26,868 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 165 bytes
+2020-06-18 19:32:26,869 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:32:26,869 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:32:26,875 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:32:26,875 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:32:26,879 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Xenial ext4 verification:
+ubuntu@ubuntu:~$ df -hT | grep ext4
+/dev/vda1      ext4      2.0G  1.1G  933M  54% /
+
+ubuntu@ubuntu:~$ cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	0	-1
+
+Log:
+2020-06-18 19:33:49,458 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'ext4' using 'fallocate'
+2020-06-18 19:33:49,458 - util.py[DEBUG]: Running command ['fallocate', '-l', '47M', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:33:49,463 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:33:49,469 - util.py[DEBUG]: Setting up swap file took 0.011 seconds
+2020-06-18 19:33:49,469 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:33:49,469 - util.py[DEBUG]: Read 2107 bytes from /proc/mounts
+2020-06-18 19:33:49,469 - util.py[DEBUG]: Fetched {'pstore': {'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys/fs/pstore', 'fstype': 'pstore'}, 'cgroup': {'opts': 'rw,nosuid,nodev,noexec,relatime,hugetlb', 'mountpoint': '/sys/fs/cgroup/hugetlb', 'fstype': 'cgroup'}, 'udev': {'opts': 'rw,nosuid,relatime,size=240824k,nr_inodes=60206,mode=755', 'mountpoint': '/dev', 'fstype': 'devtmpfs'}, 'securityfs': {'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys/kernel/security', 'fstype': 'securityfs'}, 'devpts': {'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000', 'mountpoint': '/dev/pts', 'fstype': 'devpts'}, 'mqueue': {'opts': 'rw,relatime', 'mountpoint': '/dev/mqueue', 'fstype': 'mqueue'}, 'tmpfs': {'opts': 'ro,nosuid,nodev,noexec,mode=755', 'mountpoint': '/sys/fs/cgroup', 'fstype': 'tmpfs'}, 'fusectl': {'opts': 'rw,relatime', 'mountpoint': '/sys/fs/fuse/connections', 'fstype': 'fusectl'}, 'proc': {'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/proc', 'fstype': 'proc'}, 'systemd-1': {'opts': 'rw,relatime,fd=38,pgrp=1,timeout=0,minproto=5,maxproto=5,direct', 'mountpoint': '/proc/sys/fs/binfmt_misc', 'fstype': 'autofs'}, 'hugetlbfs': {'opts': 'rw,relatime', 'mountpoint': '/dev/hugepages', 'fstype': 'hugetlbfs'}, 'debugfs': {'opts': 'rw,relatime', 'mountpoint': '/sys/kernel/debug', 'fstype': 'debugfs'}, '/dev/vda15': {'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro', 'mountpoint': '/boot/efi', 'fstype': 'vfat'}, '/dev/vda1': {'opts': 'rw,relatime,data=ordered', 'mountpoint': '/', 'fstype': 'ext4'}, 'sysfs': {'opts': 'rw,nosuid,nodev,noexec,relatime', 'mountpoint': '/sys', 'fstype': 'sysfs'}} mounts from proc
+2020-06-18 19:33:49,470 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 133 bytes
+2020-06-18 19:33:49,470 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:33:49,470 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:33:49,475 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:33:49,475 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:33:49,479 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+--- Xenial XFS verification:
+ubuntu@ubuntu:~$ df -hT | grep xfs
+/dev/vdc       xfs       144M   55M   89M  39% /mnt
+
+ubuntu@ubuntu:~$ cat /proc/swaps
+Filename				Type		Size	Used	Priority
+/mnt/swap.img                           file		48124	0	-1
+
+Log:
+2020-06-18 19:52:25,201 - cc_mounts.py[DEBUG]: Creating swapfile in '/mnt/swap.img' on fstype 'xfs' using 'dd'
+2020-06-18 19:52:25,201 - util.py[DEBUG]: Running command ['dd', 'if=/dev/zero', 'of=/mnt/swap.img', 'bs=1M', 'count=47'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:52:25,262 - util.py[DEBUG]: Running command ['mkswap', '/mnt/swap.img'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:52:25,280 - util.py[DEBUG]: Setting up swap file took 0.079 seconds
+2020-06-18 19:52:25,281 - util.py[DEBUG]: Reading from /proc/mounts (quiet=False)
+2020-06-18 19:52:25,281 - util.py[DEBUG]: Read 2163 bytes from /proc/mounts
+2020-06-18 19:52:25,281 - util.py[DEBUG]: Fetched {'cgroup': {'mountpoint': '/sys/fs/cgroup/devices', 'fstype': 'cgroup', 'opts': 'rw,nosuid,nodev,noexec,relatime,devices'}, 'tmpfs': {'mountpoint': '/sys/fs/cgroup', 'fstype': 'tmpfs', 'opts': 'ro,nosuid,nodev,noexec,mode=755'}, 'fusectl': {'mountpoint': '/sys/fs/fuse/connections', 'fstype': 'fusectl', 'opts': 'rw,relatime'}, '/dev/vdc': {'mountpoint': '/mnt', 'fstype': 'xfs', 'opts': 'rw,relatime,attr2,inode64,noquota'}, 'hugetlbfs': {'mountpoint': '/dev/hugepages', 'fstype': 'hugetlbfs', 'opts': 'rw,relatime'}, 'devpts': {'mountpoint': '/dev/pts', 'fstype': 'devpts', 'opts': 'rw,nosuid,noexec,relatime,gid=5,mode=620,ptmxmode=000'}, 'sysfs': {'mountpoint': '/sys', 'fstype': 'sysfs', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'proc': {'mountpoint': '/proc', 'fstype': 'proc', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, '/dev/vda15': {'mountpoint': '/boot/efi', 'fstype': 'vfat', 'opts': 'rw,relatime,fmask=0022,dmask=0022,codepage=437,iocharset=iso8859-1,shortname=mixed,errors=remount-ro'}, 'pstore': {'mountpoint': '/sys/fs/pstore', 'fstype': 'pstore', 'opts': 'rw,nosuid,nodev,noexec,relatime'}, 'systemd-1': {'mountpoint': '/proc/sys/fs/binfmt_misc', 'fstype': 'autofs', 'opts': 'rw,relatime,fd=31,pgrp=1,timeout=0,minproto=5,maxproto=5,direct'}, 'udev': {'mountpoint': '/dev', 'fstype': 'devtmpfs', 'opts': 'rw,nosuid,relatime,size=240824k,nr_inodes=60206,mode=755'}, '/dev/vda1': {'mountpoint': '/', 'fstype': 'ext4', 'opts': 'rw,relatime,data=ordered'}, 'mqueue': {'mountpoint': '/dev/mqueue', 'fstype': 'mqueue', 'opts': 'rw,relatime'}, 'debugfs': {'mountpoint': '/sys/kernel/debug', 'fstype': 'debugfs', 'opts': 'rw,relatime'}, 'securityfs': {'mountpoint': '/sys/kernel/security', 'fstype': 'securityfs', 'opts': 'rw,nosuid,nodev,noexec,relatime'}} mounts from proc
+2020-06-18 19:52:25,281 - util.py[DEBUG]: Writing to /etc/fstab - wb: [644] 165 bytes
+2020-06-18 19:52:25,282 - cc_mounts.py[DEBUG]: Changes to fstab: ['+ /mnt/swap.img none swap sw,comment=cloudconfig 0 0']
+2020-06-18 19:52:25,282 - util.py[DEBUG]: Running command ['swapon', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:52:25,288 - cc_mounts.py[DEBUG]: Activate mounts: PASS:swapon -a
+2020-06-18 19:52:25,289 - util.py[DEBUG]: Running command ['mount', '-a'] with allowed return codes [0] (shell=False, capture=True)
+2020-06-18 19:52:25,292 - cc_mounts.py[DEBUG]: Activate mounts: PASS:mount -a
+
+
