@@ -1,0 +1,79 @@
+#!/bin/bash
+# Manual OpenStack upgrade and clean install validation Xenial, Bionic, Eoan and Focal
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT SAMPLE_CLOUDCONFIG NETCFG_FILE SSHOPTS
+create_samplecloudconfig
+create_setup_proposed_script
+
+if [ ! -e "images.json" ]; then
+    openstack image list --property architecture=x86_64 -f json > images.json
+fi
+
+# create a floating ip, keep the IP and floating-ip UUID for cleanup
+FIP=( `openstack floating ip create ext_net -f json | jq -r '. | .floating_ip_address + " " + .id'` )
+VM_IP=${FIP[0]}; FIP_ID=${FIP[1]}
+
+echo "### BEGIN $UBUNTU_RELEASE"
+
+# Determine image, launch instance and attach IP address
+image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$UBUNTU_RELEASE'"))) | .ID' | tail -n 1)
+openstack server create --flavor m1.small --image $image --key-name $OPENSTACK_SSH_KEY_NAME --nic net-id=$OPENSTACK_ADMIN_NET_ID --user-data $SAMPLE_CLOUDCONFIG test-$UBUNTU_RELEASE --wait
+openstack server add floating ip test-$UBUNTU_RELEASE $VM_IP
+
+ssh_wait_for_instance_boot ubuntu@$VM_IP
+
+# Capture current state
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+echo 'Networking config'
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE
+
+# Upgrade to -proposed cloud-init and reboot
+scp "${SSHOPTS[@]}" $PROPOSED_SCRIPT ubuntu@$VM_IP:.
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo rm -f $NETCFG_FILE
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
+
+ssh_wait_for_instance_boot ubuntu@$VM_IP
+
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- hostname
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
+echo 'After upgrade Networking config'
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+echo "Get cloud-id"
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-id
+echo 'Validating whether metadata is being updated per boot LP:1819913'
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo reboot || true
+
+ssh_wait_for_instance_boot ubuntu@$VM_IP
+echo 'After reboot'
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+
+
+openstack floating ip delete $FIP_ID
+openstack server delete test-$UBUNTU_RELEASE
+echo "### END $UBUNTU_RELEASE"
