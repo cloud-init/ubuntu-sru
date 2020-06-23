@@ -1,0 +1,146 @@
+#!/bin/sh
+
+set -ex
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT LP_USER SAMPLE_CLOUDCONFIG SSHOPTS \
+    PRESERVE_INSTANCE
+create_samplecloudconfig SAMPLE_CLOUDCONFIG
+create_setup_proposed_script
+
+
+run_describe_command() {
+    dnsname=$1
+    query=$2
+    aws ec2 describe-instances --filter "Name=dns-name,Values=${dnsname}" --query $query | jq -r .[]
+}
+
+get_ec2_instance_id() {
+    dns_name=$1
+    dns_name="${dns_name#"ubuntu@"}"
+    query='Reservations[].Instances[].InstanceId'
+    run_describe_command $dns_name $query
+}
+
+terminate_instance() {
+    ec2_inst=$1
+    if [ "$PRESERVE_INSTANCE" = false ]; then
+        echo "deleting instance"
+        ec2_inst_id=`get_ec2_instance_id ${ec2_inst}`
+        aws ec2 terminate-instances --instance-ids $ec2_inst_id
+    else
+        echo "Keeping instance active"
+    fi
+}
+
+get_subnet_id() {
+    inst_name=$1
+    dns_name="${inst_name#"ubuntu@"}"
+    query='Reservations[].Instances[].SubnetId'
+    run_describe_command $dns_name $query
+}
+
+create_network_interface() {
+    subnet_id=$1
+    aws ec2 create-network-interface --subnet-id $subnet_id
+}
+
+get_network_interface_id() {
+    network_interface_json=$*
+    echo $network_interface_json | jq -r .NetworkInterface.NetworkInterfaceId
+}
+
+delete_network_interface() {
+    network_interface_id=$1
+    aws ec2 delete-network-interface --network-interface-id $network_interface_id
+}
+
+attach_network_interface() {
+    instance_id=$1
+    network_interface_id=$2
+    device_index=$3
+
+    aws ec2 attach-network-interface --device-index $device_index --instance-id $instance_id --network-interface-id $network_interface_id | jq -r .AttachmentId
+}
+
+detach_network_interface() {
+    attachment_id=$1
+    aws ec2 detach-network-interface --attachment-id $attachment_id
+}
+
+setup_network_interface() {
+    subnet_id=$1
+    network_interface_json=$(create_network_interface $subnet_id)
+    get_network_interface_id $network_interface_json
+}
+
+teardown_network_interface() {
+    attachment_id=$1
+    network_interface_id=$2
+
+    detach_network_interface $attachment_id
+    sleep 30
+    delete_network_interface $network_interface_id
+}
+
+# set -x outputs each commant to standard error, so an easy way to keen an eye
+# what's going on while saving a clean log file (stdout only) is using tee(1).
+
+echo "### BEGIN $UBUNTU_RELEASE"
+EC2_INST=`launch-ec2 --series $UBUNTU_RELEASE -u ${SAMPLE_CLOUDCONFIG} | awk '/Found/{print $5}'`
+[ -n "$EC2_INST" ] || { echo "Failed to launch ec2 instance!"; exit 1; }
+sleep 60
+
+trap "terminate_instance ${EC2_INST}" ERR
+ssh $SSHOPTS $EC2_INST -- cloud-init status --wait --long
+ssh $SSHOPTS $EC2_INST -- cat /run/cloud-init/result.json
+ssh $SSHOPTS $EC2_INST -- ! grep Trace /var/log/cloud-init.log
+echo "Expect IMDSv2 token headers are being used on all metadata gets. Expect 0 line count"
+ssh $SSHOPTS $EC2_INST --  '[[ 0 = `grep headers /var/log/cloud-init.log  | grep -c -v X-aws` ]] || exit 1'
+ssh $SSHOPTS $EC2_INST -- sudo systemd-analyze
+ssh $SSHOPTS $EC2_INST -- sudo systemd-analyze blame
+ssh $SSHOPTS $EC2_INST -- sudo cloud-init analyze show
+ssh $SSHOPTS $EC2_INST -- ! grep Trace /var/log/cloud-init.log
+scp $SSHOPTS $PROPOSED_SCRIPT $EC2_INST:
+ssh $SSHOPTS $EC2_INST sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+ssh $SSHOPTS $EC2_INST sudo hostname something-else
+ssh $SSHOPTS $EC2_INST -- sudo cloud-init init
+ssh $SSHOPTS $EC2_INST -- ! grep Trace /var/log/cloud-init.log
+ssh $SSHOPTS $EC2_INST -- sudo cloud-init clean --logs --reboot || true
+sleep 60
+date --utc +%s.%N
+ssh $SSHOPTS $EC2_INST -- cloud-init status --wait --long; date --utc +%s.%N
+ssh $SSHOPTS $EC2_INST -- hostname
+ssh $SSHOPTS $EC2_INST -- ! grep Trace /var/log/cloud-init.log
+ssh $SSHOPTS $EC2_INST -- sudo systemd-analyze
+ssh $SSHOPTS $EC2_INST -- sudo cloud-init analyze show
+if [ "$UBUNTU_RELEASE" = "xenial" ]; then
+   echo "--- Expect warning on xenial for jinja because deb DOES NOT have jinja dep."
+else
+   echo "--- Expect success on bionic for jinja because deb DOES have jinja dep."
+fi
+ssh $SSHOPTS $EC2_INST "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
+
+echo 'Per LP:1794399 expect we do not see a lot of killing dhclient logs'
+ssh $SSHOPTS $EC2_INST "grep dhclient /var/log/cloud-init.log"
+
+echo 'Get cloud-id'
+ssh $SSHOPTS $EC2_INST cloud-id
+
+echo 'Validating whether metadata is being updated per boot LP:1819913'
+ssh $SSHOPTS $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+ssh $SSHOPTS $EC2_INST sudo reboot || true
+sleep 60
+echo 'After reboot'
+ssh $SSHOPTS $EC2_INST "grep 'Update datasource' /var/log/cloud-init.log"
+terminate_instance $EC2_INST
+echo "### END $UBUNTU_RELEASE"

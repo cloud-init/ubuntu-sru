@@ -1,0 +1,90 @@
+#!/bin/bash
+# Part 1: Import Images in to vSphere
+set -ex
+
+VMWARE_PASSWORD=`cat sru-vmware-password`     # set to vcenter admin password
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT SAMPLE_CLOUDCONFIG LP_USER \
+  VMWARE_PASSWORD SSHOPTS
+create_samplecloudconfig SAMPLE_CLOUDCONFIG
+create_setup_proposed_script
+
+
+case $UBUNTU_RELEASE in
+    xenial) image_name=ubuntu-16.04-server-cloudimg-amd64.ova;;
+    bionic) image_name=ubuntu-18.04-server-cloudimg-amd64.ova;;
+    eoan) image_name=ubuntu-19.10-server-cloudimg-amd64.ova;;
+    focal) image_name=ubuntu-19.10-server-cloudimg-amd64.ova;;
+    *) echo "!UPDATE FAMILY CASE STATEMENT!"; exit 1;;
+esac
+
+wget http://cloud-images.ubuntu.com/releases/$UBUNTU_RELEASE/release/$image_name
+ovftool \
+    --name=cloud-init-sru-$UBUNTU_RELEASE-$(date +%s) \
+    --datastore=SpindleDisks1 \
+    --prop:user-data="$(base64 --wrap 0 $SAMPLE_CLOUDCONFIG)" \
+    --powerOn \
+    $image_name \
+    "vi://administrator@vsphere.local:${VMWARE_PASSWORD}@10.245.200.22/Datacenter1/host/Autopilot/"
+
+cat <<EOF
+Part 2: Get IP Address
+
+Log in to the web interface and find the VMs we created above.  Each
+one should be displaying an IP address.  Make a note of these.
+
+(If one isn't yet displayed; wait a couple of minutes.)
+EOF
+
+echo -n "Enter IP for instance: "
+read IP
+
+# Part 3: Capture Data
+
+
+echo '=== BEGIN ' $UBUNTU_RELEASE
+IP="ubuntu@$IP"
+
+ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" $IP -- ! grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" $IP -- systemd-analyze
+ssh "${SSHOPTS[@]}" $IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze blame
+
+scp "${SSHOPTS[@]}" $PROPOSED_SCRIPT $IP:.
+ssh "${SSHOPTS[@]}" $IP -- sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $IP -- sudo hostname SRU-didnt-work
+ssh "${SSHOPTS[@]}" $IP -- sudo cloud-init clean --logs --reboot || true
+
+ssh-keygen -f $HOME/.ssh/known_hosts -R ${IP/ubuntu@}
+sleep 60
+
+ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+ssh "${SSHOPTS[@]}" $IP -- ! grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" $IP -- sudo systemd-analyze blame
+ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze blame
+ssh "${SSHOPTS[@]}" $IP -- cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'
+echo 'Get cloud-id'
+ssh "${SSHOPTS[@]}" $IP -- cloud-id
+echo 'Validating whether metadata is being updated per boot LP:1819913'
+ssh "${SSHOPTS[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+ssh "${SSHOPTS[@]}" $IP -- sudo reboot || true
+echo 'After reboot'
+ssh "${SSHOPTS[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+echo '=== END ' $UBUNTU_RELEASE
