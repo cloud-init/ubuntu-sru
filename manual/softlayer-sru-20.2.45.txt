@@ -1,3 +1,79 @@
+===== BEGIN Verification script =====
+#!/bin/bash
+# Softlayer(IBM) manual sru testing
+
+
+# launched performed with qa-scripts (launch-softlayer)
+# repo https://github.com/cloud-init/qa-scripts.git
+# launch-softlayer --image=os:bionic -u $SAMPLE_CLOUDCONFIG
+# launch-softlayer --image=os:xenial -u $SAMPLE_CLOUDCONFIG
+# then grab vm ips with `sl vs list`
+
+
+#!/bin/bash
+# Manually deploy on Softlayer using slcli client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+set -ex
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT LP_USER SAMPLE_CLOUDCONFIG SSHOPTS
+create_samplecloudconfig SAMPLE_CLOUDCONFIG
+create_setup_proposed_script
+ 
+echo "### BEGIN $UBUNTU_RELEASE"
+VM_IP=`launch-softlayer --image=os:$UBUNTU_RELEASE -u $SAMPLE_CLOUDCONFIG | awk '/primary ip/{printf "root@%s", $NF}'`
+sleep 100
+retry_ssh_command $VM_IP "cloud-init status --wait --long" 5
+ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
+ssh "${SSHOPTS[@]}" $VM_IP -- ! grep Trace /var/log/cloud-init.log
+retry_ssh_command $VM_IP systemd-analyze 5
+ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
+
+scp "${SSHOPTS[@]}" $PROPOSED_SCRIPT $VM_IP:.
+ssh "${SSHOPTS[@]}" $VM_IP -- bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
+ssh "${SSHOPTS[@]}" $VM_IP -- dpkg-query --show cloud-init
+ssh "${SSHOPTS[@]}" $VM_IP -- hostname SRU-didnt-work
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init clean --logs --reboot || true
+
+sleep 100
+
+retry_ssh_command $VM_IP "cloud-init status --wait --long" 5
+ssh "${SSHOPTS[@]}" $VM_IP -- ! grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" $VM_IP -- cat /run/cloud-init/result.json
+retry_ssh_command $VM_IP "systemd-analyze" 5
+ssh "${SSHOPTS[@]}" $VM_IP -- systemd-analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze show
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-init analyze blame
+ssh "${SSHOPTS[@]}" $VM_IP -- "cloud-init query --format 'cloud-region: {{cloud_name}}-{{region}}'"
+echo 'Get cloud-id'
+ssh "${SSHOPTS[@]}" $VM_IP -- cloud-id
+
+echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to contain System Boot'
+ssh "${SSHOPTS[@]}" $VM_IP -- reboot || true
+sleep 100
+echo 'After reboot'
+retry_ssh_command $VM_IP "cloud-init status --wait --long" 5
+ssh "${SSHOPTS[@]}" $VM_IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+echo "Confirm no traceback after reboot LP: 1823084"
+ssh "${SSHOPTS[@]}" $VM_IP -- ! grep Trace /var/log/cloud-init.log
+
+echo "### END $UBUNTU_RELEASE"
+===== END Verification script =====
+
+===== BEGIN SRU Verification output =====
 + SRU_VARS=./sru-scripts/sru-vars.template
 + '[' '!' -f ./sru-scripts/sru-vars.template ']'
 + . ./sru-scripts/sru-vars.template
@@ -1158,4 +1234,5 @@ Confirm no traceback after reboot LP: 1823084
 + ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR root@75.126.139.188 -- '!' grep Trace /var/log/cloud-init.log
 + echo '### END bionic'
 ### END bionic
+===== END SRU Verification output =====
 
