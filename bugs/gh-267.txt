@@ -1,0 +1,981 @@
+=== Begin SRU Template ===
+[Impact]
+Ensure ENI network rendering is preferred ahead of netplan on
+Xenial, Bionic and Eoan even if both ifupdown and netplan are installed.
+
+Focal and later will prioritize netplan ahead of ENI even if both ifupdown and
+netplan are present.
+
+[Test Case]
+  1. launch cloudimage with current cloud-init using cloud-init to installl
+     whatever package is missing: ifupdown or nplan/netplan.io.
+     (nplan was the pkg name in xenial, netplan.io in bionic and later)
+  2. cloud-init clean --reboot --logs 
+  3. Validate the default renderer chosen (eni on all series; which is broken on bionic and later)
+  4. Upgrade cloud-init to 20.2.45 from -proposed; cloud-init clean reboot
+  5. Validate correct default renderer chosen: 
+      - eni remains chosen on xenial, bionic no priority list set
+      - bionic/eoan breaks because of no fix for LP:1867029 and no priority
+        network renderer list is set
+      - netplan on focal and priority list in log orders netplan, eni, sysconfig
+        because we prioritize netplan in front of eni on focal and later
+```
+#!/bin/bash
+set -ex
+# Manually deploy on a lxc container
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+
+. $SRU_VARS
+
+assert_expected_vars PROPOSED_SCRIPT ENI_NETCFG_FILE NETPLAN_NETCFG_FILE \
+    SAMPLE_CLOUDCONFIG PRESERVE_INSTANCE
+parse_args $0 $@
+create_setup_proposed_script
+
+case "${UBUNTU_RELEASE}" in
+    # any flag pass through.
+    xenial)
+        ORIG_EXPECTED_LOG="Selected renderer 'eni' from priority list: None";
+        UPGRADE_EXPECTED_LOG="Selected renderer 'eni' from priority list: None";
+        ADDITIONAL_PKG="nplan";;
+    bionic|eoan)
+        ORIG_EXPECTED_LOG="Selected renderer 'eni' from priority list: None";
+        UPGRADE_EXPECTED_LOG="Selected renderer 'eni' from priority list: None";
+        ADDITIONAL_PKG="ifupdown";;
+    focal)
+        # Focal already has this prioritization feature released
+        ORIG_EXPECTED_LOG="Selected renderer 'netplan' from priority list: ['netplan', 'eni', 'sysconfig'\]"
+        UPGRADE_EXPECTED_LOG=${ORIG_EXPECTED_LOG}
+        ADDITIONAL_PKG="ifupdown";;
+    *)
+        echo "invalid UBUNTU_RELEASE ${UBUNTU_RELEASE}"; exit 1;;
+esac
+
+# Create cloud-config installing the addtional network renderer
+cat > ${SAMPLE_CLOUDCONFIG} <<EOF
+#cloud-config
+packages:
+ - ${ADDITIONAL_PKG}
+EOF
+
+
+# launch lxc for release with cloud_cfg userdata
+setup() {
+ release=$1 ud_file=$2
+ name=test-sru-$1
+ lxc stop $name || true
+ lxc delete $name || true
+ lxc launch ubuntu-daily:$release $name -c user.user-data="$(cat $ud_file)"
+}
+
+
+fix_missing_netplan_cfg(){
+    name=$1
+
+    cat > 50-cloud-init.yaml <<EOF
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
+EOF
+   lxc file push 50-cloud-init.yaml $name/etc/netplan/
+   lxc exec $name netplan apply
+}
+
+# Validate expected renderer chosen on original cloud-init
+reproduce() {
+   name=$1
+   while ! lxc exec $name -- cloud-init status --wait --long; do
+       sleep 5
+   done
+   lxc exec $name -- cat $NETCFG_FILE || echo "FAILURE: $NETCFG_FILE not found"
+   lxc exec $name rm $ENI_NETCFG_FILE || true
+   lxc exec $name rm $NETPLAN_NETCFG_FILE || true
+   lxc exec $name -- cloud-init clean --logs --reboot || true
+   while ! lxc exec $name -- cloud-init status --wait --long; do
+       sleep 5
+   done
+   # Expect 1 match with proper renderer on first clean boot with both net pkgs
+   renderer_log=$(lxc exec $name -- grep "Selected renderer" /var/log/cloud-init.log)
+   if [ "${renderer_log/$ORIG_EXPECTED_LOG/}" != "${renderer_log}" ]; then
+       echo "SUCCESS: $name found ${ORIG_EXPECTED_LOG}"
+   else
+       echo "FAILURE: $series did not find correct renderer log"
+       echo ${renderer_log}
+       exit 1
+   fi
+}
+
+verify() {
+   name=$1
+   lxc file push $PROPOSED_SCRIPT $name/
+   if [ $UBUNTU_RELEASE = "eoan" -o $UBUNTU_RELEASE = "bionic" ]; then
+       lxc exec $name -- ping 8.8.8.8 && echo "FAILURE: expected Eoan network to fail because of LP:1867029" || echo "SUCCESS: expect known broken network because eni got prioritized LP:1867029"
+       fix_missing_netplan_cfg $name
+   fi
+   lxc exec $name -- bash /setup_proposed.sh
+   lxc exec $name rm $ENI_NETCFG_FILE || true
+   lxc exec $name rm $NETPLAN_NETCFG_FILE || true
+   lxc exec $name -- cloud-init clean --logs --reboot || true
+   sleep 3
+   while ! lxc exec $name -- cloud-init status --wait --long; do
+       sleep 5
+   done
+
+   # Expect 1 match with proper renderer on first clean boot with both net pkgs
+   renderer_log=$(lxc exec $name -- grep "Selected renderer" /var/log/cloud-init.log)
+   if [ "${renderer_log/$UPGRADE_EXPECTED_LOG/}" != "${renderer_log}" ]; then
+       echo "SUCCESS: $name found ${UPGRADE_EXPECTED_LOG}"
+   else
+       echo "FAILURE: $series did not find correct renderer log"
+       echo ${renderer_log}
+       exit 1
+   fi
+   if [ $UBUNTU_RELEASE = "eoan" -o $UBUNTU_RELEASE = "bionic" ]; then
+       # Because eoan does not have a fix for LP: #1867029, expect ENI written
+       NETCFG_FILE=$ENI_NETCFG_FILE
+   fi
+   lxc exec $name -- cat $NETCFG_FILE || echo "FAILURE: $NETCFG_FILE not found"
+}
+
+echo '=== BEGIN ' $UBUNTU_RELEASE
+setup $UBUNTU_RELEASE $SAMPLE_CLOUDCONFIG
+reproduce test-sru-${UBUNTU_RELEASE}
+verify test-sru-${UBUNTU_RELEASE}
+if [ "${PRESERVE_INSTANCE}" = "false" ]; then
+  echo "Teardown of test-sru-${UBUNTU_RELEASE}"
+  lxc delete --force test-sru-${UBUNTU_RELEASE} 2> /dev/null || true
+fi
+echo '=== END ' $UBUNTU_RELEASE
+
+
+```
+
+[Regression Potential]
+This test asserts xenial, bionic eoan behavior remains the unchanged so no regression potential there.
+
+Focal: If customers have worked around broken ifupdown network rendering in cloud-init, they may be suprized to see that netplan rendering is correctly handled on their system, there is a potential for network configuration confusion if both /etc/network/interfaces config is rendered as well as netplan.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Logs ===
++ SRU_VARS=./sru-scripts/sru-vars.template
++ '[' '!' -f ./sru-scripts/sru-vars.template ']'
++ . ./sru-scripts/sru-vars.template
+++ PRESERVE_INSTANCE=false
+++ UBUNTU_RELEASE=
+++ LP_USER=UNSET
+++ PROPOSED_SCRIPT=setup_proposed.sh
+++ USE_DEV_PPA=0
+++ ENI_NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
+++ NETPLAN_NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
+++ SAMPLE_CLOUDCONFIG=sethostname.yaml
+++ SSH_KEY=/home/csmith/.ssh/id_rsa.pub
+++ SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+++ AZURE_REGION=UNSET
+++ AZURE_VNET_NAME=UNSET
+++ AZURE_NETWORK_SECURITY_GROUP=UNSET
+++ AZURE_NIC_NAME=UNSET
+++ AZURE_RESOURCE_GROUP=UNSET
+++ AZURE_BOOT_DIAG=UNSET
+++ AZURE_ADVANCED_NIC_TESTS=true
+++ GCE_ZONE=UNSET
+++ OPENSTACK_ADMIN_NET_ID=UNSET
+++ OPENSTACK_SSH_KEY_NAME=UNSET
+++ SRU_VARS_RC=.sru-vars.rc
+++ '[' -f .sru-vars.rc ']'
+++ '[' -f /home/csmith/.sru-vars.rc ']'
+++ . /home/csmith/.sru-vars.rc
++ assert_expected_vars PROPOSED_SCRIPT ENI_NETCFG_FILE NETPLAN_NETCFG_FILE SAMPLE_CLOUDCONFIG PRESERVE_INSTANCE
++ local value=
++ for var in $@
++ eval 'value=$PROPOSED_SCRIPT > /dev/null'
+++ value=setup_proposed.sh
++ '[' -z setup_proposed.sh -o setup_proposed.sh = UNSET ']'
++ for var in $@
++ eval 'value=$ENI_NETCFG_FILE > /dev/null'
+++ value=/etc/network/interfaces.d/50-cloud-init.cfg
++ '[' -z /etc/network/interfaces.d/50-cloud-init.cfg -o /etc/network/interfaces.d/50-cloud-init.cfg = UNSET ']'
++ for var in $@
++ eval 'value=$NETPLAN_NETCFG_FILE > /dev/null'
+++ value=/etc/netplan/50-cloud-init.yaml
++ '[' -z /etc/netplan/50-cloud-init.yaml -o /etc/netplan/50-cloud-init.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$SAMPLE_CLOUDCONFIG > /dev/null'
+++ value=sethostname.yaml
++ '[' -z sethostname.yaml -o sethostname.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$PRESERVE_INSTANCE > /dev/null'
+++ value=false
++ '[' -z false -o false = UNSET ']'
++ parse_args ./1.sh xenial
++ script=./1.sh
++ shift
++ '[' 1 = 0 ']'
++ '[' 1 -ne 0 ']'
++ case "$1" in
++ UBUNTU_RELEASE=xenial
++ NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
++ shift
++ '[' 0 -ne 0 ']'
++ '[' -z xenial ']'
++ create_setup_proposed_script
++ '[' 0 -eq 0 ']'
++ cat
++ case "${UBUNTU_RELEASE}" in
++ ORIG_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ UPGRADE_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ ADDITIONAL_PKG=nplan
++ cat
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ setup xenial sethostname.yaml
++ release=xenial
++ ud_file=sethostname.yaml
++ name=test-sru-xenial
++ lxc stop test-sru-xenial
++ lxc delete test-sru-xenial
+++ cat sethostname.yaml
++ lxc launch ubuntu-daily:xenial test-sru-xenial -c 'user.user-data=#cloud-config
+packages:
+ - nplan'
+Creating test-sru-xenial
+Starting test-sru-xenial
++ reproduce test-sru-xenial
++ name=test-sru-xenial
++ lxc exec test-sru-xenial -- cloud-init status --wait --long
+......................................................................................................................
+status: done
+time: Wed, 24 Jun 2020 21:00:34 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-sru-xenial -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ lxc exec test-sru-xenial rm /etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-xenial rm /etc/netplan/50-cloud-init.yaml
+rm: cannot remove '/etc/netplan/50-cloud-init.yaml': No such file or directory
++ true
++ lxc exec test-sru-xenial -- cloud-init clean --logs --reboot
++ true
++ lxc exec test-sru-xenial -- cloud-init status --wait --long
+Error: Instance is not running
++ sleep 5
+^[[+ lxc exec test-sru-xenial -- cloud-init status --wait --long
+...................................
+status: done
+time: Wed, 24 Jun 2020 21:00:55 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-xenial -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:00:43,217 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:00:43,217 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:00:43,217 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-xenial found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-xenial found Selected renderer 'eni' from priority list: None
++ verify test-sru-xenial
++ name=test-sru-xenial
++ lxc file push setup_proposed.sh test-sru-xenial/
++ '[' xenial = eoan -o xenial = bionic ']'
++ lxc exec test-sru-xenial -- bash /setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Hit:1 http://security.ubuntu.com/ubuntu xenial-security InRelease
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu xenial-backports InRelease
+Get:5 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [43.1 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [18.3 kB]
+Fetched 322 kB in 6s (47.7 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 17 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Fetched 425 kB in 0s (445 kB/s)
+Preconfiguring packages ...
+(Reading database ... 25779 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ lxc exec test-sru-xenial rm /etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-xenial rm /etc/netplan/50-cloud-init.yaml
+rm: cannot remove '/etc/netplan/50-cloud-init.yaml': No such file or directory
++ true
++ lxc exec test-sru-xenial -- cloud-init clean --logs --reboot
++ true
++ sleep 3
++ lxc exec test-sru-xenial -- cloud-init status --wait --long
+................................
+status: done
+time: Wed, 24 Jun 2020 21:01:22 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-xenial -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:01:14,274 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:01:14,274 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:01:14,274 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-xenial found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-xenial found Selected renderer 'eni' from priority list: None
++ '[' xenial = eoan -o xenial = bionic ']'
++ lxc exec test-sru-xenial -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ '[' false = false ']'
++ echo 'Teardown of test-sru-xenial'
+Teardown of test-sru-xenial
++ lxc delete --force test-sru-xenial
++ echo '=== END ' xenial
+=== END  xenial
++ SRU_VARS=./sru-scripts/sru-vars.template
++ '[' '!' -f ./sru-scripts/sru-vars.template ']'
++ . ./sru-scripts/sru-vars.template
+++ PRESERVE_INSTANCE=false
+++ UBUNTU_RELEASE=
+++ LP_USER=UNSET
+++ PROPOSED_SCRIPT=setup_proposed.sh
+++ USE_DEV_PPA=0
+++ ENI_NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
+++ NETPLAN_NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
+++ SAMPLE_CLOUDCONFIG=sethostname.yaml
+++ SSH_KEY=/home/csmith/.ssh/id_rsa.pub
+++ SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+++ AZURE_REGION=UNSET
+++ AZURE_VNET_NAME=UNSET
+++ AZURE_NETWORK_SECURITY_GROUP=UNSET
+++ AZURE_NIC_NAME=UNSET
+++ AZURE_RESOURCE_GROUP=UNSET
+++ AZURE_BOOT_DIAG=UNSET
+++ AZURE_ADVANCED_NIC_TESTS=true
+++ GCE_ZONE=UNSET
+++ OPENSTACK_ADMIN_NET_ID=UNSET
+++ OPENSTACK_SSH_KEY_NAME=UNSET
+++ SRU_VARS_RC=.sru-vars.rc
+++ '[' -f .sru-vars.rc ']'
+++ '[' -f /home/csmith/.sru-vars.rc ']'
+++ . /home/csmith/.sru-vars.rc
++ assert_expected_vars PROPOSED_SCRIPT ENI_NETCFG_FILE NETPLAN_NETCFG_FILE SAMPLE_CLOUDCONFIG PRESERVE_INSTANCE
++ local value=
++ for var in $@
++ eval 'value=$PROPOSED_SCRIPT > /dev/null'
+++ value=setup_proposed.sh
++ '[' -z setup_proposed.sh -o setup_proposed.sh = UNSET ']'
++ for var in $@
++ eval 'value=$ENI_NETCFG_FILE > /dev/null'
+++ value=/etc/network/interfaces.d/50-cloud-init.cfg
++ '[' -z /etc/network/interfaces.d/50-cloud-init.cfg -o /etc/network/interfaces.d/50-cloud-init.cfg = UNSET ']'
++ for var in $@
++ eval 'value=$NETPLAN_NETCFG_FILE > /dev/null'
+++ value=/etc/netplan/50-cloud-init.yaml
++ '[' -z /etc/netplan/50-cloud-init.yaml -o /etc/netplan/50-cloud-init.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$SAMPLE_CLOUDCONFIG > /dev/null'
+++ value=sethostname.yaml
++ '[' -z sethostname.yaml -o sethostname.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$PRESERVE_INSTANCE > /dev/null'
+++ value=false
++ '[' -z false -o false = UNSET ']'
++ parse_args ./1.sh bionic
++ script=./1.sh
++ shift
++ '[' 1 = 0 ']'
++ '[' 1 -ne 0 ']'
++ case "$1" in
++ UBUNTU_RELEASE=bionic
++ NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
++ shift
++ '[' 0 -ne 0 ']'
++ '[' -z bionic ']'
++ create_setup_proposed_script
++ '[' 0 -eq 0 ']'
++ cat
++ case "${UBUNTU_RELEASE}" in
++ ORIG_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ UPGRADE_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ ADDITIONAL_PKG=ifupdown
++ cat
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ setup bionic sethostname.yaml
++ release=bionic
++ ud_file=sethostname.yaml
++ name=test-sru-bionic
++ lxc stop test-sru-bionic
+Error: not found
++ true
++ lxc delete test-sru-bionic
+Error: not found
++ true
+++ cat sethostname.yaml
++ lxc launch ubuntu-daily:bionic test-sru-bionic -c 'user.user-data=#cloud-config
+packages:
+ - ifupdown'
+Creating test-sru-bionic
+Starting test-sru-bionic
++ reproduce test-sru-bionic
++ name=test-sru-bionic
++ lxc exec test-sru-bionic -- cloud-init status --wait --long
+.............................................................................................................................
+status: done
+time: Wed, 24 Jun 2020 21:02:01 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-sru-bionic -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
++ lxc exec test-sru-bionic rm /etc/network/interfaces.d/50-cloud-init.cfg
+rm: cannot remove '/etc/network/interfaces.d/50-cloud-init.cfg': No such file or directory
++ true
++ lxc exec test-sru-bionic rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-bionic -- cloud-init clean --logs --reboot
++ true
++ lxc exec test-sru-bionic -- cloud-init status --wait --long
+Error: Instance is not running
++ sleep 5
++ lxc exec test-sru-bionic -- cloud-init status --wait --long
+........
+status: done
+time: Wed, 24 Jun 2020 21:02:13 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-bionic -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:02:07,562 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:02:07,562 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:02:07,562 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-bionic found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-bionic found Selected renderer 'eni' from priority list: None
++ verify test-sru-bionic
++ name=test-sru-bionic
++ lxc file push setup_proposed.sh test-sru-bionic/
++ '[' bionic = eoan -o bionic = bionic ']'
++ lxc exec test-sru-bionic -- ping 8.8.8.8
+connect: Network is unreachable
++ echo 'SUCCESS: expect known broken network because eni got prioritized LP:1867029'
+SUCCESS: expect known broken network because eni got prioritized LP:1867029
++ fix_missing_netplan_cfg test-sru-bionic
++ name=test-sru-bionic
++ cat
++ lxc file push 50-cloud-init.yaml test-sru-bionic/etc/netplan/
++ lxc exec test-sru-bionic netplan apply
++ lxc exec test-sru-bionic -- bash /setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Hit:1 http://security.ubuntu.com/ubuntu bionic-security InRelease
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu bionic-backports InRelease
+Get:5 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [103 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [37.6 kB]
+Fetched 383 kB in 15s (25.9 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 16 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Fetched 422 kB in 2s (188 kB/s)
+Preconfiguring packages ...
+(Reading database ... 28753 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
++ lxc exec test-sru-bionic rm /etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-bionic rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-bionic -- cloud-init clean --logs --reboot
++ true
++ sleep 3
++ lxc exec test-sru-bionic -- cloud-init status --wait --long
+....................
+status: done
+time: Wed, 24 Jun 2020 21:02:50 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-bionic -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:02:45,390 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:02:45,390 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:02:45,390 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-bionic found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-bionic found Selected renderer 'eni' from priority list: None
++ '[' bionic = eoan -o bionic = bionic ']'
++ NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-bionic -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ '[' false = false ']'
++ echo 'Teardown of test-sru-bionic'
+Teardown of test-sru-bionic
++ lxc delete --force test-sru-bionic
++ echo '=== END ' bionic
+=== END  bionic
++ SRU_VARS=./sru-scripts/sru-vars.template
++ '[' '!' -f ./sru-scripts/sru-vars.template ']'
++ . ./sru-scripts/sru-vars.template
+++ PRESERVE_INSTANCE=false
+++ UBUNTU_RELEASE=
+++ LP_USER=UNSET
+++ PROPOSED_SCRIPT=setup_proposed.sh
+++ USE_DEV_PPA=0
+++ ENI_NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
+++ NETPLAN_NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
+++ SAMPLE_CLOUDCONFIG=sethostname.yaml
+++ SSH_KEY=/home/csmith/.ssh/id_rsa.pub
+++ SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+++ AZURE_REGION=UNSET
+++ AZURE_VNET_NAME=UNSET
+++ AZURE_NETWORK_SECURITY_GROUP=UNSET
+++ AZURE_NIC_NAME=UNSET
+++ AZURE_RESOURCE_GROUP=UNSET
+++ AZURE_BOOT_DIAG=UNSET
+++ AZURE_ADVANCED_NIC_TESTS=true
+++ GCE_ZONE=UNSET
+++ OPENSTACK_ADMIN_NET_ID=UNSET
+++ OPENSTACK_SSH_KEY_NAME=UNSET
+++ SRU_VARS_RC=.sru-vars.rc
+++ '[' -f .sru-vars.rc ']'
+++ '[' -f /home/csmith/.sru-vars.rc ']'
+++ . /home/csmith/.sru-vars.rc
++ assert_expected_vars PROPOSED_SCRIPT ENI_NETCFG_FILE NETPLAN_NETCFG_FILE SAMPLE_CLOUDCONFIG PRESERVE_INSTANCE
++ local value=
++ for var in $@
++ eval 'value=$PROPOSED_SCRIPT > /dev/null'
+++ value=setup_proposed.sh
++ '[' -z setup_proposed.sh -o setup_proposed.sh = UNSET ']'
++ for var in $@
++ eval 'value=$ENI_NETCFG_FILE > /dev/null'
+++ value=/etc/network/interfaces.d/50-cloud-init.cfg
++ '[' -z /etc/network/interfaces.d/50-cloud-init.cfg -o /etc/network/interfaces.d/50-cloud-init.cfg = UNSET ']'
++ for var in $@
++ eval 'value=$NETPLAN_NETCFG_FILE > /dev/null'
+++ value=/etc/netplan/50-cloud-init.yaml
++ '[' -z /etc/netplan/50-cloud-init.yaml -o /etc/netplan/50-cloud-init.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$SAMPLE_CLOUDCONFIG > /dev/null'
+++ value=sethostname.yaml
++ '[' -z sethostname.yaml -o sethostname.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$PRESERVE_INSTANCE > /dev/null'
+++ value=false
++ '[' -z false -o false = UNSET ']'
++ parse_args ./1.sh eoan
++ script=./1.sh
++ shift
++ '[' 1 = 0 ']'
++ '[' 1 -ne 0 ']'
++ case "$1" in
++ UBUNTU_RELEASE=eoan
++ NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
++ shift
++ '[' 0 -ne 0 ']'
++ '[' -z eoan ']'
++ create_setup_proposed_script
++ '[' 0 -eq 0 ']'
++ cat
++ case "${UBUNTU_RELEASE}" in
++ ORIG_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ UPGRADE_EXPECTED_LOG='Selected renderer '\''eni'\'' from priority list: None'
++ ADDITIONAL_PKG=ifupdown
++ cat
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ setup eoan sethostname.yaml
++ release=eoan
++ ud_file=sethostname.yaml
++ name=test-sru-eoan
++ lxc stop test-sru-eoan
+Error: not found
++ true
++ lxc delete test-sru-eoan
+Error: not found
++ true
+++ cat sethostname.yaml
++ lxc launch ubuntu-daily:eoan test-sru-eoan -c 'user.user-data=#cloud-config
+packages:
+ - ifupdown'
+Creating test-sru-eoan
+Starting test-sru-eoan                         
++ reproduce test-sru-eoan
++ name=test-sru-eoan
++ lxc exec test-sru-eoan -- cloud-init status --wait --long
+................................................................................................................................................................................
+status: done
+time: Wed, 24 Jun 2020 21:16:06 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-sru-eoan -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
++ lxc exec test-sru-eoan rm /etc/network/interfaces.d/50-cloud-init.cfg
+rm: cannot remove '/etc/network/interfaces.d/50-cloud-init.cfg': No such file or directory
++ true
++ lxc exec test-sru-eoan rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-eoan -- cloud-init clean --logs --reboot
++ lxc exec test-sru-eoan -- cloud-init status --wait --long
++ sleep 5
++ lxc exec test-sru-eoan -- cloud-init status --wait --long
+.................................
+status: done
+time: Wed, 24 Jun 2020 21:16:22 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-eoan -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:16:15,615 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:16:15,615 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:16:15,615 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-eoan found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-eoan found Selected renderer 'eni' from priority list: None
++ verify test-sru-eoan
++ name=test-sru-eoan
++ lxc file push setup_proposed.sh test-sru-eoan/
++ '[' eoan = eoan -o eoan = bionic ']'
++ lxc exec test-sru-eoan -- ping 8.8.8.8
+ping: connect: Network is unreachable
++ echo 'SUCCESS: expect known broken network because eni got prioritized LP:1867029'
+SUCCESS: expect known broken network because eni got prioritized LP:1867029
++ fix_missing_netplan_cfg test-sru-eoan
++ name=test-sru-eoan
++ cat
++ lxc file push 50-cloud-init.yaml test-sru-eoan/etc/netplan/
++ lxc exec test-sru-eoan netplan apply
++ lxc exec test-sru-eoan -- bash /setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu eoan-proposed main
+Err:1 http://security.ubuntu.com/ubuntu eoan-security InRelease
+  Temporary failure resolving 'security.ubuntu.com'
+Err:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+  Temporary failure resolving 'archive.ubuntu.com'
+Hit:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease
+Hit:4 http://archive.ubuntu.com/ubuntu eoan-backports InRelease
+Get:5 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [38.3 kB]
+Get:7 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [16.5 kB]
+Get:8 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1284 B]
+Fetched 163 kB in 3s (59.2 kB/s)
+Reading package lists...
+W: Failed to fetch http://archive.ubuntu.com/ubuntu/dists/eoan/InRelease  Temporary failure resolving 'archive.ubuntu.com'
+W: Failed to fetch http://security.ubuntu.com/ubuntu/dists/eoan-security/InRelease  Temporary failure resolving 'security.ubuntu.com'
+W: Some index files failed to download. They have been ignored, or old ones used instead.
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 23 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Fetched 420 kB in 2s (222 kB/s)
+Preconfiguring packages ...
+(Reading database ... 30122 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
++ lxc exec test-sru-eoan rm /etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-eoan rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-eoan -- cloud-init clean --logs --reboot
++ sleep 3
++ lxc exec test-sru-eoan -- cloud-init status --wait --long
+...............................
+status: done
+time: Wed, 24 Jun 2020 21:16:51 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-eoan -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:16:44,473 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None'
++ '[' '2020-06-24 21:16:44,473 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:16:44,473 - __init__.py[DEBUG]: Selected renderer '\''eni'\'' from priority list: None' ']'
++ echo 'SUCCESS: test-sru-eoan found Selected renderer '\''eni'\'' from priority list: None'
+SUCCESS: test-sru-eoan found Selected renderer 'eni' from priority list: None
++ '[' eoan = eoan -o eoan = bionic ']'
++ NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
++ lxc exec test-sru-eoan -- cat /etc/network/interfaces.d/50-cloud-init.cfg
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto eth0
+iface eth0 inet dhcp
++ '[' false = false ']'
++ echo 'Teardown of test-sru-eoan'
+Teardown of test-sru-eoan
++ lxc delete --force test-sru-eoan
++ echo '=== END ' eoan
+=== END  eoan
++ SRU_VARS=./sru-scripts/sru-vars.template
++ '[' '!' -f ./sru-scripts/sru-vars.template ']'
++ . ./sru-scripts/sru-vars.template
+++ PRESERVE_INSTANCE=false
+++ UBUNTU_RELEASE=
+++ LP_USER=UNSET
+++ PROPOSED_SCRIPT=setup_proposed.sh
+++ USE_DEV_PPA=0
+++ ENI_NETCFG_FILE=/etc/network/interfaces.d/50-cloud-init.cfg
+++ NETPLAN_NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
+++ SAMPLE_CLOUDCONFIG=sethostname.yaml
+++ SSH_KEY=/home/csmith/.ssh/id_rsa.pub
+++ SSHOPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+++ AZURE_REGION=UNSET
+++ AZURE_VNET_NAME=UNSET
+++ AZURE_NETWORK_SECURITY_GROUP=UNSET
+++ AZURE_NIC_NAME=UNSET
+++ AZURE_RESOURCE_GROUP=UNSET
+++ AZURE_BOOT_DIAG=UNSET
+++ AZURE_ADVANCED_NIC_TESTS=true
+++ GCE_ZONE=UNSET
+++ OPENSTACK_ADMIN_NET_ID=UNSET
+++ OPENSTACK_SSH_KEY_NAME=UNSET
+++ SRU_VARS_RC=.sru-vars.rc
+++ '[' -f .sru-vars.rc ']'
+++ '[' -f /home/csmith/.sru-vars.rc ']'
+++ . /home/csmith/.sru-vars.rc
++ assert_expected_vars PROPOSED_SCRIPT ENI_NETCFG_FILE NETPLAN_NETCFG_FILE SAMPLE_CLOUDCONFIG PRESERVE_INSTANCE
++ local value=
++ for var in $@
++ eval 'value=$PROPOSED_SCRIPT > /dev/null'
+++ value=setup_proposed.sh
++ '[' -z setup_proposed.sh -o setup_proposed.sh = UNSET ']'
++ for var in $@
++ eval 'value=$ENI_NETCFG_FILE > /dev/null'
+++ value=/etc/network/interfaces.d/50-cloud-init.cfg
++ '[' -z /etc/network/interfaces.d/50-cloud-init.cfg -o /etc/network/interfaces.d/50-cloud-init.cfg = UNSET ']'
++ for var in $@
++ eval 'value=$NETPLAN_NETCFG_FILE > /dev/null'
+++ value=/etc/netplan/50-cloud-init.yaml
++ '[' -z /etc/netplan/50-cloud-init.yaml -o /etc/netplan/50-cloud-init.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$SAMPLE_CLOUDCONFIG > /dev/null'
+++ value=sethostname.yaml
++ '[' -z sethostname.yaml -o sethostname.yaml = UNSET ']'
++ for var in $@
++ eval 'value=$PRESERVE_INSTANCE > /dev/null'
+++ value=false
++ '[' -z false -o false = UNSET ']'
++ parse_args ./1.sh focal
++ script=./1.sh
++ shift
++ '[' 1 = 0 ']'
++ '[' 1 -ne 0 ']'
++ case "$1" in
++ UBUNTU_RELEASE=focal
++ NETCFG_FILE=/etc/netplan/50-cloud-init.yaml
++ shift
++ '[' 0 -ne 0 ']'
++ '[' -z focal ']'
++ create_setup_proposed_script
++ '[' 0 -eq 0 ']'
++ cat
++ case "${UBUNTU_RELEASE}" in
++ ORIG_EXPECTED_LOG='Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\''\]'
++ UPGRADE_EXPECTED_LOG='Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\''\]'
++ ADDITIONAL_PKG=ifupdown
++ cat
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ setup focal sethostname.yaml
++ release=focal
++ ud_file=sethostname.yaml
++ name=test-sru-focal
++ lxc stop test-sru-focal
+Error: The container is already stopped
++ true
++ lxc delete test-sru-focal
+++ cat sethostname.yaml
++ lxc launch ubuntu-daily:focal test-sru-focal -c 'user.user-data=#cloud-config
+packages:
+ - ifupdown'
+Creating test-sru-focal
+Starting test-sru-focal
++ reproduce test-sru-focal
++ name=test-sru-focal
++ lxc exec test-sru-focal -- cloud-init status --wait --long
+......................................................................................................................................................................................................
+status: done
+time: Wed, 24 Jun 2020 21:17:55 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-sru-focal -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
++ lxc exec test-sru-focal rm /etc/network/interfaces.d/50-cloud-init.cfg
+rm: cannot remove '/etc/network/interfaces.d/50-cloud-init.cfg': No such file or directory
++ true
++ lxc exec test-sru-focal rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-focal -- cloud-init clean --logs --reboot
++ lxc exec test-sru-focal -- cloud-init status --wait --long
+Error: Failed to retrieve PID of executing child process
++ sleep 5
++ lxc exec test-sru-focal -- cloud-init status --wait --long
+......................................................
+status: done
+time: Wed, 24 Jun 2020 21:18:20 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-focal -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:18:03,450 - __init__.py[DEBUG]: Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\'']'
++ '[' '2020-06-24 21:18:03,450 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:18:03,450 - __init__.py[DEBUG]: Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\'']' ']'
++ echo 'SUCCESS: test-sru-focal found Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\''\]'
+SUCCESS: test-sru-focal found Selected renderer 'netplan' from priority list: ['netplan', 'eni', 'sysconfig'\]
++ verify test-sru-focal
++ name=test-sru-focal
++ lxc file push setup_proposed.sh test-sru-focal/
++ '[' focal = eoan -o focal = bionic ']'
++ lxc exec test-sru-focal -- bash /setup_proposed.sh
+deb http://archive.ubuntu.com/ubuntu focal-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Hit:2 http://archive.ubuntu.com/ubuntu focal-updates InRelease
+Hit:3 http://archive.ubuntu.com/ubuntu focal-backports InRelease
+Get:4 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:5 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [97.8 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [39.8 kB]
+Get:7 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [2552 B]
+Hit:8 http://security.ubuntu.com/ubuntu focal-security InRelease
+Fetched 405 kB in 6s (71.5 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 26 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Fetched 416 kB in 2s (252 kB/s)
+Preconfiguring packages ...
+(Reading database ... 31291 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
++ lxc exec test-sru-focal rm /etc/network/interfaces.d/50-cloud-init.cfg
+rm: cannot remove '/etc/network/interfaces.d/50-cloud-init.cfg': No such file or directory
++ true
++ lxc exec test-sru-focal rm /etc/netplan/50-cloud-init.yaml
++ lxc exec test-sru-focal -- cloud-init clean --logs --reboot
++ sleep 3
++ lxc exec test-sru-focal -- cloud-init status --wait --long
+......................................................................
+status: done
+time: Wed, 24 Jun 2020 21:19:02 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+++ lxc exec test-sru-focal -- grep 'Selected renderer' /var/log/cloud-init.log
++ renderer_log='2020-06-24 21:18:44,972 - __init__.py[DEBUG]: Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\'']'
++ '[' '2020-06-24 21:18:44,972 - __init__.py[DEBUG]: ' '!=' '2020-06-24 21:18:44,972 - __init__.py[DEBUG]: Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\'']' ']'
++ echo 'SUCCESS: test-sru-focal found Selected renderer '\''netplan'\'' from priority list: ['\''netplan'\'', '\''eni'\'', '\''sysconfig'\''\]'
+SUCCESS: test-sru-focal found Selected renderer 'netplan' from priority list: ['netplan', 'eni', 'sysconfig'\]
++ '[' focal = eoan -o focal = bionic ']'
++ lxc exec test-sru-focal -- cat /etc/netplan/50-cloud-init.yaml
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        eth0:
+            dhcp4: true
++ '[' false = false ']'
++ echo 'Teardown of test-sru-focal'
+Teardown of test-sru-focal
++ lxc delete --force test-sru-focal
++ echo '=== END ' focal
+=== END  focal
+
+
