@@ -1,0 +1,1904 @@
+=== Begin SRU Template ===
+[Impact]
+Users will now be able to disable network config by passing the 'network-config=disabled'
+through a kernel cmdline argument. Right now, we must pass the following kernel command
+to disable networking: 'network-config={"config": "disabled"}', where '{"config": "disabled"}
+must be encoded in base64.
+
+[Test Case]
+
+```
+#!/bin/sh
+set -x
+# Manually deploy on a lxc container
+
+CMD_ARGUMENT="network-config=disabled"
+#This is a base64 string representing {"config": "disabled"}
+CMD_ARGUMENT_BASE64="network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=="
+#This is a base64 string representing {"config": "disabled'}
+CMD_ARGUMENT_BASE64_INVALID="network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ=="
+CMD_ARGUMENT_INVALID="network-config=foo"
+
+restart_cloudinit() {
+   name=$1
+
+   lxc exec $name -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+   lxc exec $name -- cloud-init clean --logs
+   lxc exec $name -- cloud-init init --local
+   lxc exec $name -- cloud-init init > /dev/null
+   lxc exec $name -- cloud-init modules --mode=config
+   lxc exec $name -- cloud-init modules --mode=final
+   lxc exec $name -- cloud-init status --wait --long
+}
+
+reset_cmd_line_variable() {
+   name=$1
+   cmd_line_var=$2
+
+   lxc stop $name
+   lxc config set $name environment.DEBUG_PROC_CMDLINE="$cmd_line_var"
+   lxc start $name
+   lxc exec $name -- cloud-init status --wait --long
+   lxc exec $name -- python3 -c "import os; print(os.environ.get('DEBUG_PROC_CMDLINE'))"
+}
+
+check_network_disabled_in_log() {
+   name=$1
+
+   expected_output="network config is disabled by cmdline"
+   actual_output=$(lxc exec $name -- cat /var/log/cloud-init.log | grep -o -m 1 "$expected_output" || echo FAILURE)
+
+   if [ "$expected_output" = "$actual_output" ]; then
+       echo "SUCCESS: $series show network as disabled in cloud-init log"
+   else
+       echo "FAILURE: $series did not show network as disabled in cloud-init log"
+   fi
+}
+
+check_cloudinit_status() {
+   name=$1
+   shift
+   expected_status=$@
+
+   actual_status=$(lxc exec $name -- cloud-init status)
+
+   if [ "$expected_status" = "$actual_status" ]; then
+       echo "SUCCESS: $series cloud-init finished with expected status: $expected_status"
+   else
+       echo "FAILURE: $series cloud-init did not finish with expected statuss"
+   fi
+}
+
+check_error_in_cloudinit_status() {
+   name=$1
+   shift
+   expected_error=$@
+
+   actual_error=$(lxc exec $name -- cloud-init status --long | grep -o -m 1 "$expected_error" || echo FAILURE)
+
+   if [ "$expected_error" = "$actual_error" ]; then
+       echo "SUCCESS: $series could not parse network config provided by $CMD_ARGUMENT"
+   else
+       echo "FAILURE: $series could parse network config provided by $CMD_ARGUMENT"
+   fi
+}
+
+check_error_in_cloudinit_log() {
+   name=$1
+   shift
+   expected_error=$@
+
+   actual_error=$(lxc exec $name -- cat /var/log/cloud-init.log | grep -o -m 1 "$expected_error" || echo FAILURE)
+
+   if [ "$expected_error" = "$actual_error" ]; then
+       echo "SUCCESS: $series has found '$expected_error' in /var/log/cloud-init.log"
+   else
+       echo "FAILURE: $series has not found '$expected_error' in /var/log/cloud-init.log"
+   fi
+}
+
+reproduce() {
+   series=$1
+   name=test-$SERIES-reproduce
+
+   lxc delete $name --force 2> /dev/null
+   lxc init ubuntu-daily:$SERIES $name
+   lxc config set $name environment.DEBUG_PROC_CMDLINE="$CMD_ARGUMENT"
+   lxc start $name
+   lxc exec $name -- cloud-init status --wait --long
+
+   restart_cloudinit $name
+
+   echo "Testing $CMD_ARGUMENT"
+   if [ "$series" = "focal" ]; then
+       expected_status="status: done"
+   else
+       expected_status="status: error"
+   fi
+   check_cloudinit_status $name $expected_status
+
+   if [ "$series" = "focal" ]; then
+       check_network_disabled_in_log $name
+   else
+       expected_error="utf-8' codec can't decode byte 0x9d in position"
+       check_error_in_cloudinit_log $name $expected_error
+   fi
+
+   reset_cmd_line_variable $name $CMD_ARGUMENT_BASE64
+   restart_cloudinit $name
+   echo "Testing $CMD_ARGUMENT_BASE64"
+
+   expected_status="status: done"
+   check_cloudinit_status $name $expected_status
+
+   check_network_disabled_in_log $name
+}
+
+verify() {
+   series=$1
+   ref=$SERIES-proposed
+   name=test-$SERIES-proposed
+
+   lxc delete $name --force 2> /dev/null
+   lxc-proposed-snapshot --proposed --upgrade cloud-init --publish $SERIES $ref
+   lxc init $ref $name
+   lxc config set $name environment.DEBUG_PROC_CMDLINE="$CMD_ARGUMENT"
+   lxc start $name
+   lxc exec $name -- cloud-init status --wait --long
+
+   restart_cloudinit $name
+   echo "Testing $CMD_ARGUMENT"
+
+   expected_status="status: done"
+   check_cloudinit_status $name $expected_status
+
+   check_network_disabled_in_log $name
+
+   reset_cmd_line_variable $name $CMD_ARGUMENT_BASE64
+   restart_cloudinit $name
+   echo "Testing $CMD_ARGUMENT_BASE64"
+
+   expected_status="status: done"
+   check_cloudinit_status $name $expected_status
+   check_network_disabled_in_log $name
+
+   reset_cmd_line_variable $name $CMD_ARGUMENT_BASE64_INVALID
+   restart_cloudinit $name
+   echo "Testing $CMD_ARGUMENT_BASE64_INVALID"
+
+   expected_status="status: done"
+   check_cloudinit_status $name $expected_status
+
+   expected_error="Failed loading yaml blob"
+   check_error_in_cloudinit_log $name $expected_error
+
+   reset_cmd_line_variable $name $CMD_ARGUMENT_INVALID
+   restart_cloudinit $name
+   echo "Testing $CMD_ARGUMENT_INVALID"
+
+   expected_status="status: done"
+   check_cloudinit_status $name $expected_status
+
+   expected_error="Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo."
+   check_error_in_cloudinit_log $name $expected_error
+}
+
+for SERIES in bionic eoan focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   reproduce $SERIES
+   verify $SERIES
+   echo '=== END ' $SERIES
+done
+```
+
+[Regression Potential]
+Since we are not altering the existing way to disable network through kernel cmdline, we do not
+believe this new feature may pose a risk of regression.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
++ CMD_ARGUMENT=network-config=disabled
++ CMD_ARGUMENT_BASE64=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ CMD_ARGUMENT_BASE64_INVALID=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ CMD_ARGUMENT_INVALID=network-config=foo
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' bionic
+=== BEGIN  bionic
++ reproduce bionic
++ series=bionic
++ name=test-bionic-reproduce
++ lxc delete test-bionic-reproduce --force
++ lxc init ubuntu-daily:bionic test-bionic-reproduce
+Creating test-bionic-reproduce
++ lxc config set test-bionic-reproduce environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+......................................
+status: done
+time: Fri, 19 Jun 2020 18:53:35 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-bionic-reproduce
++ name=test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-reproduce -- cloud-init clean --logs
++ lxc exec test-bionic-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:53:36 +0000. Up 11.82 seconds.
+2020-06-19 18:53:37,031 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 680, in apply_network_config
+    netcfg, src = self._find_networking_config()
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 639, in _find_networking_config
+    NetworkConfigSource.cmdline: cmdline.read_kernel_cmdline_config(),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/cmdline.py", line 273, in read_kernel_cmdline_config
+    return util.load_yaml(_b64dgz(data64))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 955, in load_yaml
+    blob = decode_binary(blob)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 146, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+------------------------------------------------------------
++ lxc exec test-bionic-reproduce -- cloud-init init
++ lxc exec test-bionic-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:53:38 +0000. Up 13.17 seconds.
++ lxc exec test-bionic-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:53:39 +0000. Up 13.95 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:53:39 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 14.06 seconds
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+
+status: error
+time: Fri, 19 Jun 2020 18:53:39 +0000
+detail:
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ '[' bionic = focal ']'
++ expected_status='status: error'
++ check_cloudinit_status test-bionic-reproduce status: error
++ name=test-bionic-reproduce
++ shift
++ expected_status='status: error'
+++ lxc exec test-bionic-reproduce -- cloud-init status
++ actual_status='status: error'
++ '[' 'status: error' = 'status: error' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: error'
+SUCCESS: bionic cloud-init finished with expected status: status: error
++ '[' bionic = focal ']'
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ check_error_in_cloudinit_log test-bionic-reproduce 'utf-8'\''' codec 'can'\''t' decode byte 0x9d in position
++ name=test-bionic-reproduce
++ shift
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
+++ lxc exec test-bionic-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ actual_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ '[' 'utf-8'\'' codec can'\''t decode byte 0x9d in position' = 'utf-8'\'' codec can'\''t decode byte 0x9d in position' ']'
++ echo 'SUCCESS: bionic has found '\''utf-8'\'' codec can'\''t decode byte 0x9d in position'\'' in /var/log/cloud-init.log'
+SUCCESS: bionic has found 'utf-8' codec can't decode byte 0x9d in position' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-bionic-reproduce network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-bionic-reproduce
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-bionic-reproduce
++ lxc config set test-bionic-reproduce environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+..............
+status: done
+time: Fri, 19 Jun 2020 18:53:46 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic-reproduce -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-bionic-reproduce
++ name=test-bionic-reproduce
++ lxc exec test-bionic-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-reproduce -- cloud-init clean --logs
++ lxc exec test-bionic-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:53:47 +0000. Up 5.70 seconds.
++ lxc exec test-bionic-reproduce -- cloud-init init
++ lxc exec test-bionic-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:53:49 +0000. Up 7.42 seconds.
++ lxc exec test-bionic-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:53:50 +0000. Up 8.26 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:53:50 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 8.38 seconds
++ lxc exec test-bionic-reproduce -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:53:50 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-bionic-reproduce status: done
++ name=test-bionic-reproduce
++ shift
++ expected_status='status: done'
+++ lxc exec test-bionic-reproduce -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: done'
+SUCCESS: bionic cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-bionic-reproduce
++ name=test-bionic-reproduce
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-bionic-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: bionic show network as disabled in cloud-init log'
+SUCCESS: bionic show network as disabled in cloud-init log
++ verify bionic
++ series=bionic
++ ref=bionic-proposed
++ name=test-bionic-proposed
++ lxc delete test-bionic-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish bionic bionic-proposed
+Creating bionic-proposed-233123003
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:5 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [673 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [223 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [7808 B]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2856 B]
+Get:11 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [969 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1085 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [337 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [15.9 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6420 B]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7484 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4436 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [87.0 kB]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [32.9 kB]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/universe amd64 Packages [23.3 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/universe Translation-en [12.8 kB]
+Fetched 17.8 MB in 20s (901 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 10 not upgraded.
+Need to get 422 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preconfiguring packages ...
+Fetched 422 kB in 2s (224 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 28716 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 18.71MB (18.71MB/s)                                                     Publishing instance: Image pack: 45.94MB (22.96MB/s)                                                     Publishing instance: Image pack: 64.62MB (21.53MB/s)                                                     Publishing instance: Image pack: 83.67MB (20.91MB/s)Publishing instance: Image pack: 100.53MB (20.10MB/s)                                                      Publishing instance: Image pack: 118.37MB (19.72MB/s)                                                      Publishing instance: Image pack: 136.84MB (19.54MB/s)                                                      Publishing instance: Image pack: 155.88MB (19.47MB/s)                                                      Publishing instance: Image pack: 176.12MB (19.56MB/s)                                                      Publishing instance: Image pack: 191.60MB (19.15MB/s)                                                      Publishing instance: Image pack: 208.43MB (18.93MB/s)                                                      Publishing instance: Image pack: 228.59MB (19.04MB/s)                                                      Publishing instance: Image pack: 257.46MB (19.79MB/s)                                                      Publishing instance: Image pack: 283.57MB (20.24MB/s)                                                      Publishing instance: Image pack: 302.83MB (20.17MB/s)                                                      Publishing instance: Image pack: 322.14MB (20.12MB/s)                                                      Publishing instance: Image pack: 344.80MB (20.27MB/s)                                                      Publishing instance: Image pack: 362.65MB (20.13MB/s)                                                      Publishing instance: Image pack: 383.21MB (20.16MB/s)                                                      Publishing instance: Image pack: 404.69MB (20.22MB/s)                                                      Publishing instance: Image pack: 423.81MB (20.17MB/s)                                                      Publishing instance: Image pack: 452.08MB (20.54MB/s)                                                      Publishing instance: Image pack: 471.80MB (20.50MB/s)                                                      Publishing instance: Image pack: 495.67MB (20.64MB/s)                                                      Publishing instance: Image pack: 520.31MB (20.80MB/s)                                                      Publishing instance: Image pack: 537.35MB (20.65MB/s)                                                      Publishing instance: Image pack: 561.60MB (20.79MB/s)                                                      Publishing instance: Image pack: 584.02MB (20.84MB/s)                                                      Publishing instance: Image pack: 604.16MB (20.82MB/s)                                                      Publishing instance: Image pack: 622.73MB (20.75MB/s)                                                      Publishing instance: Image pack: 639.28MB (20.61MB/s)                                                      Publishing instance: Image pack: 656.81MB (20.51MB/s)                                                      Publishing instance: Image pack: 673.00MB (20.38MB/s)                                                      Publishing instance: Image pack: 689.81MB (20.27MB/s)                                                      Publishing instance: Image pack: 724.52MB (20.69MB/s)                                                      Publishing instance: Image pack: 765.70MB (21.25MB/s)                                                      Publishing instance: Image pack: 800.87MB (21.63MB/s)                                                      Publishing instance: Image pack: 836.77MB (22.01MB/s)                                                      Instance published with fingerprint: a06d18e8806d07b925654c63d18f42852faa3374825586113f2aaf30181995ab
++ lxc init bionic-proposed test-bionic-proposed
+Creating test-bionic-proposed
+Retrieving image: Unpack: 1% (61.97MB/s)                                         Retrieving image: Unpack: 2% (57.25MB/s)                                         Retrieving image: Unpack: 3% (41.71MB/s)                                         Retrieving image: Unpack: 4% (37.90MB/s)                                         Retrieving image: Unpack: 5% (37.99MB/s)                                         Retrieving image: Unpack: 6% (38.54MB/s)                                         Retrieving image: Unpack: 7% (39.77MB/s)                                         Retrieving image: Unpack: 8% (41.01MB/s)                                         Retrieving image: Unpack: 9% (41.49MB/s)Retrieving image: Unpack: 10% (41.44MB/s)                                          Retrieving image: Unpack: 10% (41.42MB/s)                                          Retrieving image: Unpack: 11% (41.42MB/s)                                          Retrieving image: Unpack: 12% (41.66MB/s)                                          Retrieving image: Unpack: 13% (42.21MB/s)                                          Retrieving image: Unpack: 14% (42.35MB/s)                                          Retrieving image: Unpack: 15% (42.59MB/s)                                          Retrieving image: Unpack: 16% (42.90MB/s)                                          Retrieving image: Unpack: 17% (43.32MB/s)                                          Retrieving image: Unpack: 18% (43.54MB/s)                                          Retrieving image: Unpack: 19% (43.67MB/s)                                          Retrieving image: Unpack: 20% (43.84MB/s)                                          Retrieving image: Unpack: 20% (44.03MB/s)                                          Retrieving image: Unpack: 21% (44.38MB/s)                                          Retrieving image: Unpack: 22% (44.14MB/s)                                          Retrieving image: Unpack: 23% (44.47MB/s)                                          Retrieving image: Unpack: 24% (44.76MB/s)                                          Retrieving image: Unpack: 25% (45.00MB/s)                                          Retrieving image: Unpack: 26% (45.11MB/s)                                          Retrieving image: Unpack: 27% (45.19MB/s)                                          Retrieving image: Unpack: 28% (45.07MB/s)                                          Retrieving image: Unpack: 29% (45.07MB/s)                                          Retrieving image: Unpack: 30% (44.94MB/s)                                          Retrieving image: Unpack: 30% (44.28MB/s)                                          Retrieving image: Unpack: 31% (43.34MB/s)                                          Retrieving image: Unpack: 32% (42.68MB/s)                                          Retrieving image: Unpack: 33% (42.29MB/s)                                          Retrieving image: Unpack: 34% (42.10MB/s)                                          Retrieving image: Unpack: 35% (41.80MB/s)                                          Retrieving image: Unpack: 36% (40.11MB/s)                                          Retrieving image: Unpack: 37% (38.83MB/s)                                          Retrieving image: Unpack: 38% (38.71MB/s)                                          Retrieving image: Unpack: 39% (38.22MB/s)                                          Retrieving image: Unpack: 40% (38.21MB/s)                                          Retrieving image: Unpack: 40% (38.27MB/s)                                          Retrieving image: Unpack: 41% (38.30MB/s)                                          Retrieving image: Unpack: 42% (38.37MB/s)                                          Retrieving image: Unpack: 43% (38.61MB/s)                                          Retrieving image: Unpack: 44% (38.78MB/s)                                          Retrieving image: Unpack: 45% (38.96MB/s)                                          Retrieving image: Unpack: 46% (39.12MB/s)                                          Retrieving image: Unpack: 47% (39.26MB/s)                                          Retrieving image: Unpack: 48% (39.52MB/s)                                          Retrieving image: Unpack: 49% (39.62MB/s)                                          Retrieving image: Unpack: 49% (39.88MB/s)                                          Retrieving image: Unpack: 50% (39.94MB/s)                                          Retrieving image: Unpack: 51% (40.05MB/s)                                          Retrieving image: Unpack: 52% (40.13MB/s)                                          Retrieving image: Unpack: 53% (40.19MB/s)                                          Retrieving image: Unpack: 54% (40.29MB/s)                                          Retrieving image: Unpack: 55% (40.38MB/s)                                          Retrieving image: Unpack: 56% (40.33MB/s)                                          Retrieving image: Unpack: 57% (40.33MB/s)                                          Retrieving image: Unpack: 58% (40.09MB/s)                                          Retrieving image: Unpack: 59% (40.18MB/s)                                          Retrieving image: Unpack: 59% (40.29MB/s)                                          Retrieving image: Unpack: 60% (39.53MB/s)                                          Retrieving image: Unpack: 61% (39.60MB/s)                                          Retrieving image: Unpack: 62% (39.17MB/s)                                          Retrieving image: Unpack: 63% (39.13MB/s)                                          Retrieving image: Unpack: 64% (39.19MB/s)                                          Retrieving image: Unpack: 65% (39.33MB/s)                                          Retrieving image: Unpack: 66% (39.20MB/s)                                          Retrieving image: Unpack: 67% (39.20MB/s)                                          Retrieving image: Unpack: 68% (39.15MB/s)                                          Retrieving image: Unpack: 69% (39.14MB/s)                                          Retrieving image: Unpack: 69% (39.12MB/s)                                          Retrieving image: Unpack: 70% (39.10MB/s)                                          Retrieving image: Unpack: 71% (39.22MB/s)                                          Retrieving image: Unpack: 72% (38.90MB/s)                                          Retrieving image: Unpack: 73% (38.66MB/s)                                          Retrieving image: Unpack: 74% (37.43MB/s)                                          Retrieving image: Unpack: 75% (35.50MB/s)                                          Retrieving image: Unpack: 76% (35.47MB/s)                                          Retrieving image: Unpack: 77% (35.53MB/s)                                          Retrieving image: Unpack: 78% (35.51MB/s)                                          Retrieving image: Unpack: 79% (35.12MB/s)                                          Retrieving image: Unpack: 79% (35.23MB/s)                                          Retrieving image: Unpack: 80% (35.34MB/s)                                          Retrieving image: Unpack: 81% (35.44MB/s)                                          Retrieving image: Unpack: 82% (35.54MB/s)                                          Retrieving image: Unpack: 83% (35.62MB/s)                                          Retrieving image: Unpack: 84% (35.71MB/s)                                          Retrieving image: Unpack: 85% (35.80MB/s)                                          Retrieving image: Unpack: 86% (35.90MB/s)                                          Retrieving image: Unpack: 87% (35.98MB/s)                                          Retrieving image: Unpack: 88% (36.07MB/s)                                          Retrieving image: Unpack: 89% (36.17MB/s)                                          Retrieving image: Unpack: 89% (36.27MB/s)                                          Retrieving image: Unpack: 90% (36.27MB/s)                                          Retrieving image: Unpack: 91% (36.19MB/s)                                          Retrieving image: Unpack: 92% (36.20MB/s)                                          Retrieving image: Unpack: 93% (36.19MB/s)                                          Retrieving image: Unpack: 94% (36.18MB/s)                                          Retrieving image: Unpack: 95% (36.18MB/s)                                          Retrieving image: Unpack: 96% (36.19MB/s)                                          Retrieving image: Unpack: 97% (36.23MB/s)                                          Retrieving image: Unpack: 98% (36.25MB/s)                                          Retrieving image: Unpack: 98% (36.31MB/s)                                          Retrieving image: Unpack: 99% (36.24MB/s)Retrieving image: Unpack: 100% (35.67MB/s)                                           Retrieving image: Unpack: 100% (35.67MB/s)                                           + lxc config set test-bionic-proposed environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+........................................
+status: done
+time: Fri, 19 Jun 2020 18:55:28 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-bionic-proposed
++ name=test-bionic-proposed
++ lxc exec test-bionic-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-proposed -- cloud-init clean --logs
++ lxc exec test-bionic-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:55:30 +0000. Up 12.37 seconds.
++ lxc exec test-bionic-proposed -- cloud-init init
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:55:31 +0000. Up 13.94 seconds.
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:55:32 +0000. Up 14.72 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:55:32 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 14.83 seconds
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:55:32 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ expected_status='status: done'
++ check_cloudinit_status test-bionic-proposed status: done
++ name=test-bionic-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-bionic-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: done'
+SUCCESS: bionic cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-bionic-proposed
++ name=test-bionic-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-bionic-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: bionic show network as disabled in cloud-init log'
+SUCCESS: bionic show network as disabled in cloud-init log
++ reset_cmd_line_variable test-bionic-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-bionic-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-bionic-proposed
++ lxc config set test-bionic-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+.............
+status: done
+time: Fri, 19 Jun 2020 18:55:39 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-bionic-proposed
++ name=test-bionic-proposed
++ lxc exec test-bionic-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-proposed -- cloud-init clean --logs
++ lxc exec test-bionic-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:55:41 +0000. Up 5.62 seconds.
++ lxc exec test-bionic-proposed -- cloud-init init
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:55:42 +0000. Up 7.22 seconds.
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:55:43 +0000. Up 8.06 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:55:43 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 8.18 seconds
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:55:43 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-bionic-proposed status: done
++ name=test-bionic-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-bionic-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: done'
+SUCCESS: bionic cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-bionic-proposed
++ name=test-bionic-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-bionic-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: bionic show network as disabled in cloud-init log'
+SUCCESS: bionic show network as disabled in cloud-init log
++ reset_cmd_line_variable test-bionic-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ name=test-bionic-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc stop test-bionic-proposed
++ lxc config set test-bionic-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+............
+status: done
+time: Fri, 19 Jun 2020 18:55:50 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ restart_cloudinit test-bionic-proposed
++ name=test-bionic-proposed
++ lxc exec test-bionic-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-proposed -- cloud-init clean --logs
++ lxc exec test-bionic-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:55:52 +0000. Up 5.38 seconds.
+2020-06-19 18:55:52,455 - util.py[WARNING]: Failed loading yaml blob. Invalid format at line 1 column 12: "while scanning a quoted scalar
+  in "<unicode string>", line 1, column 12:
+    {"config": "disabled'}
+               ^
+found unexpected end of stream
+  in "<unicode string>", line 1, column 23:
+    {"config": "disabled'}
+                          ^"
++ lxc exec test-bionic-proposed -- cloud-init init
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:55:54 +0000. Up 7.27 seconds.
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:55:55 +0000. Up 8.13 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:55:55 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 8.25 seconds
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:55:55 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ expected_status='status: done'
++ check_cloudinit_status test-bionic-proposed status: done
++ name=test-bionic-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-bionic-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: done'
+SUCCESS: bionic cloud-init finished with expected status: status: done
++ expected_error='Failed loading yaml blob'
++ check_error_in_cloudinit_log test-bionic-proposed Failed loading yaml blob
++ name=test-bionic-proposed
++ shift
++ expected_error='Failed loading yaml blob'
+++ lxc exec test-bionic-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Failed loading yaml blob'
++ actual_error='Failed loading yaml blob'
++ '[' 'Failed loading yaml blob' = 'Failed loading yaml blob' ']'
++ echo 'SUCCESS: bionic has found '\''Failed loading yaml blob'\'' in /var/log/cloud-init.log'
+SUCCESS: bionic has found 'Failed loading yaml blob' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-bionic-proposed network-config=foo
++ name=test-bionic-proposed
++ cmd_line_var=network-config=foo
++ lxc stop test-bionic-proposed
++ lxc config set test-bionic-proposed environment.DEBUG_PROC_CMDLINE=network-config=foo
++ lxc start test-bionic-proposed
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+............
+status: done
+time: Fri, 19 Jun 2020 18:56:01 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-bionic-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=foo
++ restart_cloudinit test-bionic-proposed
++ name=test-bionic-proposed
++ lxc exec test-bionic-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-bionic-proposed -- cloud-init clean --logs
++ lxc exec test-bionic-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'init-local' at Fri, 19 Jun 2020 18:56:03 +0000. Up 5.37 seconds.
+2020-06-19 18:56:03,607 - cmdline.py[ERROR]: Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ lxc exec test-bionic-proposed -- cloud-init init
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:config' at Fri, 19 Jun 2020 18:56:05 +0000. Up 7.11 seconds.
++ lxc exec test-bionic-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:final' at Fri, 19 Jun 2020 18:56:06 +0000. Up 7.97 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 finished at Fri, 19 Jun 2020 18:56:06 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 8.09 seconds
++ lxc exec test-bionic-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:56:06 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=foo'
+Testing network-config=foo
++ expected_status='status: done'
++ check_cloudinit_status test-bionic-proposed status: done
++ name=test-bionic-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-bionic-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: bionic cloud-init finished with expected status: status: done'
+SUCCESS: bionic cloud-init finished with expected status: status: done
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ check_error_in_cloudinit_log test-bionic-proposed Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ name=test-bionic-proposed
++ shift
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
+++ lxc exec test-bionic-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ actual_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ '[' 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' = 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' ']'
++ echo 'SUCCESS: bionic has found '\''Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'\'' in /var/log/cloud-init.log'
+SUCCESS: bionic has found 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' in /var/log/cloud-init.log
++ echo '=== END ' bionic
+=== END  bionic
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' eoan
+=== BEGIN  eoan
++ reproduce eoan
++ series=eoan
++ name=test-eoan-reproduce
++ lxc delete test-eoan-reproduce --force
++ lxc init ubuntu-daily:eoan test-eoan-reproduce
+Creating test-eoan-reproduce
++ lxc config set test-eoan-reproduce environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+...........................................................................................
+status: done
+time: Fri, 19 Jun 2020 18:56:35 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-eoan-reproduce
++ name=test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-reproduce -- cloud-init clean --logs
++ lxc exec test-eoan-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:56:37 +0000. Up 25.01 seconds.
+2020-06-19 18:56:37,379 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 680, in apply_network_config
+    netcfg, src = self._find_networking_config()
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 639, in _find_networking_config
+    NetworkConfigSource.cmdline: cmdline.read_kernel_cmdline_config(),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/cmdline.py", line 273, in read_kernel_cmdline_config
+    return util.load_yaml(_b64dgz(data64))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 955, in load_yaml
+    blob = decode_binary(blob)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 146, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+------------------------------------------------------------
++ lxc exec test-eoan-reproduce -- cloud-init init
++ lxc exec test-eoan-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:56:38 +0000. Up 26.21 seconds.
++ lxc exec test-eoan-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:56:39 +0000. Up 26.99 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:56:39 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 27.09 seconds
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+
+status: error
+time: Fri, 19 Jun 2020 18:56:39 +0000
+detail:
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ '[' eoan = focal ']'
++ expected_status='status: error'
++ check_cloudinit_status test-eoan-reproduce status: error
++ name=test-eoan-reproduce
++ shift
++ expected_status='status: error'
+++ lxc exec test-eoan-reproduce -- cloud-init status
++ actual_status='status: error'
++ '[' 'status: error' = 'status: error' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: error'
+SUCCESS: eoan cloud-init finished with expected status: status: error
++ '[' eoan = focal ']'
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ check_error_in_cloudinit_log test-eoan-reproduce 'utf-8'\''' codec 'can'\''t' decode byte 0x9d in position
++ name=test-eoan-reproduce
++ shift
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
+++ lxc exec test-eoan-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ actual_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ '[' 'utf-8'\'' codec can'\''t decode byte 0x9d in position' = 'utf-8'\'' codec can'\''t decode byte 0x9d in position' ']'
++ echo 'SUCCESS: eoan has found '\''utf-8'\'' codec can'\''t decode byte 0x9d in position'\'' in /var/log/cloud-init.log'
+SUCCESS: eoan has found 'utf-8' codec can't decode byte 0x9d in position' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-eoan-reproduce network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-eoan-reproduce
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-eoan-reproduce
++ lxc config set test-eoan-reproduce environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+.........................
+status: done
+time: Fri, 19 Jun 2020 18:56:49 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan-reproduce -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-eoan-reproduce
++ name=test-eoan-reproduce
++ lxc exec test-eoan-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-reproduce -- cloud-init clean --logs
++ lxc exec test-eoan-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:56:50 +0000. Up 8.46 seconds.
++ lxc exec test-eoan-reproduce -- cloud-init init
++ lxc exec test-eoan-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:56:52 +0000. Up 9.89 seconds.
++ lxc exec test-eoan-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:56:53 +0000. Up 10.64 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:56:53 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.74 seconds
++ lxc exec test-eoan-reproduce -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:56:53 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-eoan-reproduce status: done
++ name=test-eoan-reproduce
++ shift
++ expected_status='status: done'
+++ lxc exec test-eoan-reproduce -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: done'
+SUCCESS: eoan cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-eoan-reproduce
++ name=test-eoan-reproduce
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-eoan-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: eoan show network as disabled in cloud-init log'
+SUCCESS: eoan show network as disabled in cloud-init log
++ verify eoan
++ series=eoan
++ ref=eoan-proposed
++ name=test-eoan-proposed
++ lxc delete test-eoan-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish eoan eoan-proposed
+Creating eoan-proposed-94632098
+Get:1 http://security.ubuntu.com/ubuntu eoan-security InRelease [97.5 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu eoan InRelease
+Get:3 http://archive.ubuntu.com/ubuntu eoan-updates InRelease [97.5 kB]
+Get:4 http://security.ubuntu.com/ubuntu eoan-security/main amd64 Packages [229 kB]
+Get:5 http://archive.ubuntu.com/ubuntu eoan-backports InRelease [88.8 kB]
+Get:6 http://security.ubuntu.com/ubuntu eoan-security/main Translation-en [80.2 kB]
+Get:7 http://security.ubuntu.com/ubuntu eoan-security/main amd64 c-n-f Metadata [5980 B]
+Get:8 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 Packages [173 kB]
+Get:9 http://security.ubuntu.com/ubuntu eoan-security/universe Translation-en [62.7 kB]
+Get:10 http://security.ubuntu.com/ubuntu eoan-security/universe amd64 c-n-f Metadata [6648 B]
+Get:11 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu eoan-security/multiverse Translation-en [632 B]
+Get:13 http://security.ubuntu.com/ubuntu eoan-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu eoan-proposed InRelease [107 kB]
+Get:15 http://archive.ubuntu.com/ubuntu eoan/universe amd64 Packages [8798 kB]
+Get:16 http://archive.ubuntu.com/ubuntu eoan/universe Translation-en [5198 kB]
+Get:17 http://archive.ubuntu.com/ubuntu eoan/universe amd64 c-n-f Metadata [271 kB]
+Get:18 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 Packages [153 kB]
+Get:19 http://archive.ubuntu.com/ubuntu eoan/multiverse Translation-en [111 kB]
+Get:20 http://archive.ubuntu.com/ubuntu eoan/multiverse amd64 c-n-f Metadata [9424 B]
+Get:21 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 Packages [309 kB]
+Get:22 http://archive.ubuntu.com/ubuntu eoan-updates/main Translation-en [113 kB]
+Get:23 http://archive.ubuntu.com/ubuntu eoan-updates/main amd64 c-n-f Metadata [9556 B]
+Get:24 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 Packages [219 kB]
+Get:25 http://archive.ubuntu.com/ubuntu eoan-updates/universe Translation-en [85.7 kB]
+Get:26 http://archive.ubuntu.com/ubuntu eoan-updates/universe amd64 c-n-f Metadata [7812 B]
+Get:27 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 Packages [6320 B]
+Get:28 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse Translation-en [2596 B]
+Get:29 http://archive.ubuntu.com/ubuntu eoan-updates/multiverse amd64 c-n-f Metadata [280 B]
+Get:30 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 Packages [756 B]
+Get:31 http://archive.ubuntu.com/ubuntu eoan-backports/main Translation-en [324 B]
+Get:32 http://archive.ubuntu.com/ubuntu eoan-backports/main amd64 c-n-f Metadata [220 B]
+Get:33 http://archive.ubuntu.com/ubuntu eoan-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 Packages [3372 B]
+Get:35 http://archive.ubuntu.com/ubuntu eoan-backports/universe Translation-en [1608 B]
+Get:36 http://archive.ubuntu.com/ubuntu eoan-backports/universe amd64 c-n-f Metadata [212 B]
+Get:37 http://archive.ubuntu.com/ubuntu eoan-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:38 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 Packages [30.4 kB]
+Get:39 http://archive.ubuntu.com/ubuntu eoan-proposed/main Translation-en [14.1 kB]
+Get:40 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 c-n-f Metadata [1120 B]
+Get:41 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 Packages [19.2 kB]
+Get:42 http://archive.ubuntu.com/ubuntu eoan-proposed/universe Translation-en [13.1 kB]
+Get:43 http://archive.ubuntu.com/ubuntu eoan-proposed/universe amd64 c-n-f Metadata [1164 B]
+Fetched 16.3 MB in 23s (701 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 18 not upgraded.
+Need to get 420 kB of archives.
+After this operation, 69.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preconfiguring packages ...
+Fetched 420 kB in 2s (223 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 30081 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.1901.0-1ubuntu4) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 17.88MB (17.88MB/s)                                                     Publishing instance: Image pack: 34.95MB (17.46MB/s)                                                     Publishing instance: Image pack: 53.67MB (17.87MB/s)                                                     Publishing instance: Image pack: 73.61MB (18.38MB/s)                                                     Publishing instance: Image pack: 91.44MB (18.27MB/s)Publishing instance: Image pack: 112.26MB (18.68MB/s)                                                      Publishing instance: Image pack: 127.20MB (18.15MB/s)                                                      Publishing instance: Image pack: 146.34MB (18.27MB/s)                                                      Publishing instance: Image pack: 173.13MB (19.21MB/s)                                                      Publishing instance: Image pack: 198.15MB (19.79MB/s)                                                      Publishing instance: Image pack: 221.58MB (20.12MB/s)                                                      Publishing instance: Image pack: 239.10MB (19.90MB/s)                                                      Publishing instance: Image pack: 257.42MB (19.78MB/s)                                                      Publishing instance: Image pack: 277.68MB (19.81MB/s)                                                      Publishing instance: Image pack: 305.64MB (20.35MB/s)                                                      Publishing instance: Image pack: 327.45MB (20.44MB/s)                                                      Publishing instance: Image pack: 344.58MB (20.25MB/s)                                                      Publishing instance: Image pack: 362.44MB (20.11MB/s)                                                      Publishing instance: Image pack: 384.46MB (20.21MB/s)                                                      Publishing instance: Image pack: 402.18MB (20.09MB/s)                                                      Publishing instance: Image pack: 421.16MB (20.03MB/s)                                                      Publishing instance: Image pack: 443.07MB (20.12MB/s)                                                      Publishing instance: Image pack: 469.12MB (20.31MB/s)                                                      Publishing instance: Image pack: 488.28MB (20.26MB/s)                                                      Publishing instance: Image pack: 508.45MB (20.26MB/s)                                                      Publishing instance: Image pack: 530.20MB (20.31MB/s)                                                      Publishing instance: Image pack: 555.19MB (20.49MB/s)                                                      Publishing instance: Image pack: 573.40MB (20.40MB/s)                                                      Publishing instance: Image pack: 594.97MB (20.44MB/s)                                                      Publishing instance: Image pack: 620.80MB (20.62MB/s)                                                      Publishing instance: Image pack: 638.42MB (20.52MB/s)                                                      Publishing instance: Image pack: 656.34MB (20.44MB/s)                                                      Publishing instance: Image pack: 670.49MB (20.25MB/s)                                                      Publishing instance: Image pack: 686.97MB (20.14MB/s)                                                      Publishing instance: Image pack: 702.64MB (20.01MB/s)                                                      Publishing instance: Image pack: 719.25MB (19.92MB/s)                                                      Publishing instance: Image pack: 744.66MB (20.07MB/s)                                                      Publishing instance: Image pack: 784.36MB (20.58MB/s)                                                      Publishing instance: Image pack: 816.46MB (20.88MB/s)                                                      Publishing instance: Image pack: 843.44MB (21.03MB/s)                                                      Publishing instance: Image pack: 871.02MB (21.19MB/s)                                                      Publishing instance: Image pack: 897.79MB (21.32MB/s)                                                      Publishing instance: Image pack: 925.59MB (21.47MB/s)                                                      Publishing instance: Image pack: 954.62MB (21.64MB/s)                                                      Publishing instance: Image pack: 983.56MB (21.80MB/s)                                                      Publishing instance: Image pack: 1.01GB (21.96MB/s)                                                      Instance published with fingerprint: 43b77fcd245d7381b025daf8d3ea6c43ed5157f889e74219abe31015c7f692fa
++ lxc init eoan-proposed test-eoan-proposed
+Creating test-eoan-proposed
+Retrieving image: Unpack: 1% (30.74MB/s)                                         Retrieving image: Unpack: 2% (38.90MB/s)                                         Retrieving image: Unpack: 3% (43.26MB/s)                                         Retrieving image: Unpack: 4% (44.26MB/s)                                         Retrieving image: Unpack: 5% (44.84MB/s)                                         Retrieving image: Unpack: 6% (44.95MB/s)                                         Retrieving image: Unpack: 7% (44.94MB/s)                                         Retrieving image: Unpack: 8% (45.23MB/s)                                         Retrieving image: Unpack: 9% (45.53MB/s)Retrieving image: Unpack: 10% (44.68MB/s)                                          Retrieving image: Unpack: 10% (45.55MB/s)                                          Retrieving image: Unpack: 11% (46.26MB/s)                                          Retrieving image: Unpack: 12% (46.38MB/s)                                          Retrieving image: Unpack: 13% (45.14MB/s)                                          Retrieving image: Unpack: 14% (42.30MB/s)                                          Retrieving image: Unpack: 15% (41.28MB/s)                                          Retrieving image: Unpack: 16% (40.72MB/s)                                          Retrieving image: Unpack: 17% (40.09MB/s)                                          Retrieving image: Unpack: 18% (40.27MB/s)                                          Retrieving image: Unpack: 19% (40.57MB/s)                                          Retrieving image: Unpack: 20% (40.78MB/s)                                          Retrieving image: Unpack: 20% (40.91MB/s)                                          Retrieving image: Unpack: 21% (40.98MB/s)                                          Retrieving image: Unpack: 22% (40.83MB/s)                                          Retrieving image: Unpack: 23% (37.10MB/s)                                          Retrieving image: Unpack: 24% (36.51MB/s)                                          Retrieving image: Unpack: 25% (36.92MB/s)                                          Retrieving image: Unpack: 26% (37.35MB/s)                                          Retrieving image: Unpack: 27% (37.72MB/s)                                          Retrieving image: Unpack: 28% (38.09MB/s)                                          Retrieving image: Unpack: 29% (38.51MB/s)                                          Retrieving image: Unpack: 30% (38.94MB/s)                                          Retrieving image: Unpack: 30% (39.18MB/s)                                          Retrieving image: Unpack: 31% (39.41MB/s)                                          Retrieving image: Unpack: 32% (39.67MB/s)                                          Retrieving image: Unpack: 33% (39.86MB/s)                                          Retrieving image: Unpack: 34% (40.05MB/s)                                          Retrieving image: Unpack: 35% (40.17MB/s)                                          Retrieving image: Unpack: 36% (40.24MB/s)                                          Retrieving image: Unpack: 37% (39.88MB/s)                                          Retrieving image: Unpack: 38% (40.06MB/s)                                          Retrieving image: Unpack: 39% (40.26MB/s)                                          Retrieving image: Unpack: 39% (40.49MB/s)                                          Retrieving image: Unpack: 40% (39.64MB/s)                                          Retrieving image: Unpack: 41% (39.00MB/s)                                          Retrieving image: Unpack: 42% (38.82MB/s)                                          Retrieving image: Unpack: 43% (38.87MB/s)                                          Retrieving image: Unpack: 44% (38.78MB/s)                                          Retrieving image: Unpack: 45% (38.04MB/s)                                          Retrieving image: Unpack: 46% (37.67MB/s)                                          Retrieving image: Unpack: 47% (37.02MB/s)                                          Retrieving image: Unpack: 48% (37.05MB/s)                                          Retrieving image: Unpack: 49% (36.56MB/s)                                          Retrieving image: Unpack: 49% (35.84MB/s)                                          Retrieving image: Unpack: 50% (35.15MB/s)                                          Retrieving image: Unpack: 51% (35.27MB/s)                                          Retrieving image: Unpack: 52% (34.76MB/s)                                          Retrieving image: Unpack: 53% (34.92MB/s)                                          Retrieving image: Unpack: 54% (35.06MB/s)                                          Retrieving image: Unpack: 55% (35.20MB/s)                                          Retrieving image: Unpack: 56% (35.34MB/s)                                          Retrieving image: Unpack: 57% (35.48MB/s)                                          Retrieving image: Unpack: 58% (35.62MB/s)                                          Retrieving image: Unpack: 59% (35.72MB/s)                                          Retrieving image: Unpack: 59% (35.69MB/s)                                          Retrieving image: Unpack: 60% (35.69MB/s)                                          Retrieving image: Unpack: 61% (35.69MB/s)                                          Retrieving image: Unpack: 62% (35.71MB/s)                                          Retrieving image: Unpack: 63% (35.76MB/s)                                          Retrieving image: Unpack: 64% (35.81MB/s)                                          Retrieving image: Unpack: 65% (35.06MB/s)                                          Retrieving image: Unpack: 66% (35.46MB/s)                                          Retrieving image: Unpack: 67% (35.39MB/s)                                          Retrieving image: Unpack: 68% (35.49MB/s)                                          Retrieving image: Unpack: 68% (35.84MB/s)                                          Retrieving image: Unpack: 69% (36.19MB/s)                                          Retrieving image: Unpack: 70% (36.53MB/s)                                          Retrieving image: Unpack: 71% (36.86MB/s)                                          Retrieving image: Unpack: 72% (37.16MB/s)                                          Retrieving image: Unpack: 73% (37.48MB/s)                                          Retrieving image: Unpack: 74% (37.66MB/s)                                          Retrieving image: Unpack: 75% (37.91MB/s)                                          Retrieving image: Unpack: 76% (38.26MB/s)                                          Retrieving image: Unpack: 77% (38.60MB/s)                                          Retrieving image: Unpack: 78% (38.94MB/s)                                          Retrieving image: Unpack: 78% (39.29MB/s)                                          Retrieving image: Unpack: 79% (39.65MB/s)                                          Retrieving image: Unpack: 80% (39.99MB/s)                                          Retrieving image: Unpack: 81% (40.33MB/s)                                          Retrieving image: Unpack: 82% (40.68MB/s)                                          Retrieving image: Unpack: 83% (41.03MB/s)                                          Retrieving image: Unpack: 84% (41.38MB/s)                                          Retrieving image: Unpack: 85% (41.74MB/s)                                          Retrieving image: Unpack: 86% (42.09MB/s)                                          Retrieving image: Unpack: 87% (42.44MB/s)                                          Retrieving image: Unpack: 88% (42.79MB/s)                                          Retrieving image: Unpack: 88% (43.14MB/s)                                          Retrieving image: Unpack: 89% (43.48MB/s)                                          Retrieving image: Unpack: 90% (43.78MB/s)                                          Retrieving image: Unpack: 91% (44.12MB/s)                                          Retrieving image: Unpack: 92% (44.45MB/s)                                          Retrieving image: Unpack: 93% (44.76MB/s)                                          Retrieving image: Unpack: 94% (45.08MB/s)                                          Retrieving image: Unpack: 95% (45.40MB/s)                                          Retrieving image: Unpack: 96% (45.72MB/s)                                          Retrieving image: Unpack: 97% (46.05MB/s)                                          Retrieving image: Unpack: 98% (46.38MB/s)                                          Retrieving image: Unpack: 98% (46.71MB/s)                                          Retrieving image: Unpack: 99% (47.04MB/s)Retrieving image: Unpack: 100% (47.35MB/s)                                           Retrieving image: Unpack: 100% (47.35MB/s)                                           + lxc config set test-eoan-proposed environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+...................................................................................
+status: done
+time: Fri, 19 Jun 2020 18:58:56 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-eoan-proposed
++ name=test-eoan-proposed
++ lxc exec test-eoan-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-proposed -- cloud-init clean --logs
++ lxc exec test-eoan-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:58:57 +0000. Up 22.96 seconds.
++ lxc exec test-eoan-proposed -- cloud-init init
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:58:59 +0000. Up 24.68 seconds.
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:59:00 +0000. Up 25.46 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:59:00 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 25.57 seconds
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:59:00 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ expected_status='status: done'
++ check_cloudinit_status test-eoan-proposed status: done
++ name=test-eoan-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-eoan-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: done'
+SUCCESS: eoan cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-eoan-proposed
++ name=test-eoan-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-eoan-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: eoan show network as disabled in cloud-init log'
+SUCCESS: eoan show network as disabled in cloud-init log
++ reset_cmd_line_variable test-eoan-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-eoan-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-eoan-proposed
++ lxc config set test-eoan-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+.........................
+status: done
+time: Fri, 19 Jun 2020 18:59:10 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-eoan-proposed
++ name=test-eoan-proposed
++ lxc exec test-eoan-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-proposed -- cloud-init clean --logs
++ lxc exec test-eoan-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:59:11 +0000. Up 8.41 seconds.
++ lxc exec test-eoan-proposed -- cloud-init init
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:59:13 +0000. Up 10.42 seconds.
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:59:14 +0000. Up 11.15 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:59:14 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 11.25 seconds
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:59:14 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-eoan-proposed status: done
++ name=test-eoan-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-eoan-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: done'
+SUCCESS: eoan cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-eoan-proposed
++ name=test-eoan-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-eoan-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: eoan show network as disabled in cloud-init log'
+SUCCESS: eoan show network as disabled in cloud-init log
++ reset_cmd_line_variable test-eoan-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ name=test-eoan-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc stop test-eoan-proposed
++ lxc config set test-eoan-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+.........................
+status: done
+time: Fri, 19 Jun 2020 18:59:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ restart_cloudinit test-eoan-proposed
++ name=test-eoan-proposed
++ lxc exec test-eoan-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-proposed -- cloud-init clean --logs
++ lxc exec test-eoan-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:59:26 +0000. Up 8.51 seconds.
+2020-06-19 18:59:26,199 - util.py[WARNING]: Failed loading yaml blob. Invalid format at line 1 column 12: "while scanning a quoted scalar
+  in "<unicode string>", line 1, column 12:
+    {"config": "disabled'}
+               ^
+found unexpected end of stream
+  in "<unicode string>", line 1, column 23:
+    {"config": "disabled'}
+                          ^"
++ lxc exec test-eoan-proposed -- cloud-init init
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:59:27 +0000. Up 10.31 seconds.
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:59:28 +0000. Up 11.12 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:59:28 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 11.22 seconds
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:59:28 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ expected_status='status: done'
++ check_cloudinit_status test-eoan-proposed status: done
++ name=test-eoan-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-eoan-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: done'
+SUCCESS: eoan cloud-init finished with expected status: status: done
++ expected_error='Failed loading yaml blob'
++ check_error_in_cloudinit_log test-eoan-proposed Failed loading yaml blob
++ name=test-eoan-proposed
++ shift
++ expected_error='Failed loading yaml blob'
+++ lxc exec test-eoan-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Failed loading yaml blob'
++ actual_error='Failed loading yaml blob'
++ '[' 'Failed loading yaml blob' = 'Failed loading yaml blob' ']'
++ echo 'SUCCESS: eoan has found '\''Failed loading yaml blob'\'' in /var/log/cloud-init.log'
+SUCCESS: eoan has found 'Failed loading yaml blob' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-eoan-proposed network-config=foo
++ name=test-eoan-proposed
++ cmd_line_var=network-config=foo
++ lxc stop test-eoan-proposed
++ lxc config set test-eoan-proposed environment.DEBUG_PROC_CMDLINE=network-config=foo
++ lxc start test-eoan-proposed
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+...........................
+status: done
+time: Fri, 19 Jun 2020 18:59:38 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-eoan-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=foo
++ restart_cloudinit test-eoan-proposed
++ name=test-eoan-proposed
++ lxc exec test-eoan-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-eoan-proposed -- cloud-init clean --logs
++ lxc exec test-eoan-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'init-local' at Fri, 19 Jun 2020 18:59:40 +0000. Up 9.09 seconds.
+2020-06-19 18:59:40,899 - cmdline.py[ERROR]: Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ lxc exec test-eoan-proposed -- cloud-init init
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:config' at Fri, 19 Jun 2020 18:59:42 +0000. Up 10.70 seconds.
++ lxc exec test-eoan-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 running 'modules:final' at Fri, 19 Jun 2020 18:59:43 +0000. Up 11.48 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~19.10.1 finished at Fri, 19 Jun 2020 18:59:43 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 11.59 seconds
++ lxc exec test-eoan-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 18:59:43 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=foo'
+Testing network-config=foo
++ expected_status='status: done'
++ check_cloudinit_status test-eoan-proposed status: done
++ name=test-eoan-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-eoan-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: eoan cloud-init finished with expected status: status: done'
+SUCCESS: eoan cloud-init finished with expected status: status: done
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ check_error_in_cloudinit_log test-eoan-proposed Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ name=test-eoan-proposed
++ shift
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
+++ lxc exec test-eoan-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ actual_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ '[' 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' = 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' ']'
++ echo 'SUCCESS: eoan has found '\''Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'\'' in /var/log/cloud-init.log'
+SUCCESS: eoan has found 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' in /var/log/cloud-init.log
++ echo '=== END ' eoan
+=== END  eoan
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' focal
+=== BEGIN  focal
++ reproduce focal
++ series=focal
++ name=test-focal-reproduce
++ lxc delete test-focal-reproduce --force
++ lxc init ubuntu-daily:focal test-focal-reproduce
+Creating test-focal-reproduce
++ lxc config set test-focal-reproduce environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+..........................................................................................
+status: done
+time: Fri, 19 Jun 2020 19:00:12 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-focal-reproduce
++ name=test-focal-reproduce
++ lxc exec test-focal-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-reproduce -- cloud-init clean --logs
++ lxc exec test-focal-reproduce -- cloud-init init --local
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'init-local' at Fri, 19 Jun 2020 19:00:14 +0000. Up 24.84 seconds.
++ lxc exec test-focal-reproduce -- cloud-init init
++ lxc exec test-focal-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'modules:config' at Fri, 19 Jun 2020 19:00:15 +0000. Up 26.54 seconds.
++ lxc exec test-focal-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'modules:final' at Fri, 19 Jun 2020 19:00:16 +0000. Up 27.26 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 finished at Fri, 19 Jun 2020 19:00:16 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 27.35 seconds
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:00:16 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ '[' focal = focal ']'
++ expected_status='status: done'
++ check_cloudinit_status test-focal-reproduce status: done
++ name=test-focal-reproduce
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-reproduce -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ '[' focal = focal ']'
++ check_network_disabled_in_log test-focal-reproduce
++ name=test-focal-reproduce
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-focal-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: focal show network as disabled in cloud-init log'
+SUCCESS: focal show network as disabled in cloud-init log
++ reset_cmd_line_variable test-focal-reproduce network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-focal-reproduce
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-focal-reproduce
++ lxc config set test-focal-reproduce environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-focal-reproduce
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+.....................
+status: done
+time: Fri, 19 Jun 2020 19:00:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal-reproduce -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-focal-reproduce
++ name=test-focal-reproduce
++ lxc exec test-focal-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-reproduce -- cloud-init clean --logs
++ lxc exec test-focal-reproduce -- cloud-init init --local
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'init-local' at Fri, 19 Jun 2020 19:00:27 +0000. Up 7.62 seconds.
++ lxc exec test-focal-reproduce -- cloud-init init
++ lxc exec test-focal-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'modules:config' at Fri, 19 Jun 2020 19:00:29 +0000. Up 9.58 seconds.
++ lxc exec test-focal-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 running 'modules:final' at Fri, 19 Jun 2020 19:00:30 +0000. Up 10.35 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.1-10-g71af48df-0ubuntu5 finished at Fri, 19 Jun 2020 19:00:30 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.44 seconds
++ lxc exec test-focal-reproduce -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:00:30 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-focal-reproduce status: done
++ name=test-focal-reproduce
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-reproduce -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-focal-reproduce
++ name=test-focal-reproduce
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-focal-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: focal show network as disabled in cloud-init log'
+SUCCESS: focal show network as disabled in cloud-init log
++ verify focal
++ series=focal
++ ref=focal-proposed
++ name=test-focal-proposed
++ lxc delete test-focal-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish focal focal-proposed
+Creating focal-proposed-2351018769
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [107 kB]
+Get:4 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [106 kB]
+Get:5 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [2764 B]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [35.5 kB]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [17.7 kB]
+Get:9 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [1612 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:15 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:16 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:20 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [199 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [78.9 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [5856 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [111 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [52.3 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [4112 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [1172 B]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [540 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [116 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [2784 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1272 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [192 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [56.1 kB]
+Get:36 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [28.4 kB]
+Get:37 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [1588 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 Packages [26.7 kB]
+Get:39 http://archive.ubuntu.com/ubuntu focal-proposed/universe Translation-en [22.2 kB]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/universe amd64 c-n-f Metadata [1688 B]
+Fetched 15.6 MB in 18s (867 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 19 not upgraded.
+Need to get 416 kB of archives.
+After this operation, 52.2 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preconfiguring packages ...
+Fetched 416 kB in 2s (207 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 31250 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+invoke-rc.d: could not determine current runlevel
+Publishing instance: Image pack: 20.55MB (20.54MB/s)                                                     Publishing instance: Image pack: 40.54MB (20.27MB/s)                                                     Publishing instance: Image pack: 64.57MB (21.51MB/s)                                                     Publishing instance: Image pack: 86.13MB (21.52MB/s)Publishing instance: Image pack: 111.06MB (22.20MB/s)                                                      Publishing instance: Image pack: 127.91MB (21.31MB/s)                                                      Publishing instance: Image pack: 145.34MB (20.75MB/s)                                                      Publishing instance: Image pack: 172.40MB (21.54MB/s)                                                      Publishing instance: Image pack: 192.67MB (21.40MB/s)                                                      Publishing instance: Image pack: 220.22MB (22.01MB/s)                                                      Publishing instance: Image pack: 241.12MB (21.91MB/s)                                                      Publishing instance: Image pack: 262.43MB (21.86MB/s)                                                      Publishing instance: Image pack: 280.71MB (21.58MB/s)                                                      Publishing instance: Image pack: 301.64MB (21.53MB/s)                                                      Publishing instance: Image pack: 325.12MB (21.66MB/s)                                                      Publishing instance: Image pack: 353.90MB (22.11MB/s)                                                      Publishing instance: Image pack: 372.99MB (21.93MB/s)                                                      Publishing instance: Image pack: 393.18MB (21.83MB/s)                                                      Publishing instance: Image pack: 416.94MB (21.93MB/s)                                                      Publishing instance: Image pack: 436.96MB (21.83MB/s)                                                      Publishing instance: Image pack: 457.21MB (21.76MB/s)                                                      Publishing instance: Image pack: 485.27MB (22.04MB/s)                                                      Publishing instance: Image pack: 510.50MB (22.18MB/s)                                                      Publishing instance: Image pack: 529.08MB (22.03MB/s)                                                      Publishing instance: Image pack: 553.82MB (22.14MB/s)                                                      Publishing instance: Image pack: 581.60MB (22.36MB/s)                                                      Publishing instance: Image pack: 599.43MB (22.19MB/s)                                                      Publishing instance: Image pack: 620.68MB (22.15MB/s)                                                      Publishing instance: Image pack: 648.50MB (22.35MB/s)                                                      Publishing instance: Image pack: 664.84MB (22.15MB/s)                                                      Publishing instance: Image pack: 685.23MB (22.09MB/s)                                                      Publishing instance: Image pack: 703.33MB (21.97MB/s)                                                      Publishing instance: Image pack: 721.51MB (21.85MB/s)                                                      Publishing instance: Image pack: 740.03MB (21.75MB/s)                                                      Publishing instance: Image pack: 759.56MB (21.69MB/s)                                                      Publishing instance: Image pack: 800.82MB (22.23MB/s)                                                      Publishing instance: Image pack: 840.36MB (22.70MB/s)                                                      Publishing instance: Image pack: 869.38MB (22.87MB/s)                                                      Publishing instance: Image pack: 897.69MB (23.01MB/s)                                                      Publishing instance: Image pack: 928.13MB (23.19MB/s)                                                      Publishing instance: Image pack: 958.91MB (23.38MB/s)                                                      Publishing instance: Image pack: 989.91MB (23.56MB/s)                                                      Publishing instance: Image pack: 1.02GB (23.73MB/s)                                                      Instance published with fingerprint: 25a59971129b1be976170a4d111240f628e8af0079e3d795941784c918fff363
++ lxc init focal-proposed test-focal-proposed
+Creating test-focal-proposed
+Retrieving image: Unpack: 1% (30.03MB/s)                                         Retrieving image: Unpack: 2% (37.44MB/s)                                         Retrieving image: Unpack: 3% (41.37MB/s)                                         Retrieving image: Unpack: 4% (42.55MB/s)                                         Retrieving image: Unpack: 5% (43.69MB/s)                                         Retrieving image: Unpack: 6% (44.10MB/s)                                         Retrieving image: Unpack: 7% (43.49MB/s)                                         Retrieving image: Unpack: 8% (43.86MB/s)                                         Retrieving image: Unpack: 9% (44.20MB/s)Retrieving image: Unpack: 10% (43.90MB/s)                                          Retrieving image: Unpack: 10% (44.68MB/s)                                          Retrieving image: Unpack: 11% (45.29MB/s)                                          Retrieving image: Unpack: 12% (45.73MB/s)                                          Retrieving image: Unpack: 13% (45.40MB/s)                                          Retrieving image: Unpack: 14% (42.56MB/s)                                          Retrieving image: Unpack: 15% (41.20MB/s)                                          Retrieving image: Unpack: 16% (40.56MB/s)                                          Retrieving image: Unpack: 17% (39.54MB/s)                                          Retrieving image: Unpack: 18% (39.22MB/s)                                          Retrieving image: Unpack: 19% (39.34MB/s)                                          Retrieving image: Unpack: 19% (39.38MB/s)                                          Retrieving image: Unpack: 20% (39.46MB/s)                                          Retrieving image: Unpack: 21% (39.61MB/s)                                          Retrieving image: Unpack: 22% (39.58MB/s)                                          Retrieving image: Unpack: 23% (37.60MB/s)                                          Retrieving image: Unpack: 24% (37.55MB/s)                                          Retrieving image: Unpack: 25% (36.47MB/s)                                          Retrieving image: Unpack: 26% (36.38MB/s)                                          Retrieving image: Unpack: 27% (36.71MB/s)                                          Retrieving image: Unpack: 28% (37.04MB/s)                                          Retrieving image: Unpack: 29% (37.37MB/s)                                          Retrieving image: Unpack: 29% (37.73MB/s)                                          Retrieving image: Unpack: 30% (38.12MB/s)                                          Retrieving image: Unpack: 31% (38.52MB/s)                                          Retrieving image: Unpack: 32% (38.73MB/s)                                          Retrieving image: Unpack: 33% (38.98MB/s)                                          Retrieving image: Unpack: 34% (39.27MB/s)                                          Retrieving image: Unpack: 35% (39.48MB/s)                                          Retrieving image: Unpack: 36% (39.62MB/s)                                          Retrieving image: Unpack: 37% (39.82MB/s)                                          Retrieving image: Unpack: 38% (39.85MB/s)                                          Retrieving image: Unpack: 38% (39.55MB/s)                                          Retrieving image: Unpack: 39% (39.72MB/s)                                          Retrieving image: Unpack: 40% (39.90MB/s)                                          Retrieving image: Unpack: 41% (39.02MB/s)                                          Retrieving image: Unpack: 42% (38.42MB/s)                                          Retrieving image: Unpack: 43% (38.29MB/s)                                          Retrieving image: Unpack: 44% (38.28MB/s)                                          Retrieving image: Unpack: 45% (37.23MB/s)                                          Retrieving image: Unpack: 46% (36.89MB/s)                                          Retrieving image: Unpack: 47% (36.91MB/s)                                          Retrieving image: Unpack: 48% (37.03MB/s)                                          Retrieving image: Unpack: 48% (37.16MB/s)                                          Retrieving image: Unpack: 49% (36.79MB/s)                                          Retrieving image: Unpack: 50% (36.53MB/s)                                          Retrieving image: Unpack: 51% (35.49MB/s)                                          Retrieving image: Unpack: 52% (35.56MB/s)                                          Retrieving image: Unpack: 53% (35.01MB/s)                                          Retrieving image: Unpack: 54% (35.15MB/s)                                          Retrieving image: Unpack: 55% (35.25MB/s)                                          Retrieving image: Unpack: 56% (35.38MB/s)                                          Retrieving image: Unpack: 57% (35.50MB/s)                                          Retrieving image: Unpack: 57% (35.61MB/s)                                          Retrieving image: Unpack: 58% (35.70MB/s)                                          Retrieving image: Unpack: 59% (35.81MB/s)                                          Retrieving image: Unpack: 60% (35.78MB/s)                                          Retrieving image: Unpack: 61% (35.76MB/s)                                          Retrieving image: Unpack: 62% (35.75MB/s)                                          Retrieving image: Unpack: 63% (35.77MB/s)                                          Retrieving image: Unpack: 64% (35.81MB/s)                                          Retrieving image: Unpack: 65% (35.30MB/s)                                          Retrieving image: Unpack: 66% (34.43MB/s)                                          Retrieving image: Unpack: 67% (34.81MB/s)                                          Retrieving image: Unpack: 67% (35.17MB/s)                                          Retrieving image: Unpack: 68% (35.55MB/s)                                          Retrieving image: Unpack: 69% (35.92MB/s)                                          Retrieving image: Unpack: 70% (36.28MB/s)                                          Retrieving image: Unpack: 71% (36.65MB/s)                                          Retrieving image: Unpack: 72% (36.99MB/s)                                          Retrieving image: Unpack: 73% (37.32MB/s)                                          Retrieving image: Unpack: 74% (37.64MB/s)                                          Retrieving image: Unpack: 75% (37.98MB/s)                                          Retrieving image: Unpack: 76% (38.34MB/s)                                          Retrieving image: Unpack: 76% (38.71MB/s)                                          Retrieving image: Unpack: 77% (39.03MB/s)                                          Retrieving image: Unpack: 78% (39.39MB/s)                                          Retrieving image: Unpack: 79% (39.76MB/s)                                          Retrieving image: Unpack: 80% (40.12MB/s)                                          Retrieving image: Unpack: 81% (40.45MB/s)                                          Retrieving image: Unpack: 82% (40.81MB/s)                                          Retrieving image: Unpack: 83% (41.16MB/s)                                          Retrieving image: Unpack: 84% (41.52MB/s)                                          Retrieving image: Unpack: 85% (41.87MB/s)                                          Retrieving image: Unpack: 85% (42.23MB/s)                                          Retrieving image: Unpack: 86% (42.58MB/s)                                          Retrieving image: Unpack: 87% (42.92MB/s)                                          Retrieving image: Unpack: 88% (43.26MB/s)                                          Retrieving image: Unpack: 89% (43.58MB/s)                                          Retrieving image: Unpack: 90% (43.89MB/s)                                          Retrieving image: Unpack: 91% (44.22MB/s)                                          Retrieving image: Unpack: 92% (44.56MB/s)                                          Retrieving image: Unpack: 93% (44.89MB/s)                                          Retrieving image: Unpack: 94% (45.20MB/s)                                          Retrieving image: Unpack: 95% (45.53MB/s)                                          Retrieving image: Unpack: 95% (45.86MB/s)                                          Retrieving image: Unpack: 96% (46.19MB/s)                                          Retrieving image: Unpack: 97% (46.52MB/s)                                          Retrieving image: Unpack: 98% (46.85MB/s)                                          Retrieving image: Unpack: 99% (47.15MB/s)Retrieving image: Unpack: 100% (47.45MB/s)                                           + lxc config set test-focal-proposed environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+.................................................................................
+status: done
+time: Fri, 19 Jun 2020 19:02:26 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-focal-proposed
++ name=test-focal-proposed
++ lxc exec test-focal-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-proposed -- cloud-init clean --logs
++ lxc exec test-focal-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'init-local' at Fri, 19 Jun 2020 19:02:28 +0000. Up 22.72 seconds.
++ lxc exec test-focal-proposed -- cloud-init init
++ lxc exec test-focal-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:02:29 +0000. Up 24.17 seconds.
++ lxc exec test-focal-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:02:30 +0000. Up 24.95 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 finished at Fri, 19 Jun 2020 19:02:30 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 25.05 seconds
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:02:30 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ expected_status='status: done'
++ check_cloudinit_status test-focal-proposed status: done
++ name=test-focal-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-focal-proposed
++ name=test-focal-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-focal-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: focal show network as disabled in cloud-init log'
+SUCCESS: focal show network as disabled in cloud-init log
++ reset_cmd_line_variable test-focal-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-focal-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-focal-proposed
++ lxc config set test-focal-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+....................
+status: done
+time: Fri, 19 Jun 2020 19:02:39 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-focal-proposed
++ name=test-focal-proposed
++ lxc exec test-focal-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-proposed -- cloud-init clean --logs
++ lxc exec test-focal-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'init-local' at Fri, 19 Jun 2020 19:02:41 +0000. Up 7.33 seconds.
++ lxc exec test-focal-proposed -- cloud-init init
++ lxc exec test-focal-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:02:42 +0000. Up 8.80 seconds.
++ lxc exec test-focal-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:02:43 +0000. Up 9.60 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 finished at Fri, 19 Jun 2020 19:02:43 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 9.69 seconds
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:02:43 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-focal-proposed status: done
++ name=test-focal-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-focal-proposed
++ name=test-focal-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-focal-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: focal show network as disabled in cloud-init log'
+SUCCESS: focal show network as disabled in cloud-init log
++ reset_cmd_line_variable test-focal-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ name=test-focal-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc stop test-focal-proposed
++ lxc config set test-focal-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+....................
+status: done
+time: Fri, 19 Jun 2020 19:02:52 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ restart_cloudinit test-focal-proposed
++ name=test-focal-proposed
++ lxc exec test-focal-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-proposed -- cloud-init clean --logs
++ lxc exec test-focal-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'init-local' at Fri, 19 Jun 2020 19:02:54 +0000. Up 7.45 seconds.
+2020-06-19 19:02:54,384 - util.py[WARNING]: Failed loading yaml blob. Invalid format at line 1 column 12: "while scanning a quoted scalar
+  in "<unicode string>", line 1, column 12:
+    {"config": "disabled'}
+               ^
+found unexpected end of stream
+  in "<unicode string>", line 1, column 23:
+    {"config": "disabled'}
+                          ^"
++ lxc exec test-focal-proposed -- cloud-init init
++ lxc exec test-focal-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:02:56 +0000. Up 9.31 seconds.
++ lxc exec test-focal-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:02:56 +0000. Up 10.11 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 finished at Fri, 19 Jun 2020 19:02:57 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.21 seconds
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:02:57 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ expected_status='status: done'
++ check_cloudinit_status test-focal-proposed status: done
++ name=test-focal-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ expected_error='Failed loading yaml blob'
++ check_error_in_cloudinit_log test-focal-proposed Failed loading yaml blob
++ name=test-focal-proposed
++ shift
++ expected_error='Failed loading yaml blob'
+++ lxc exec test-focal-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Failed loading yaml blob'
++ actual_error='Failed loading yaml blob'
++ '[' 'Failed loading yaml blob' = 'Failed loading yaml blob' ']'
++ echo 'SUCCESS: focal has found '\''Failed loading yaml blob'\'' in /var/log/cloud-init.log'
+SUCCESS: focal has found 'Failed loading yaml blob' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-focal-proposed network-config=foo
++ name=test-focal-proposed
++ cmd_line_var=network-config=foo
++ lxc stop test-focal-proposed
++ lxc config set test-focal-proposed environment.DEBUG_PROC_CMDLINE=network-config=foo
++ lxc start test-focal-proposed
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+......................
+status: done
+time: Fri, 19 Jun 2020 19:03:07 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-focal-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=foo
++ restart_cloudinit test-focal-proposed
++ name=test-focal-proposed
++ lxc exec test-focal-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-focal-proposed -- cloud-init clean --logs
++ lxc exec test-focal-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'init-local' at Fri, 19 Jun 2020 19:03:09 +0000. Up 7.73 seconds.
+2020-06-19 19:03:09,382 - cmdline.py[ERROR]: Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ lxc exec test-focal-proposed -- cloud-init init
++ lxc exec test-focal-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:03:11 +0000. Up 9.60 seconds.
++ lxc exec test-focal-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:03:11 +0000. Up 10.41 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 finished at Fri, 19 Jun 2020 19:03:12 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.52 seconds
++ lxc exec test-focal-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:03:12 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=foo'
+Testing network-config=foo
++ expected_status='status: done'
++ check_cloudinit_status test-focal-proposed status: done
++ name=test-focal-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-focal-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: focal cloud-init finished with expected status: status: done'
+SUCCESS: focal cloud-init finished with expected status: status: done
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ check_error_in_cloudinit_log test-focal-proposed Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ name=test-focal-proposed
++ shift
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
+++ lxc exec test-focal-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ actual_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ '[' 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' = 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' ']'
++ echo 'SUCCESS: focal has found '\''Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'\'' in /var/log/cloud-init.log'
+SUCCESS: focal has found 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' in /var/log/cloud-init.log
++ echo '=== END ' focal
+=== END  focal
++ for SERIES in bionic eoan focal xenial
++ echo '=== BEGIN ' xenial
+=== BEGIN  xenial
++ reproduce xenial
++ series=xenial
++ name=test-xenial-reproduce
++ lxc delete test-xenial-reproduce --force
++ lxc init ubuntu-daily:xenial test-xenial-reproduce
+Creating test-xenial-reproduce
++ lxc config set test-xenial-reproduce environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+.........................
+status: done
+time: Fri, 19 Jun 2020 19:03:24 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-xenial-reproduce
++ name=test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-reproduce -- cloud-init clean --logs
++ lxc exec test-xenial-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:03:25 +0000. Up 8.18 seconds.
+2020-06-19 19:03:25,746 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 680, in apply_network_config
+    netcfg, src = self._find_networking_config()
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 639, in _find_networking_config
+    NetworkConfigSource.cmdline: cmdline.read_kernel_cmdline_config(),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/cmdline.py", line 273, in read_kernel_cmdline_config
+    return util.load_yaml(_b64dgz(data64))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 955, in load_yaml
+    blob = decode_binary(blob)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 146, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+------------------------------------------------------------
++ lxc exec test-xenial-reproduce -- cloud-init init
++ lxc exec test-xenial-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:03:26 +0000. Up 9.34 seconds.
++ lxc exec test-xenial-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:03:27 +0000. Up 10.03 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:03:27 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 10.14 seconds
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+
+status: error
+time: Fri, 19 Jun 2020 19:03:27 +0000
+detail:
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
+'utf-8' codec can't decode byte 0x9d in position 5: invalid start byte
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ '[' xenial = focal ']'
++ expected_status='status: error'
++ check_cloudinit_status test-xenial-reproduce status: error
++ name=test-xenial-reproduce
++ shift
++ expected_status='status: error'
+++ lxc exec test-xenial-reproduce -- cloud-init status
++ actual_status='status: error'
++ '[' 'status: error' = 'status: error' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: error'
+SUCCESS: xenial cloud-init finished with expected status: status: error
++ '[' xenial = focal ']'
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ check_error_in_cloudinit_log test-xenial-reproduce 'utf-8'\''' codec 'can'\''t' decode byte 0x9d in position
++ name=test-xenial-reproduce
++ shift
++ expected_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
+++ lxc exec test-xenial-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ actual_error='utf-8'\'' codec can'\''t decode byte 0x9d in position'
++ '[' 'utf-8'\'' codec can'\''t decode byte 0x9d in position' = 'utf-8'\'' codec can'\''t decode byte 0x9d in position' ']'
++ echo 'SUCCESS: xenial has found '\''utf-8'\'' codec can'\''t decode byte 0x9d in position'\'' in /var/log/cloud-init.log'
+SUCCESS: xenial has found 'utf-8' codec can't decode byte 0x9d in position' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-xenial-reproduce network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-xenial-reproduce
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-xenial-reproduce
++ lxc config set test-xenial-reproduce environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+...........
+status: done
+time: Fri, 19 Jun 2020 19:03:37 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial-reproduce -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-xenial-reproduce
++ name=test-xenial-reproduce
++ lxc exec test-xenial-reproduce -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-reproduce -- cloud-init clean --logs
++ lxc exec test-xenial-reproduce -- cloud-init init --local
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:03:38 +0000. Up 4.77 seconds.
++ lxc exec test-xenial-reproduce -- cloud-init init
++ lxc exec test-xenial-reproduce -- cloud-init modules --mode=config
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:03:40 +0000. Up 6.13 seconds.
++ lxc exec test-xenial-reproduce -- cloud-init modules --mode=final
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:03:40 +0000. Up 6.85 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 19.4-33-gbb4131a2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:03:40 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 6.96 seconds
++ lxc exec test-xenial-reproduce -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:03:40 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-xenial-reproduce status: done
++ name=test-xenial-reproduce
++ shift
++ expected_status='status: done'
+++ lxc exec test-xenial-reproduce -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: done'
+SUCCESS: xenial cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-xenial-reproduce
++ name=test-xenial-reproduce
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-xenial-reproduce -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: xenial show network as disabled in cloud-init log'
+SUCCESS: xenial show network as disabled in cloud-init log
++ verify xenial
++ series=xenial
++ ref=xenial-proposed
++ name=test-xenial-proposed
++ lxc delete test-xenial-proposed --force
++ lxc-proposed-snapshot --proposed --upgrade cloud-init --publish xenial xenial-proposed
+Creating xenial-proposed-3058028622
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [883 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [331 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [494 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [202 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1161 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [437 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [799 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [334 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8064 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4328 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [40.1 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [16.6 kB]
+Get:28 http://archive.ubuntu.com/ubuntu xenial-proposed/universe amd64 Packages [8660 B]
+Get:29 http://archive.ubuntu.com/ubuntu xenial-proposed/universe Translation-en [6636 B]
+Fetched 17.5 MB in 18s (948 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 14 not upgraded.
+Need to get 425 kB of archives.
+After this operation, 68.6 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preconfiguring packages ...
+Fetched 425 kB in 1s (257 kB/s)
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 25763 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/templates/chef_client.rb.tmpl ...
+Installing new version of config file /etc/cloud/templates/hosts.suse.tmpl ...
+Installing new version of config file /etc/cloud/templates/resolv.conf.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Publishing instance: Image pack: 19.21MB (19.21MB/s)                                                     Publishing instance: Image pack: 40.35MB (20.17MB/s)                                                     Publishing instance: Image pack: 61.48MB (20.48MB/s)                                                     Publishing instance: Image pack: 81.43MB (20.34MB/s)                                                     Publishing instance: Image pack: 99.53MB (19.89MB/s)Publishing instance: Image pack: 119.28MB (19.87MB/s)                                                      Publishing instance: Image pack: 137.75MB (19.66MB/s)                                                      Publishing instance: Image pack: 155.21MB (19.38MB/s)                                                      Publishing instance: Image pack: 171.83MB (19.08MB/s)                                                      Publishing instance: Image pack: 188.13MB (18.79MB/s)                                                      Publishing instance: Image pack: 211.32MB (19.19MB/s)                                                      Publishing instance: Image pack: 234.71MB (19.54MB/s)                                                      Publishing instance: Image pack: 254.05MB (19.52MB/s)                                                      Publishing instance: Image pack: 272.86MB (19.47MB/s)                                                      Publishing instance: Image pack: 294.06MB (19.59MB/s)                                                      Publishing instance: Image pack: 310.87MB (19.41MB/s)                                                      Publishing instance: Image pack: 331.50MB (19.48MB/s)                                                      Publishing instance: Image pack: 350.99MB (19.48MB/s)                                                      Publishing instance: Image pack: 374.60MB (19.70MB/s)                                                      Publishing instance: Image pack: 395.58MB (19.76MB/s)                                                      Publishing instance: Image pack: 419.03MB (19.94MB/s)                                                      Publishing instance: Image pack: 447.65MB (20.33MB/s)                                                      Publishing instance: Image pack: 464.72MB (20.19MB/s)                                                      Publishing instance: Image pack: 488.08MB (20.32MB/s)                                                      Publishing instance: Image pack: 510.97MB (20.42MB/s)                                                      Publishing instance: Image pack: 530.08MB (20.37MB/s)                                                      Publishing instance: Image pack: 547.66MB (20.26MB/s)                                                      Publishing instance: Image pack: 565.25MB (20.17MB/s)                                                      Publishing instance: Image pack: 583.56MB (20.10MB/s)                                                      Publishing instance: Image pack: 601.32MB (20.02MB/s)                                                      Publishing instance: Image pack: 629.11MB (20.27MB/s)                                                      Publishing instance: Image pack: 674.27MB (21.05MB/s)                                                      Publishing instance: Image pack: 710.42MB (21.51MB/s)                                                      Publishing instance: Image pack: 747.70MB (21.97MB/s)                                                      Instance published with fingerprint: dfc779c7c73815e5720c2646d454e810e20a0519ef4300cbf68bde6b0a099058
++ lxc init xenial-proposed test-xenial-proposed
+Creating test-xenial-proposed
+Retrieving image: Unpack: 1% (52.74MB/s)                                         Retrieving image: Unpack: 2% (54.16MB/s)                                         Retrieving image: Unpack: 3% (52.03MB/s)                                         Retrieving image: Unpack: 4% (35.78MB/s)                                         Retrieving image: Unpack: 5% (36.54MB/s)                                         Retrieving image: Unpack: 6% (37.42MB/s)                                         Retrieving image: Unpack: 7% (37.05MB/s)                                         Retrieving image: Unpack: 8% (38.25MB/s)                                         Retrieving image: Unpack: 9% (39.12MB/s)Retrieving image: Unpack: 10% (40.27MB/s)                                          Retrieving image: Unpack: 10% (40.25MB/s)                                          Retrieving image: Unpack: 11% (40.48MB/s)                                          Retrieving image: Unpack: 12% (41.07MB/s)                                          Retrieving image: Unpack: 13% (41.58MB/s)                                          Retrieving image: Unpack: 14% (41.95MB/s)                                          Retrieving image: Unpack: 15% (42.51MB/s)                                          Retrieving image: Unpack: 16% (42.86MB/s)                                          Retrieving image: Unpack: 17% (42.83MB/s)                                          Retrieving image: Unpack: 18% (42.97MB/s)                                          Retrieving image: Unpack: 19% (42.96MB/s)                                          Retrieving image: Unpack: 19% (43.26MB/s)                                          Retrieving image: Unpack: 20% (43.55MB/s)                                          Retrieving image: Unpack: 21% (43.54MB/s)                                          Retrieving image: Unpack: 22% (43.55MB/s)                                          Retrieving image: Unpack: 23% (43.77MB/s)                                          Retrieving image: Unpack: 24% (43.93MB/s)                                          Retrieving image: Unpack: 25% (44.13MB/s)                                          Retrieving image: Unpack: 26% (44.23MB/s)                                          Retrieving image: Unpack: 27% (44.47MB/s)                                          Retrieving image: Unpack: 28% (44.67MB/s)                                          Retrieving image: Unpack: 29% (44.84MB/s)                                          Retrieving image: Unpack: 29% (44.76MB/s)                                          Retrieving image: Unpack: 30% (44.56MB/s)                                          Retrieving image: Unpack: 31% (43.90MB/s)                                          Retrieving image: Unpack: 32% (43.26MB/s)                                          Retrieving image: Unpack: 33% (43.08MB/s)                                          Retrieving image: Unpack: 34% (42.64MB/s)                                          Retrieving image: Unpack: 35% (42.40MB/s)                                          Retrieving image: Unpack: 36% (42.34MB/s)                                          Retrieving image: Unpack: 37% (42.25MB/s)                                          Retrieving image: Unpack: 38% (42.20MB/s)                                          Retrieving image: Unpack: 38% (42.12MB/s)                                          Retrieving image: Unpack: 39% (42.03MB/s)                                          Retrieving image: Unpack: 40% (42.05MB/s)                                          Retrieving image: Unpack: 41% (40.69MB/s)                                          Retrieving image: Unpack: 42% (39.20MB/s)                                          Retrieving image: Unpack: 43% (39.18MB/s)                                          Retrieving image: Unpack: 44% (38.62MB/s)                                          Retrieving image: Unpack: 45% (38.58MB/s)                                          Retrieving image: Unpack: 46% (38.76MB/s)                                          Retrieving image: Unpack: 47% (39.05MB/s)                                          Retrieving image: Unpack: 47% (39.15MB/s)                                          Retrieving image: Unpack: 48% (39.43MB/s)                                          Retrieving image: Unpack: 49% (39.49MB/s)                                          Retrieving image: Unpack: 50% (39.54MB/s)                                          Retrieving image: Unpack: 51% (39.62MB/s)                                          Retrieving image: Unpack: 52% (39.70MB/s)                                          Retrieving image: Unpack: 53% (39.79MB/s)                                          Retrieving image: Unpack: 54% (39.87MB/s)                                          Retrieving image: Unpack: 55% (39.87MB/s)                                          Retrieving image: Unpack: 56% (39.88MB/s)                                          Retrieving image: Unpack: 57% (39.71MB/s)                                          Retrieving image: Unpack: 57% (39.79MB/s)                                          Retrieving image: Unpack: 58% (39.90MB/s)                                          Retrieving image: Unpack: 59% (38.81MB/s)                                          Retrieving image: Unpack: 60% (38.59MB/s)                                          Retrieving image: Unpack: 61% (38.12MB/s)                                          Retrieving image: Unpack: 62% (38.02MB/s)                                          Retrieving image: Unpack: 63% (37.83MB/s)                                          Retrieving image: Unpack: 64% (38.04MB/s)                                          Retrieving image: Unpack: 65% (37.93MB/s)                                          Retrieving image: Unpack: 66% (37.90MB/s)                                          Retrieving image: Unpack: 66% (37.99MB/s)                                          Retrieving image: Unpack: 67% (38.05MB/s)                                          Retrieving image: Unpack: 68% (38.13MB/s)                                          Retrieving image: Unpack: 69% (38.13MB/s)                                          Retrieving image: Unpack: 70% (38.14MB/s)                                          Retrieving image: Unpack: 71% (38.20MB/s)                                          Retrieving image: Unpack: 72% (37.77MB/s)                                          Retrieving image: Unpack: 73% (37.65MB/s)                                          Retrieving image: Unpack: 74% (37.36MB/s)                                          Retrieving image: Unpack: 75% (35.99MB/s)                                          Retrieving image: Unpack: 75% (35.95MB/s)                                          Retrieving image: Unpack: 76% (36.02MB/s)                                          Retrieving image: Unpack: 77% (36.02MB/s)                                          Retrieving image: Unpack: 78% (35.57MB/s)                                          Retrieving image: Unpack: 79% (35.69MB/s)                                          Retrieving image: Unpack: 80% (35.79MB/s)                                          Retrieving image: Unpack: 81% (34.91MB/s)                                          Retrieving image: Unpack: 82% (34.93MB/s)                                          Retrieving image: Unpack: 83% (34.95MB/s)                                          Retrieving image: Unpack: 84% (34.26MB/s)                                          Retrieving image: Unpack: 85% (33.99MB/s)                                          Retrieving image: Unpack: 85% (34.10MB/s)                                          Retrieving image: Unpack: 86% (34.19MB/s)                                          Retrieving image: Unpack: 87% (34.26MB/s)                                          Retrieving image: Unpack: 88% (34.32MB/s)                                          Retrieving image: Unpack: 89% (34.38MB/s)                                          Retrieving image: Unpack: 90% (34.36MB/s)                                          Retrieving image: Unpack: 91% (34.30MB/s)                                          Retrieving image: Unpack: 92% (34.30MB/s)                                          Retrieving image: Unpack: 93% (34.33MB/s)                                          Retrieving image: Unpack: 94% (34.34MB/s)                                          Retrieving image: Unpack: 94% (34.34MB/s)                                          Retrieving image: Unpack: 95% (34.34MB/s)                                          Retrieving image: Unpack: 96% (34.35MB/s)                                          Retrieving image: Unpack: 97% (34.35MB/s)                                          Retrieving image: Unpack: 98% (34.34MB/s)                                          Retrieving image: Unpack: 99% (34.30MB/s)Retrieving image: Unpack: 100% (34.15MB/s)                                           Retrieving image: Unpack: 100% (34.15MB/s)                                           + lxc config set test-xenial-proposed environment.DEBUG_PROC_CMDLINE=network-config=disabled
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+....................................
+status: done
+time: Fri, 19 Jun 2020 19:05:10 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ restart_cloudinit test-xenial-proposed
++ name=test-xenial-proposed
++ lxc exec test-xenial-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-proposed -- cloud-init clean --logs
++ lxc exec test-xenial-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:05:11 +0000. Up 11.02 seconds.
++ lxc exec test-xenial-proposed -- cloud-init init
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:05:13 +0000. Up 12.45 seconds.
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:05:13 +0000. Up 13.18 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:05:13 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 13.29 seconds
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:05:14 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=disabled'
+Testing network-config=disabled
++ expected_status='status: done'
++ check_cloudinit_status test-xenial-proposed status: done
++ name=test-xenial-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-xenial-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: done'
+SUCCESS: xenial cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-xenial-proposed
++ name=test-xenial-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-xenial-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: xenial show network as disabled in cloud-init log'
+SUCCESS: xenial show network as disabled in cloud-init log
++ reset_cmd_line_variable test-xenial-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ name=test-xenial-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc stop test-xenial-proposed
++ lxc config set test-xenial-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+..........
+status: done
+time: Fri, 19 Jun 2020 19:05:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ restart_cloudinit test-xenial-proposed
++ name=test-xenial-proposed
++ lxc exec test-xenial-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-proposed -- cloud-init clean --logs
++ lxc exec test-xenial-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:05:26 +0000. Up 4.57 seconds.
++ lxc exec test-xenial-proposed -- cloud-init init
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:05:28 +0000. Up 6.05 seconds.
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:05:29 +0000. Up 6.77 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:05:29 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 6.89 seconds
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:05:29 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQifQ==
++ expected_status='status: done'
++ check_cloudinit_status test-xenial-proposed status: done
++ name=test-xenial-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-xenial-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: done'
+SUCCESS: xenial cloud-init finished with expected status: status: done
++ check_network_disabled_in_log test-xenial-proposed
++ name=test-xenial-proposed
++ expected_output='network config is disabled by cmdline'
+++ lxc exec test-xenial-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'network config is disabled by cmdline'
++ actual_output='network config is disabled by cmdline'
++ '[' 'network config is disabled by cmdline' = 'network config is disabled by cmdline' ']'
++ echo 'SUCCESS: xenial show network as disabled in cloud-init log'
+SUCCESS: xenial show network as disabled in cloud-init log
++ reset_cmd_line_variable test-xenial-proposed network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ name=test-xenial-proposed
++ cmd_line_var=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc stop test-xenial-proposed
++ lxc config set test-xenial-proposed environment.DEBUG_PROC_CMDLINE=network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+..........
+status: done
+time: Fri, 19 Jun 2020 19:05:36 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ restart_cloudinit test-xenial-proposed
++ name=test-xenial-proposed
++ lxc exec test-xenial-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-proposed -- cloud-init clean --logs
++ lxc exec test-xenial-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:05:37 +0000. Up 4.65 seconds.
+2020-06-19 19:05:38,045 - util.py[WARNING]: Failed loading yaml blob. Invalid format at line 1 column 12: "while scanning a quoted scalar
+  in "<unicode string>", line 1, column 12:
+    {"config": "disabled'}
+               ^
+found unexpected end of stream
+  in "<unicode string>", line 1, column 23:
+    {"config": "disabled'}
+                          ^"
++ lxc exec test-xenial-proposed -- cloud-init init
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:05:39 +0000. Up 6.09 seconds.
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:05:40 +0000. Up 6.83 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:05:40 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 6.94 seconds
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:05:40 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ=='
+Testing network-config=eyJjb25maWciOiAiZGlzYWJsZWQnfQ==
++ expected_status='status: done'
++ check_cloudinit_status test-xenial-proposed status: done
++ name=test-xenial-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-xenial-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: done'
+SUCCESS: xenial cloud-init finished with expected status: status: done
++ expected_error='Failed loading yaml blob'
++ check_error_in_cloudinit_log test-xenial-proposed Failed loading yaml blob
++ name=test-xenial-proposed
++ shift
++ expected_error='Failed loading yaml blob'
+++ lxc exec test-xenial-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Failed loading yaml blob'
++ actual_error='Failed loading yaml blob'
++ '[' 'Failed loading yaml blob' = 'Failed loading yaml blob' ']'
++ echo 'SUCCESS: xenial has found '\''Failed loading yaml blob'\'' in /var/log/cloud-init.log'
+SUCCESS: xenial has found 'Failed loading yaml blob' in /var/log/cloud-init.log
++ reset_cmd_line_variable test-xenial-proposed network-config=foo
++ name=test-xenial-proposed
++ cmd_line_var=network-config=foo
++ lxc stop test-xenial-proposed
++ lxc config set test-xenial-proposed environment.DEBUG_PROC_CMDLINE=network-config=foo
++ lxc start test-xenial-proposed
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+..........
+status: done
+time: Fri, 19 Jun 2020 19:05:47 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ lxc exec test-xenial-proposed -- python3 -c 'import os; print(os.environ.get('\''DEBUG_PROC_CMDLINE'\''))'
+network-config=foo
++ restart_cloudinit test-xenial-proposed
++ name=test-xenial-proposed
++ lxc exec test-xenial-proposed -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
++ lxc exec test-xenial-proposed -- cloud-init clean --logs
++ lxc exec test-xenial-proposed -- cloud-init init --local
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'init-local' at Fri, 19 Jun 2020 19:05:48 +0000. Up 4.50 seconds.
+2020-06-19 19:05:48,828 - cmdline.py[ERROR]: Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ lxc exec test-xenial-proposed -- cloud-init init
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=config
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:config' at Fri, 19 Jun 2020 19:05:50 +0000. Up 5.92 seconds.
++ lxc exec test-xenial-proposed -- cloud-init modules --mode=final
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:final' at Fri, 19 Jun 2020 19:05:50 +0000. Up 6.66 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 finished at Fri, 19 Jun 2020 19:05:50 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 6.78 seconds
++ lxc exec test-xenial-proposed -- cloud-init status --wait --long
+
+status: done
+time: Fri, 19 Jun 2020 19:05:50 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
++ echo 'Testing network-config=foo'
+Testing network-config=foo
++ expected_status='status: done'
++ check_cloudinit_status test-xenial-proposed status: done
++ name=test-xenial-proposed
++ shift
++ expected_status='status: done'
+++ lxc exec test-xenial-proposed -- cloud-init status
++ actual_status='status: done'
++ '[' 'status: done' = 'status: done' ']'
++ echo 'SUCCESS: xenial cloud-init finished with expected status: status: done'
+SUCCESS: xenial cloud-init finished with expected status: status: done
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ check_error_in_cloudinit_log test-xenial-proposed Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.
++ name=test-xenial-proposed
++ shift
++ expected_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
+++ lxc exec test-xenial-proposed -- cat /var/log/cloud-init.log
+++ grep -o -m 1 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ actual_error='Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'
++ '[' 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' = 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' ']'
++ echo 'SUCCESS: xenial has found '\''Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.'\'' in /var/log/cloud-init.log'
+SUCCESS: xenial has found 'Expected base64 encoded kernel commandline parameter network-config. Ignoring network-config=foo.' in /var/log/cloud-init.log
++ echo '=== END ' xenial
+=== END  xenial
