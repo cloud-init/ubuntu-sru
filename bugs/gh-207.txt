@@ -5,6 +5,43 @@ filesystem
 
 [Test Case]
 #!/bin/bash
+cat >build-proposed-vm.sh <<EOF
+#/bin/bash
+
+if [ $# -ne 1 ]; then
+    echo "Pass in series"
+    exit 1
+fi
+
+SERIES=$1
+
+lxc list | grep build-${SERIES}-proposed
+if [ $? -eq 1 ]; then
+    lxc launch ubuntu:${SERIES} build-${SERIES}-proposed --vm --profile vm -c user.user-data="$(cat /home/james/my-user-data)"
+    echo "build-${SERIES}-proposed launched"
+    echo "Connect into VM (lxc console build-${SERIES}-proposed, ubuntu:password)  and run the following:"
+    echo "sudo su"
+    echo "mount -t 9p config /mnt"
+    echo "cd /mnt"
+    echo "./install.sh"
+    echo "reboot"
+    echo ""
+    echo "After reboot, ensure VM has come up (and you can connect), and re-run this script"
+    exit 3
+fi
+
+lxc exec build-${SERIES}-proposed -- apt purge -y cloud-init
+lxc exec build-${SERIES}-proposed -- rm -rf /var/lib/cloud
+lxc exec build-${SERIES}-proposed -- rm -rf /run/cloud-init
+lxc exec build-${SERIES}-proposed -- rm -rf /etc/cloud
+lxc exec build-${SERIES}-proposed -- rm /var/log/cloud-init*
+lxc exec build-${SERIES}-proposed -- bash -c "echo \"deb http://archive.ubuntu.com/ubuntu/ ${SERIES}-proposed main universe\" > /etc/apt/sources.list.d/proposed.list"
+lxc exec build-${SERIES}-proposed -- apt update
+lxc exec build-${SERIES}-proposed -- apt install -y cloud-init
+lxc stop build-${SERIES}-proposed
+lxc publish build-${SERIES}-proposed --alias=${SERIES}-proposed-vm
+lxc delete build-${SERIES}-proposed
+EOF
 
 cat >vm_profile.yaml <<EOF
 config: {}
@@ -66,7 +103,7 @@ for SERIES in $SERIES_LIST; do
   name="test-${SERIES}"
   lxc image list | grep "$ref"
   if [ $? -eq 1 ]; then
-    echo "Build the ${SERIES}-proposed-vm VM"  # This needs to be done manually
+    echo "Build the ${SERIES}-proposed-vm VM"  # This needs to be done manually using build-proposed-vm.sh defined above
     exit
   fi
   lxc init ${SERIES}-proposed-vm $name -c user.user-data="$(cat test-case.yaml)" --profile vm
