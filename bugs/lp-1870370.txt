@@ -1,0 +1,643 @@
+http://pad.lv/1870370
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1870370
+
+=== Begin cloud-init SRU Template ===
+[Impact]
+
+Cloud-init users who attempt to mount nfs targets observe an error message
+in cloud-init logs suggesting that nfs mount entries are being ignored.
+
+[Test Case]
+#!/bin/bash
+# launch a vm with a nfs mount entry, confirm we see error message, and
+# entry is present in fstab.  Verify after upgrade, no error message is
+# seen and nfs entry is present in fstab.
+#
+read -r -d '' CLOUDCFG <<- EOM
+#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '/mnt', "nfs", 'defaults,_netdev', '0', '0']
+EOM
+
+SETUP_PROPOSED=$(mktemp ubuntu-sru.XXX)
+cat > ${SETUP_PROPOSED} <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+BUGNUM="lp1870370"
+VM_SLEEP=30
+
+cleanup() {
+    if [ -n "${SETUP_PROPOSED}" -a -e "${SETUP_PROPOSED}" ]; then
+        rm -f "${SETUP_PROPOSED}";
+    fi
+    #lxc delete --force $name &>/dev/null
+}
+trap cleanup EXIT
+
+
+recreate() {
+    release=$1
+    name=${release}-recreate-${BUGNUM}
+
+    # initialize the contaier
+    lxc init images:ubuntu/$release/cloud --vm $name
+    lxc config set $name user.user-data "${CLOUDCFG}"
+    lxc config device add $name config disk source=cloud-init:config
+
+    lxc start $name
+    sleep $VM_SLEEP
+    # wait for cloud-init to complete
+    lxc exec $name -- cloud-init status --wait
+
+    # check for error sanitizing mounts entry
+    lxc exec $name -- grep "Ignoring nonexistent named mount 127.0.0.1:/srv" /var/log/cloud-init.log
+    expected=$(lxc exec $name -- grep -c "Ignoring nonexistent named mount 127.0.0.1:/srv" /var/log/cloud-init.log)
+    echo "Expecting: 1"
+    echo "Found    : [${expected}]"
+    case $expected in
+        1)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    if [ "$rc" != "0" ]; then
+        echo "Failed to recreate"
+        return $rc
+    fi
+    # check for entry in /etc/fstab
+    lxc exec $name -- grep -c "nfs" /etc/fstab
+    expected=$(lxc exec $name -- grep -c "nfs" /etc/fstab)
+    echo "Expecting: 1"
+    echo "Found    : [${expected}]"
+    case $expected in
+        1)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    if [ "$rc" = "0" ]; then
+        echo "Recreate OK!"
+        lxc delete --force ${name}
+    fi
+    return $rc
+}
+
+
+verify() {
+    release=$1
+    name=${release}-verify-${BUGNUM}
+
+    lxc init images:ubuntu/$release/cloud --vm $name
+    lxc config set $name user.user-data "${CLOUDCFG}"
+    lxc config device add $name config disk source=cloud-init:config
+
+    lxc start $name
+    sleep $VM_SLEEP
+    lxc exec $name -- cloud-init status --wait
+
+    # copy proposed script
+    lxc file push ${SETUP_PROPOSED} ${name}/setup_proposed.sh
+    lxc exec $name -- bash /setup_proposed.sh | grep cloud-init
+    # remove nfs entry from /etc/fstab
+    lxc exec $name -- sed -i '/nfs/d' /etc/fstab
+    lxc exec $name -- cloud-init clean --logs --reboot
+
+    sleep $VM_SLEEP
+    lxc exec $name -- cloud-init status --wait
+
+    # check for error sanitizing mounts entry
+    lxc exec $name -- grep "Ignoring nonexistent named mount 127.0.0.1:/srv" /var/log/cloud-init.log
+    expected=$(lxc exec $name -- grep -c "Ignoring nonexistent named mount 127.0.0.1:/srv" /var/log/cloud-init.log)
+    echo "Expecting: 0"
+    echo "Found    : [${expected}]"
+    case $expected in
+        0)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    if [ "$rc" != "0" ]; then
+        echo "Failed verification"
+        return $rc
+    fi
+    # check for entry in /etc/fstab
+    lxc exec $name -- grep -c "nfs" /etc/fstab
+    expected=$(lxc exec $name -- grep -c "nfs" /etc/fstab)
+    echo "Expecting: 1"
+    echo "Found    : [${expected}]"
+    case $expected in
+        1)
+            rc=0
+            ;;
+        *)
+            rc=1
+            ;;
+    esac
+    if [ "$rc" = "0" ]; then
+        echo "Verification OK"
+        lxc delete --force ${name}
+    fi
+    return $rc
+}
+
+RELEASE=${1}
+[ -z "${RELEASE}" ] && { echo "usage: $0 <ubuntu release name>"; exit 1; }
+
+echo "Starting recreate for $RELEASE"
+recreate ${RELEASE} || { echo "Error recreating failure"; exit $?; }
+echo "done"
+
+echo "Starting verification for $RELEASE"
+verify ${RELEASE} || { echo "Error verifying fix"; exit $?; }
+echo "done"
+
+[Regression Potential]
+
+Users which may have relied on observing the specific log message emitted
+to trigger actions will no longer see the entry in the cloud-init log.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
+==== xenial ====
++ read -r -d '' CLOUDCFG
+++ mktemp ubuntu-sru.XXX
++ SETUP_PROPOSED=ubuntu-sru.JTa
++ cat
++ BUGNUM=lp1870370
++ VM_SLEEP=30
++ trap cleanup EXIT
++ RELEASE=xenial
++ '[' -z xenial ']'
++ echo 'Starting recreate for xenial'
+Starting recreate for xenial
++ recreate xenial
++ release=xenial
++ name=xenial-recreate-lp1870370
++ lxc init images:ubuntu/xenial/cloud --vm xenial-recreate-lp1870370
+Creating xenial-recreate-lp1870370
++ lxc config set xenial-recreate-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add xenial-recreate-lp1870370 config disk source=cloud-init:config
+Device config added to xenial-recreate-lp1870370
++ lxc start xenial-recreate-lp1870370
++ sleep 30
++ lxc exec xenial-recreate-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec xenial-recreate-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+2020-06-25 17:09:12,264 - cc_mounts.py[DEBUG]: Ignoring nonexistent named mount 127.0.0.1:/srv
+++ lxc exec xenial-recreate-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec xenial-recreate-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec xenial-recreate-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Recreate OK!'
+Recreate OK!
++ lxc delete --force xenial-recreate-lp1870370
++ return 0
++ echo done
+done
++ echo 'Starting verification for xenial'
+Starting verification for xenial
++ verify xenial
++ release=xenial
++ name=xenial-verify-lp1870370
++ lxc init images:ubuntu/xenial/cloud --vm xenial-verify-lp1870370
+Creating xenial-verify-lp1870370
++ lxc config set xenial-verify-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add xenial-verify-lp1870370 config disk source=cloud-init:config
+Device config added to xenial-verify-lp1870370
++ lxc start xenial-verify-lp1870370
++ sleep 30
++ lxc exec xenial-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc file push ubuntu-sru.JTa xenial-verify-lp1870370/setup_proposed.sh
+Pushing /var/lib/snapd/hostfs/home/rharper/work/git/ubuntu-sru/bugs/ubuntu-sru.JTa to /setup_proposed.sh: 100% (1.01GB/s)                                                                                                                          + lxc exec xenial-verify-lp1870370 -- bash /setup_proposed.sh
++ grep cloud-init
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~16.04.1 [425 kB]
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (19.4-33-gbb4131a2-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
++ lxc exec xenial-verify-lp1870370 -- sed -i /nfs/d /etc/fstab
++ lxc exec xenial-verify-lp1870370 -- cloud-init clean --logs --reboot
++ sleep 30
++ lxc exec xenial-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec xenial-verify-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+++ lxc exec xenial-verify-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec xenial-verify-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec xenial-verify-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Verification OK'
+Verification OK
++ lxc delete --force xenial-verify-lp1870370
++ return 0
++ echo done
+done
++ cleanup
++ '[' -n ubuntu-sru.JTa -a -e ubuntu-sru.JTa ']'
++ rm -f ubuntu-sru.JTa
+==== bionic ====
++ read -r -d '' CLOUDCFG
+++ mktemp ubuntu-sru.XXX
++ SETUP_PROPOSED=ubuntu-sru.E5I
++ cat
++ BUGNUM=lp1870370
++ VM_SLEEP=30
++ trap cleanup EXIT
++ RELEASE=bionic
++ '[' -z bionic ']'
++ echo 'Starting recreate for bionic'
+Starting recreate for bionic
++ recreate bionic
++ release=bionic
++ name=bionic-recreate-lp1870370
++ lxc init images:ubuntu/bionic/cloud --vm bionic-recreate-lp1870370
+Creating bionic-recreate-lp1870370
++ lxc config set bionic-recreate-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add bionic-recreate-lp1870370 config disk source=cloud-init:config
+Device config added to bionic-recreate-lp1870370
++ lxc start bionic-recreate-lp1870370
++ sleep 30
++ lxc exec bionic-recreate-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec bionic-recreate-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+2020-06-25 17:12:24,619 - cc_mounts.py[DEBUG]: Ignoring nonexistent named mount 127.0.0.1:/srv
+++ lxc exec bionic-recreate-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec bionic-recreate-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec bionic-recreate-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Recreate OK!'
+Recreate OK!
++ lxc delete --force bionic-recreate-lp1870370
++ return 0
++ echo done
+done
++ echo 'Starting verification for bionic'
+Starting verification for bionic
++ verify bionic
++ release=bionic
++ name=bionic-verify-lp1870370
++ lxc init images:ubuntu/bionic/cloud --vm bionic-verify-lp1870370
+Creating bionic-verify-lp1870370
++ lxc config set bionic-verify-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add bionic-verify-lp1870370 config disk source=cloud-init:config
+Device config added to bionic-verify-lp1870370
++ lxc start bionic-verify-lp1870370
++ sleep 30
++ lxc exec bionic-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc file push ubuntu-sru.E5I bionic-verify-lp1870370/setup_proposed.sh
+Pushing /var/lib/snapd/hostfs/home/rharper/work/git/ubuntu-sru/bugs/ubuntu-sru.E5I to /setup_proposed.sh: 100% (776.00MB/s)                                                                                                                            + lxc exec bionic-verify-lp1870370 -- bash /setup_proposed.sh
++ grep cloud-init
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~18.04.1 [422 kB]
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (19.4-33-gbb4131a2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
++ lxc exec bionic-verify-lp1870370 -- sed -i /nfs/d /etc/fstab
++ lxc exec bionic-verify-lp1870370 -- cloud-init clean --logs --reboot
+Error: websocket: close 1006 (abnormal closure): unexpected EOF
++ sleep 30
++ lxc exec bionic-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec bionic-verify-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+++ lxc exec bionic-verify-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec bionic-verify-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec bionic-verify-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Verification OK'
+Verification OK
++ lxc delete --force bionic-verify-lp1870370
++ return 0
++ echo done
+done
++ cleanup
++ '[' -n ubuntu-sru.E5I -a -e ubuntu-sru.E5I ']'
++ rm -f ubuntu-sru.E5I
+==== eoan ====
++ read -r -d '' CLOUDCFG
+++ mktemp ubuntu-sru.XXX
++ SETUP_PROPOSED=ubuntu-sru.Knj
++ cat
++ BUGNUM=lp1870370
++ VM_SLEEP=30
++ trap cleanup EXIT
++ RELEASE=eoan
++ '[' -z eoan ']'
++ echo 'Starting recreate for eoan'
+Starting recreate for eoan
++ recreate eoan
++ release=eoan
++ name=eoan-recreate-lp1870370
++ lxc init images:ubuntu/eoan/cloud --vm eoan-recreate-lp1870370
+Creating eoan-recreate-lp1870370
++ lxc config set eoan-recreate-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add eoan-recreate-lp1870370 config disk source=cloud-init:config
+Device config added to eoan-recreate-lp1870370
++ lxc start eoan-recreate-lp1870370
++ sleep 30
++ lxc exec eoan-recreate-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec eoan-recreate-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+2020-06-25 17:23:25,732 - cc_mounts.py[DEBUG]: Ignoring nonexistent named mount 127.0.0.1:/srv
+++ lxc exec eoan-recreate-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec eoan-recreate-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec eoan-recreate-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Recreate OK!'
+Recreate OK!
++ lxc delete --force eoan-recreate-lp1870370
++ return 0
++ echo done
+done
++ echo 'Starting verification for eoan'
+Starting verification for eoan
++ verify eoan
++ release=eoan
++ name=eoan-verify-lp1870370
++ lxc init images:ubuntu/eoan/cloud --vm eoan-verify-lp1870370
+Creating eoan-verify-lp1870370
++ lxc config set eoan-verify-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add eoan-verify-lp1870370 config disk source=cloud-init:config
+Device config added to eoan-verify-lp1870370
++ lxc start eoan-verify-lp1870370
++ sleep 30
++ lxc exec eoan-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc file push ubuntu-sru.Knj eoan-verify-lp1870370/setup_proposed.sh
+Pushing /var/lib/snapd/hostfs/home/rharper/work/git/ubuntu-sru/bugs/ubuntu-sru.Knj to /setup_proposed.sh: 100% (1.04GB/s)                                                                                                                          + lxc exec eoan-verify-lp1870370 -- bash /setup_proposed.sh
++ grep cloud-init
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu eoan-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~19.10.1 [420 kB]
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~19.10.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) over (19.4-33-gbb4131a2-0ubuntu1~19.10.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~19.10.1) ...
++ lxc exec eoan-verify-lp1870370 -- sed -i /nfs/d /etc/fstab
++ lxc exec eoan-verify-lp1870370 -- cloud-init clean --logs --reboot
++ sleep 30
++ lxc exec eoan-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec eoan-verify-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+++ lxc exec eoan-verify-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec eoan-verify-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec eoan-verify-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Verification OK'
+Verification OK
++ lxc delete --force eoan-verify-lp1870370
++ return 0
++ echo done
+done
++ cleanup
++ '[' -n ubuntu-sru.Knj -a -e ubuntu-sru.Knj ']'
++ rm -f ubuntu-sru.Knj
+==== focal ====
++ read -r -d '' CLOUDCFG
+++ mktemp ubuntu-sru.XXX
++ SETUP_PROPOSED=ubuntu-sru.nDz
++ cat
++ BUGNUM=lp1870370
++ VM_SLEEP=30
++ trap cleanup EXIT
++ RELEASE=focal
++ '[' -z focal ']'
++ echo 'Starting recreate for focal'
+Starting recreate for focal
++ recreate focal
++ release=focal
++ name=focal-recreate-lp1870370
++ lxc init images:ubuntu/focal/cloud --vm focal-recreate-lp1870370
+Creating focal-recreate-lp1870370
++ lxc config set focal-recreate-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add focal-recreate-lp1870370 config disk source=cloud-init:config
+Device config added to focal-recreate-lp1870370
++ lxc start focal-recreate-lp1870370
++ sleep 30
++ lxc exec focal-recreate-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec focal-recreate-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+2020-06-25 17:23:53,073 - cc_mounts.py[DEBUG]: Ignoring nonexistent named mount 127.0.0.1:/srv
+++ lxc exec focal-recreate-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec focal-recreate-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec focal-recreate-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Recreate OK!'
+Recreate OK!
++ lxc delete --force focal-recreate-lp1870370
++ return 0
++ echo done
+done
++ echo 'Starting verification for focal'
+Starting verification for focal
++ verify focal
++ release=focal
++ name=focal-verify-lp1870370
++ lxc init images:ubuntu/focal/cloud --vm focal-verify-lp1870370
+Creating focal-verify-lp1870370
++ lxc config set focal-verify-lp1870370 user.user-data '#cloud-config
+    mounts:
+      - ["127.0.0.1:/srv", '\''/mnt'\'', "nfs", '\''defaults,_netdev'\'', '\''0'\'', '\''0'\'']'
++ lxc config device add focal-verify-lp1870370 config disk source=cloud-init:config
+Device config added to focal-verify-lp1870370
++ lxc start focal-verify-lp1870370
++ sleep 30
++ lxc exec focal-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc file push ubuntu-sru.nDz focal-verify-lp1870370/setup_proposed.sh
+Pushing /var/lib/snapd/hostfs/home/rharper/work/git/ubuntu-sru/bugs/ubuntu-sru.nDz to /setup_proposed.sh: 100% (932.69MB/s)                                                                                                                            + lxc exec focal-verify-lp1870370 -- bash /setup_proposed.sh
++ grep cloud-init
+dpkg-preconfigure: unable to re-open stdin: No such file or directory
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.2-45-g5f7825e2-0ubuntu1~20.04.1 [416 kB]
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.1-10-g71af48df-0ubuntu5) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
++ lxc exec focal-verify-lp1870370 -- sed -i /nfs/d /etc/fstab
++ lxc exec focal-verify-lp1870370 -- cloud-init clean --logs --reboot
++ sleep 30
++ lxc exec focal-verify-lp1870370 -- cloud-init status --wait
+
+status: done
++ lxc exec focal-verify-lp1870370 -- grep 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
+++ lxc exec focal-verify-lp1870370 -- grep -c 'Ignoring nonexistent named mount 127.0.0.1:/srv' /var/log/cloud-init.log
++ expected=0
++ echo 'Expecting: 0'
+Expecting: 0
++ echo 'Found    : [0]'
+Found    : [0]
++ case $expected in
++ rc=0
++ '[' 0 '!=' 0 ']'
++ lxc exec focal-verify-lp1870370 -- grep -c nfs /etc/fstab
+1
+++ lxc exec focal-verify-lp1870370 -- grep -c nfs /etc/fstab
++ expected=1
++ echo 'Expecting: 1'
+Expecting: 1
++ echo 'Found    : [1]'
+Found    : [1]
++ case $expected in
++ rc=0
++ '[' 0 = 0 ']'
++ echo 'Verification OK'
+Verification OK
++ lxc delete --force focal-verify-lp1870370
++ return 0
++ echo done
+done
++ cleanup
++ '[' -n ubuntu-sru.nDz -a -e ubuntu-sru.nDz ']'
++ rm -f ubuntu-sru.nDz
