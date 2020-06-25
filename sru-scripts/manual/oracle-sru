@@ -32,13 +32,16 @@ done
 # Capture current state
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log
+# Expecting OpenStack datasource to have two Traces one related to Oracle's lack of support of stock OpenStack datasource
+# "meta-data" route and one related to EphemeralDCHP falling over because the ip route already exists (due to iscsi_root)
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log || true
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
 echo 'Networking config'
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE
+# Networking is disabled on bionic
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE || true
 
 # Upgrade to -proposed cloud-init and reboot
 scp "${SSHOPTS[@]}" ${PROPOSED_SCRIPT} ubuntu@$VM_IP:.
@@ -47,7 +50,7 @@ ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo rm -f $NETCFG_FILE
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot || true
-ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
+ssh-keygen -f "${HOME}/.ssh/known_hosts" -R $VM_IP
 
 sleep 10  # Wait for the instance to actually go down
 while ! ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
@@ -55,13 +58,13 @@ while ! ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
 done
 
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- hostname
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log || true
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze blame
 echo 'After upgrade Networking config'
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cat $NETCFG_FILE || true
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
 echo "Get cloud-id"
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-id
