@@ -1,6 +1,7 @@
 #!/bin/bash
 # Manual Oracle upgrade and clean install validation
-set -ex
+set -ex -o pipefail
+hash jq
 
 SRU_VARS=./sru-scripts/sru-vars.template
 
@@ -17,6 +18,10 @@ assert_expected_vars PROPOSED_SCRIPT SAMPLE_CLOUDCONFIG LP_USER SSHOPTS \
 create_samplecloudconfig SAMPLE_CLOUDCONFIG
 create_setup_proposed_script
 
+function cleanup {
+    echo "Cleaning up instance ${INSTANCE_ID}"
+    oci compute instance terminate --force --instance-id="${INSTANCE_ID}"
+}
 
 echo "### BEGIN $UBUNTU_RELEASE"
 
@@ -30,6 +35,8 @@ SUBNET_ID=$(echo ${SUBNET_INFO} | jq -r '.id')
 AVAILABILITY_DOMAIN=$(echo ${SUBNET_INFO} | jq -r '."availability-domain"')
 
 INSTANCE_ID=$(oci compute instance launch --availability-domain="${AVAILABILITY_DOMAIN}" --shape="VM.Standard1.1" --image-id="${IMAGE_ID}" --subnet-id="${SUBNET_ID}" --ssh-authorized-keys-file="${SSH_KEY}" | jq -r '.data["id"]')
+
+trap cleanup EXIT
 
 status=$(oci compute instance get --instance-id="${INSTANCE_ID}" | jq -r '.data."lifecycle-state"')
 while [ "${status}" != "RUNNING" ]; do
