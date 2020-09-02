@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 set -ex
 # Manually deploy on Azure using Azure CLI client.
 # Validate upgrade to proposed version of cloud-init
@@ -124,8 +124,6 @@ az network vnet subnet show --name sruSubnet --vnet-name $AZURE_VNET_NAME -g $AZ
     --address-prefixes "10.0.0.0/24" "ace:cab:deca:deed::/64" \
     --network-security-group $AZURE_NETWORK_SECURITY_GROUP
 
-
-sshopts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
 
 netcfg="/etc/netplan/50-cloud-init.yaml"
 case $UBUNTU_RELEASE in
@@ -276,59 +274,59 @@ for nics in "" "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${NIC_NAME}2-$UBUNTU_RELE
 
     echo "Created $name: ubuntu@$IP"
 
-    ssh $sshopts $IP -- cloud-init status --wait --long
-    ssh $sshopts $IP -- dpkg-query --show cloud-init
-    ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
-    ssh $sshopts $IP -- ! grep Trace /var/log/cloud-init.log
-    ssh $sshopts $IP -- systemd-analyze
-    ssh $sshopts $IP -- systemd-analyze blame
-    ssh $sshopts $IP -- cloud-init analyze show
-    ssh $sshopts $IP -- cloud-init analyze blame
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+    ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${SSHOPTS[@]}" $IP -- ! grep Trace /var/log/cloud-init.log
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze blame
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze show
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze blame
     echo 'Writing networking config: previous-network.out'
-    ssh $sshopts $IP -- cat $netcfg > previous-network.out
-    ssh $sshopts $IP -- ip -4 route >> previous-network.out
-    ssh $sshopts $IP -- ip -4 addr >> previous-network.out
-    ssh $sshopts $IP -- ip -6 route >> previous-network.out
-    ssh $sshopts $IP -- ip -6 addr >> previous-network.out
-    ssh $sshopts $IP -- grep DHCP /var/log/syslog >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- cat $netcfg > previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 route >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 addr >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 route >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 addr >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- grep DHCP /var/log/syslog >> previous-network.out
 
-    scp $sshopts PROPOSED_SCRIPT $IP:.
-    ssh $sshopts $IP -- sudo bash PROPOSED_SCRIPT 2>&1 | egrep 'cloud-init'
-    ssh $sshopts $IP -- dpkg-query --show cloud-init
-    ssh $sshopts $IP -- sudo hostname SRU-didnt-work
-    ssh $sshopts $IP -- sudo rm -f $netcfg
-    ssh $sshopts $IP -- sudo cloud-init clean --logs --reboot || true
+    scp "${SSHOPTS[@]}" ${PROPOSED_SCRIPT} $IP:.
+    ssh "${SSHOPTS[@]}" $IP -- sudo bash ${PROPOSED_SCRIPT} 2>&1 | egrep 'cloud-init'
+    ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${SSHOPTS[@]}" $IP -- sudo hostname SRU-didnt-work
+    ssh "${SSHOPTS[@]}" $IP -- sudo rm -f $netcfg
+    ssh "${SSHOPTS[@]}" $IP -- sudo cloud-init clean --logs --reboot || true
     sleep 60
 
-    ssh $sshopts $IP -- cloud-init status --wait --long
-    ssh $sshopts $IP -- ! grep Trace /var/log/cloud-init.log
-    ssh $sshopts $IP -- sudo cat /run/cloud-init/result.json
-    ssh $sshopts $IP -- sudo systemd-analyze blame
-    ssh $sshopts $IP -- cloud-init analyze show
-    ssh $sshopts $IP -- cloud-init analyze blame
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+    ssh "${SSHOPTS[@]}" $IP -- ! grep Trace /var/log/cloud-init.log
+    ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${SSHOPTS[@]}" $IP -- sudo systemd-analyze blame
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze show
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init analyze blame
     echo 'After upgrade write network config: upgrade-network.out'
-    ssh $sshopts $IP -- cat $netcfg > upgrade-network.out
-    ssh $sshopts $IP -- ip -4 route >> upgrade-network.out
-    ssh $sshopts $IP -- ip -4 addr >> upgrade-network.out
-    ssh $sshopts $IP -- ip -6 route >> upgrade-network.out
-    ssh $sshopts $IP -- ip -6 addr >> upgrade-network.out
-    ssh $sshopts $IP -- grep DHCP /var/log/syslog >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- cat $netcfg > upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 route >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 addr >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 route >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 addr >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- grep DHCP /var/log/syslog >> upgrade-network.out
     echo '------- Diff previous-network to post-upgrade-network ------'
     diff -urN previous-network.out upgrade-network.out
     echo '------- Diff previous-network to post-upgrade-network ------'
-    ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{region}}'"
     echo 'Get cloud-id'
-    ssh $sshopts $IP -- cloud-id
-    ssh $sshopts $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
+    ssh "${SSHOPTS[@]}" $IP -- cloud-id
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init query --format "'cloud-region: {{cloud_name}}-{{ds.meta_data.imds.compute.location}}'"
     echo 'Validating whether metadata is being updated per boot LP:1819913. Expect last log to be System Boot'
-    ssh $sshopts $IP -- sudo reboot || true
+    ssh "${SSHOPTS[@]}" $IP -- sudo reboot || true
     sleep 30
-    ssh $sshopts $IP -- cloud-init status --wait --long
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
     echo 'After reboot'
-    ssh $sshopts $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
+    ssh "${SSHOPTS[@]}" $IP -- "grep 'Update datasource' /var/log/cloud-init.log"
 
     echo "Validate https://github.com/canonical/cloud-init/commit/22e683df"
     echo "Azure needs to use __builtin__ agent by default on all releases"
-    ssh $sshopts $IP -- "egrep 'fabric' /var/log/cloud-init.log"
+    ssh "${SSHOPTS[@]}" $IP -- "egrep 'fabric' /var/log/cloud-init.log"
 done
 echo "### END $UBUNTU_RELEASE"
