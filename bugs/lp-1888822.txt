@@ -1,0 +1,80 @@
+http://pad.lv/1888822
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1888822
+
+=== Begin SRU Template ===
+[Impact]
+
+Multipart MIME archives specified as user-data are incorrectly processed by the
+versions of cloud-init currently in Ubuntu's stable releases.  Specifically,
+the specified MIME types are disregarded in favour of a heuristic based on the
+contents of the part.  This prefix-based heuristic is only intended for use in
+the case of unspecified or unknown MIME type, and so it often does not
+correctly determine the appropriate MIME type for a given content: the
+particular case in the reported bug was that the content did not include the
+"expected" prefix for a boothook (because it should not be necessary when the
+MIME type is set correctly).
+
+[Test Case]
+
+cat << EOF > boothook
+#!/bin/sh
+date +%s.%N > /tmp/boothook.time
+EOF
+
+cat << EOF > cloud-config
+#cloud-config
+runcmd:
+- touch /tmp/cloud-config-consumed
+EOF
+
+# This assumes a cloud-init new enough to have the `make-mime` command (20.3+).
+# We are intentionally setting the wrong MIME type on cloud-config to check
+# that we have not regressed the issue being fixed in
+# https://github.com/canonical/cloud-init/commit/d00126c167fc06d913d99cfc184bf3402cb8cf53
+cloud-init devel make-mime -a boothook:cloud-boothook -a cloud-config:x-shellscript > user-data.yaml
+
+lp1888822() {
+    release=$1
+    ref=$release-proposed
+    name=$release-lp1888822
+
+    # Attempt to remove container from a previous run
+    lxc delete -f $name || true
+
+    # https://github.com/cloud-init/qa-scripts/blob/master/scripts/lxc-proposed-snapshot
+    lxc-proposed-snapshot --proposed --publish $release $ref
+
+    lxc launch -c user.user-data="$(cat user-data.yaml)" $ref $name
+
+    lxc exec $name -- cloud-init status --wait
+
+    # We'll find what time the boothook ran at, and confirm that it is lower
+    # than the time at which the modules-final stage started; this indicates that
+    # it was run as a boothook, and not as a user script.
+    boothook_time="$(lxc exec $name -- cat /tmp/boothook.time)"
+    # This needs jq on your system, not in the SUT
+    modules_final_time="$(lxc exec $name -- cat /run/cloud-init/status.json | jq '.v1."modules-final".finished')"
+
+    python3 -c "assert $boothook_time < $modules_final_time" 2> /dev/null || echo "FAILURE: $release ran boothook at the wrong time"
+    lxc exec $name -- test -e /tmp/cloud-config-consumed || echo "FAILURE: $release did not consume incorrectly-typed cloud-config"
+    echo "$release test complete."
+}
+
+
+[Regression Potential]
+
+Users who have started relying on the incorrect behaviour since it was released
+may be affected by the reversion to the correct behaviour.  Any such breakage
+can be easily remediated by setting the MIME types of their archive correctly.
+
+This change modifies a previous change
+(https://github.com/canonical/cloud-init/commit/d00126c167fc06d913d99cfc184bf3402cb8cf53)
+which was intended to ensure that #cloud-config passed as text/x-shellscript
+(which happens on older, buggy platforms) is handled as cloud-config.  The
+above test case verifies that this behaviour still works.
+
+[Other Info]
+Upstream commit at
+  https://github.com/canonical/cloud-init/commit/ef041fd822a2cf3a4022525e942ce988b1f95180
+
+=== End SRU Template ===
