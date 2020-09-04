@@ -1,0 +1,314 @@
+=== Begin SRU Template ===
+[Impact]
+When a user is configuring files to be created in the instance, we must ensure the provided yaml conforms to
+our expected schema. Furthermore, we should verify if the provided schema is working as expected.
+
+[Test Case]
+
+```
+set -x
+# Manually deploy on a lxc container
+
+cat > valid_chef_config.yaml << EOF
+#cloud-config
+chef:
+  directories:
+    - /etc/chef
+    - /var/log/chef
+  validation_cert: system
+  install_type: omnibus
+  initial_attributes:
+    apache:
+      prefork:
+      maxclients: 100
+      keepalive: off
+  run_list:
+    - recipe[apache2]
+    - role[db]
+  encrypted_data_bag_secret: /etc/chef/encrypted_data_bag_secret
+  environment: _default
+  log_level: :auto
+  omnibus_url_retries: 2
+  server_url: https://chef.yourorg.com:4000
+  ssl_verify_mode: :verify_peer
+  validation_name: yourorg-validator
+EOF
+
+cat > invalid_chef_config.yaml << EOF
+#cloud-config
+chef:
+  directories:
+    - /etc/chef
+    - /var/log/chef
+  validation_cert: system
+  install_type: omnibus
+  initial_attributes: invalid
+  run_list:
+    - recipe[apache2]
+    - role[db]
+  encrypted_data_bag_secret: /etc/chef/encrypted_data_bag_secret
+  environment: _default
+  log_level: :auto
+  omnibus_url_retries: 2
+  server_url: https://chef.yourorg.com:4000
+  ssl_verify_mode: :verify_peer
+  validation_name: yourorg-validator
+EOF
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+add-apt-repository ppa:cloud-init-dev/proposed -y
+apt-get -qq update
+apt-get -qqy install cloud-init
+EOF
+
+for SERIES in bionic focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name
+
+   echo "###########################################"
+   echo "Push yaml files into container"
+   lxc file push valid_chef_config.yaml $name/var/tmp/
+   lxc file push invalid_chef_config.yaml $name/var/tmp/
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Expect cloud-init to finish"
+   lxc exec $name -- cloud-init status --wait --long
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Expect both checks to pass, since current cloud-init does not have chef schema"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_chef_config.yaml || echo "FAILURE"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_chef_config.yaml || echo "FAILURE"
+   echo -e "###########################################\n"
+
+   # upgrade cloud-init to proposed
+   echo "###########################################"
+   echo "Update cloud-init"
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- bash /var/tmp/setup_dev_proposed.sh
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Expect schema failure on invalid_chef_config"
+   if [ "$SERIES" = "xenial" ]; then
+       success_msg="SUCCESS: xenial correctly ignores schema because of missing jsonschema dep"
+       failure_msg="FAILURE: xenial should have accepted invalid_schema"
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_chef_config.yaml && echo $success_msg || echo $failure_msg
+   else
+       lxc exec $name -- cloud-init devel schema -c /var/tmp/invalid_chef_config.yaml || echo "SUCCESS: $SERIES rejected invalid_schema"
+   fi
+
+   echo "Expect success on valid_write_file.yaml"
+   lxc exec $name -- cloud-init devel schema -c /var/tmp/valid_chef_config.yaml || echo "FAILURE: $SERIES should have accepted the valid schema"
+   echo -e "###########################################\n"
+done
+```
+
+[Regression Potential]
+
+Some users may rely on an old chef file yaml that do not follow the enforced pattern in this schema.
+However, as far as I can see, this can be mitigated by the users adapting their configuration
+to follow the schema. Because this can be easily solvable, this is an acceptable risk to take.
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
+=== BEGIN  bionic
+Creating test-bionic
+Starting test-bionic
+###########################################
+Push yaml files into container
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/valid_chef_config.yaml to /var/tmp/valid_chef_config.yaml: 100% (3.79GB/s)
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/invalid_chef_config.yaml to /var/tmp/invalid_chef_config.yaml: 100% (2.65GB/s)
+###########################################
+
+###########################################
+Expect cloud-init to finish
+................................
+status: done
+time: Fri, 04 Sep 2020 18:00:45 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Expect both checks to pass, since current cloud-init does not have chef schema
+Valid cloud-config file /var/tmp/invalid_chef_config.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (695.65MB/s)
+Get:1 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic InRelease [15.9 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:5 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main amd64 Packages [660 B]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:7 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu bionic/main Translation-en [248 B]
+Get:8 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [832 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [697 kB]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [231 kB]
+Get:12 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [8312 B]
+Get:13 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2880 B]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [1055 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1103 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [343 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [19.4 kB]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6740 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7736 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4588 B]
+Fetched 18.4 MB in 7s (2632 kB/s)
+Reading package lists...
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+###########################################
+
+###########################################
+Expect schema failure on invalid_chef_config
+SUCCESS: bionic rejected invalid_schema
+Expect success on valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
+=== BEGIN  focal
+Creating test-focal
+Starting test-focal
+###########################################
+Push yaml files into container
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/valid_chef_config.yaml to /var/tmp/valid_chef_config.yaml: 100% (1.44GB/s)
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/invalid_chef_config.yaml to /var/tmp/invalid_chef_config.yaml: 100% (3.28GB/s)
+###########################################
+
+###########################################
+Expect cloud-init to finish
+......................................................................................
+status: done
+time: Fri, 04 Sep 2020 18:01:38 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Expect both checks to pass, since current cloud-init does not have chef schema
+Valid cloud-config file /var/tmp/invalid_chef_config.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (708.86MB/s)
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:2 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal InRelease [18.0 kB]
+Hit:3 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:4 http://archive.ubuntu.com/ubuntu focal-updates InRelease [111 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [174 kB]
+Get:6 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main amd64 Packages [656 B]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [4504 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [56.0 kB]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [29.4 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [2308 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:14 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:15 http://ppa.launchpad.net/cloud-init-dev/proposed/ubuntu focal/main Translation-en [604 B]
+Get:16 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:22 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [343 kB]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [131 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [8876 B]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [164 kB]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [86.7 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [5404 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [11.6 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [3892 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [480 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [3092 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1448 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [224 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Fetched 15.6 MB in 6s (2783 kB/s)
+Reading package lists...
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1.1) ...
+###########################################
+
+###########################################
+Expect schema failure on invalid_chef_config
+SUCCESS: focal rejected invalid_schema
+Expect success on valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
+=== BEGIN  xenial
+Creating test-xenial
+Starting test-xenial
+###########################################
+Push yaml files into container
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/valid_chef_config.yaml to /var/tmp/valid_chef_config.yaml: 100% (3.22GB/s)
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/invalid_chef_config.yaml to /var/tmp/invalid_chef_config.yaml: 100% (2.20GB/s)
+###########################################
+
+###########################################
+Expect cloud-init to finish
+.................................
+status: done
+time: Fri, 04 Sep 2020 18:02:18 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Expect both checks to pass, since current cloud-init does not have chef schema
+Valid cloud-config file /var/tmp/invalid_chef_config.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/chef-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (1.38GB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+###########################################
+
+###########################################
+Expect schema failure on invalid_chef_config
+Valid cloud-config file /var/tmp/invalid_chef_config.yaml
+SUCCESS: xenial correctly ignores schema because of missing jsonschema dep
+Expect success on valid_write_file.yaml
+Valid cloud-config file /var/tmp/valid_chef_config.yaml
+###########################################
+
