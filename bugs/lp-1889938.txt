@@ -1,0 +1,1090 @@
+http://pad.lv/1889938
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1889938
+
+=== Begin SRU Template ===
+[Impact]
+Unable to run cloud-init query on juju-deployed ubuntu units.
+Affects Ubuntu PRO use of JAAS machines.
+
+[Test Case]
+- Launch current juju ubuntu units on xenial bionic focal.
+- Confirm failure of cloud-init query
+- Upgrade to -proposed cloud-init 20.3
+- Confirm success of cloud-init query
+
+#!/bin/sh
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+chmod 755 setup_proposed.sh
+
+juju bootstrap aws/us-east-1
+
+for SERIES in xenial bionic disco; do
+   echo '=== BEGIN ' $SERIES;
+   juju deploy cs:$SERIES/ubuntu ubuntu-$SERIES
+   JUJU_UNIT=ubuntu-$SERIES/0
+   echo "Expected decode error"
+   juju ssh $JUJU_UNIT -- sudo cloud-init query --all || echo "EXPECTED FAILURE ABOVE"
+   juju scp setup_proposed.sh ${JUJU_UNIT}:.
+   juju ssh $JUJU_UNIT -- sudo ./setup_proposed.sh 2>&1 |egrep 'cloud-init'
+   echo "Expect success"
+   juju ssh $JUJU_UNIT -- sudo cloud-init query --all && echo "SUCCESS"
+done
+
+
+[Regression Potential]
+
+Limited to consumers of cloud-init query subcommand and ubuntu-advantage-pro images.  Does not affect boot or typical runtime functionality of cloud-init.
+
+[Other Info]
+Upstream commit at
+  https://git.launchpad.net/cloud-init/commit/?id=747723a4
+
+=== End SRU Template ===
+=== Begin SRU Verification ===
+=== BEGIN  xenial
+Expected decode error
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 9, in <module>
+    load_entry_point('cloud-init==20.2', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2620, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/query.py", line 123, in handle_args
+    instance_data['userdata'] = util.load_file(user_data_fn)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 1432, in load_file
+    return decode_binary(contents)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 132, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x8b in position 1: invalid start byte
+Connection to 3.89.115.187 closed.
+EXPECTED FAILURE BOVE
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~16.04.1 [439 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+{
+ "_beta_keys": [
+  "subplatform"
+ ],
+ "availability_zone": "us-east-1b",
+ "base64_encoded_keys": [],
+ "cloud_name": "aws",
+ "distro": "ubuntu",
+ "distro_release": "xenial",
+ "distro_version": "16.04",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "_metadata_api_version": "2018-09-24",
+  "dynamic": {
+   "instance_identity": {
+    "document": {
+     "accountId": "329910648901",
+     "architecture": "x86_64",
+     "availabilityZone": "us-east-1b",
+     "billingProducts": null,
+     "devpayProductCodes": null,
+     "imageId": "ami-07a985bed28dfbc01",
+     "instanceId": "i-09dd17658ad9fdec4",
+     "instanceType": "t3.micro",
+     "kernelId": null,
+     "marketplaceProductCodes": null,
+     "pendingTime": "2020-09-04T18:25:19Z",
+     "privateIp": "172.31.87.167",
+     "ramdiskId": null,
+     "region": "us-east-1",
+     "version": "2017-09-30"
+    },
+    "pkcs7": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExCzAJBgUrDgMCGgUAMIAGCSqGSIb3DQEHAaCAJIAEggHdewog",
+     "ICJhY2NvdW50SWQiIDogIjMyOTkxMDY0ODkwMSIsCiAgImFyY2hpdGVjdHVyZSIgOiAieDg2XzY0",
+     "IiwKICAiYXZhaWxhYmlsaXR5Wm9uZSIgOiAidXMtZWFzdC0xYiIsCiAgImJpbGxpbmdQcm9kdWN0",
+     "cyIgOiBudWxsLAogICJkZXZwYXlQcm9kdWN0Q29kZXMiIDogbnVsbCwKICAibWFya2V0cGxhY2VQ",
+     "cm9kdWN0Q29kZXMiIDogbnVsbCwKICAiaW1hZ2VJZCIgOiAiYW1pLTA3YTk4NWJlZDI4ZGZiYzAx",
+     "IiwKICAiaW5zdGFuY2VJZCIgOiAiaS0wOWRkMTc2NThhZDlmZGVjNCIsCiAgImluc3RhbmNlVHlw",
+     "ZSIgOiAidDMubWljcm8iLAogICJrZXJuZWxJZCIgOiBudWxsLAogICJwZW5kaW5nVGltZSIgOiAi",
+     "MjAyMC0wOS0wNFQxODoyNToxOVoiLAogICJwcml2YXRlSXAiIDogIjE3Mi4zMS44Ny4xNjciLAog",
+     "ICJyYW1kaXNrSWQiIDogbnVsbCwKICAicmVnaW9uIiA6ICJ1cy1lYXN0LTEiLAogICJ2ZXJzaW9u",
+     "IiA6ICIyMDE3LTA5LTMwIgp9AAAAAAAAMYIBGTCCARUCAQEwaTBcMQswCQYDVQQGEwJVUzEZMBcG",
+     "A1UECBMQV2FzaGluZ3RvbiBTdGF0ZTEQMA4GA1UEBxMHU2VhdHRsZTEgMB4GA1UEChMXQW1hem9u",
+     "IFdlYiBTZXJ2aWNlcyBMTEMCCQCWukjZ5V4aZzAJBgUrDgMCGgUAoF0wGAYJKoZIhvcNAQkDMQsG",
+     "CSqGSIb3DQEHATAcBgkqhkiG9w0BCQUxDxcNMjAwOTA0MTgyNTIzWjAjBgkqhkiG9w0BCQQxFgQU",
+     "zDQ+NKe04o7ElxwdQW5uXE32jbwwCQYHKoZIzjgEAwQwMC4CFQCq9AnQtwStT2pxYmpUWW8kEKYC",
+     "nwIVAI28LyogzW7yTqmNgPtJSFautuCoAAAAAAAA"
+    ],
+    "rsa2048": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExDzANBglghkgBZQMEAgEFADCABgkqhkiG9w0BBwGggCSABIIB",
+     "3XsKICAiYWNjb3VudElkIiA6ICIzMjk5MTA2NDg5MDEiLAogICJhcmNoaXRlY3R1cmUiIDogIng4",
+     "Nl82NCIsCiAgImF2YWlsYWJpbGl0eVpvbmUiIDogInVzLWVhc3QtMWIiLAogICJiaWxsaW5nUHJv",
+     "ZHVjdHMiIDogbnVsbCwKICAiZGV2cGF5UHJvZHVjdENvZGVzIiA6IG51bGwsCiAgIm1hcmtldHBs",
+     "YWNlUHJvZHVjdENvZGVzIiA6IG51bGwsCiAgImltYWdlSWQiIDogImFtaS0wN2E5ODViZWQyOGRm",
+     "YmMwMSIsCiAgImluc3RhbmNlSWQiIDogImktMDlkZDE3NjU4YWQ5ZmRlYzQiLAogICJpbnN0YW5j",
+     "ZVR5cGUiIDogInQzLm1pY3JvIiwKICAia2VybmVsSWQiIDogbnVsbCwKICAicGVuZGluZ1RpbWUi",
+     "IDogIjIwMjAtMDktMDRUMTg6MjU6MTlaIiwKICAicHJpdmF0ZUlwIiA6ICIxNzIuMzEuODcuMTY3",
+     "IiwKICAicmFtZGlza0lkIiA6IG51bGwsCiAgInJlZ2lvbiIgOiAidXMtZWFzdC0xIiwKICAidmVy",
+     "c2lvbiIgOiAiMjAxNy0wOS0zMCIKfQAAAAAAADGCAf8wggH7AgEBMGkwXDELMAkGA1UEBhMCVVMx",
+     "GTAXBgNVBAgTEFdhc2hpbmd0b24gU3RhdGUxEDAOBgNVBAcTB1NlYXR0bGUxIDAeBgNVBAoTF0Ft",
+     "YXpvbiBXZWIgU2VydmljZXMgTExDAgkAsWnMQBVZpBkwDQYJYIZIAWUDBAIBBQCgaTAYBgkqhkiG",
+     "9w0BCQMxCwYJKoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yMDA5MDQxODI1MjNaMC8GCSqGSIb3",
+     "DQEJBDEiBCAHVWsKh5dl23xecqbwp7cJS4A2LXne7Nj0eIhnrMMeKTANBgkqhkiG9w0BAQEFAASC",
+     "AQB+rBcyyEgxZiq7vm/1iyWQ2bZpXvAyJd3nubGz+yrZLjOxNTXwpRz9wWDP/NRPW2sg6E3r2n+7",
+     "XbC7d7DrT1OA1gnXWLf6SX3/LaG+4emjIuPS/nbOzKyriR5Mf3NkEgpudeoEsDQd7TY7HIRBQqVt",
+     "lIC2r6vMY3gAREjhc609D4BdUvIPtiGTw8ope2pNgfuKapQuOzbnGZ50QdRyCkaRb4kSgbLQUkYS",
+     "cPLj5FCnzy92oTAHjaUQSPzCUzKYQa4DUxERL0zO78yM6Tr//PrBfQI6KlzQa0NQulm0BK6J1W02",
+     "jEFEqcy9uSklCe19XpIBgsr05e616aAFqpmNp8GGAAAAAAAA"
+    ],
+    "signature": [
+     "WvGBR6rBP6DW7IU9IefFmqqqXBFx5oTnWBdfIv/GQktYjdqs4jXebt2Ic5xdPOFIGdBBxXxz5k7v",
+     "+qA9vd//152zhJ9PnN76thLaUAsF9gLb/am4kwf4akYZWqiIIJcLvRUZHPWa6x/LYAix7ltvvK+7",
+     "VawBiVmAA+583n55ZYw="
+    ]
+   }
+  },
+  "meta_data": {
+   "ami_id": "ami-07a985bed28dfbc01",
+   "ami_launch_index": "0",
+   "ami_manifest_path": "(unknown)",
+   "block_device_mapping": {
+    "ami": "sda1",
+    "ephemeral0": "sdb",
+    "ephemeral1": "sdc",
+    "ephemeral2": "sdd",
+    "ephemeral3": "sde",
+    "root": "/dev/sda1"
+   },
+   "events": {
+    "maintenance": {
+     "history": "[]",
+     "scheduled": "[]"
+    }
+   },
+   "hostname": "ip-172-31-87-167.ec2.internal",
+   "identity_credentials": {
+    "ec2": {
+     "info": {
+      "AccountId": "329910648901",
+      "Code": "Success",
+      "LastUpdated": "2020-09-04T18:26:09Z"
+     }
+    }
+   },
+   "instance_action": "none",
+   "instance_id": "i-09dd17658ad9fdec4",
+   "instance_type": "t3.micro",
+   "local_hostname": "ip-172-31-87-167.ec2.internal",
+   "local_ipv4": "172.31.87.167",
+   "mac": "12:05:b3:6c:97:ff",
+   "metrics": {
+    "vhostmd": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+   },
+   "network": {
+    "interfaces": {
+     "macs": {
+      "12:05:b3:6c:97:ff": {
+       "device_number": "0",
+       "interface_id": "eni-0287ce29659b48f6d",
+       "ipv4_associations": {
+        "3.89.115.187": "172.31.87.167"
+       },
+       "local_hostname": "ip-172-31-87-167.ec2.internal",
+       "local_ipv4s": "172.31.87.167",
+       "mac": "12:05:b3:6c:97:ff",
+       "owner_id": "329910648901",
+       "public_hostname": "ec2-3-89-115-187.compute-1.amazonaws.com",
+       "public_ipv4s": "3.89.115.187",
+       "security_group_ids": [
+        "sg-0f4eaa0080750ee01",
+        "sg-0922967daf104df75"
+       ],
+       "security_groups": [
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938",
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-1"
+       ],
+       "subnet_id": "subnet-04e2d12a",
+       "subnet_ipv4_cidr_block": "172.31.80.0/20",
+       "vpc_id": "vpc-210b4b5b",
+       "vpc_ipv4_cidr_block": "172.31.0.0/16",
+       "vpc_ipv4_cidr_blocks": "172.31.0.0/16"
+      }
+     }
+    }
+   },
+   "placement": {
+    "availability_zone": "us-east-1b"
+   },
+   "profile": "default-hvm",
+   "public_hostname": "ec2-3-89-115-187.compute-1.amazonaws.com",
+   "public_ipv4": "3.89.115.187",
+   "reservation_id": "r-064d417f6909be55d",
+   "security_groups": [
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938",
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-1"
+   ],
+   "services": {
+    "domain": "amazonaws.com",
+    "partition": "aws"
+   }
+  }
+ },
+ "instance_id": "i-09dd17658ad9fdec4",
+ "kernel_release": "4.4.0-1113-aws",
+ "local_hostname": "ip-172-31-87-167",
+ "machine": "x86_64",
+ "merged_cfg": {
+  "_doc": "Merged cloud-init system config from /etc/cloud/cloud.cfg and /etc/cloud/cloud.cfg.d/",
+  "_log": [
+   "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+   "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n",
+   "[handler_cloudLogHandler]\nclass=handlers.SysLogHandler\nlevel=DEBUG\nformatter=simpleFormatter\nargs=(\"/dev/log\", handlers.SysLogHandler.LOG_USER)\n"
+  ],
+  "cloud_config_modules": [
+   "emit_upstart",
+   "snap",
+   "ssh-import-id",
+   "locale",
+   "set-passwords",
+   "grub-dpkg",
+   "apt-pipelining",
+   "apt-configure",
+   "ubuntu-advantage",
+   "ntp",
+   "timezone",
+   "disable-ec2-metadata",
+   "runcmd",
+   "byobu"
+  ],
+  "cloud_final_modules": [
+   "package-update-upgrade-install",
+   "fan",
+   "landscape",
+   "lxd",
+   "ubuntu-drivers",
+   "puppet",
+   "chef",
+   "mcollective",
+   "salt-minion",
+   "rightscale_userdata",
+   "scripts-vendor",
+   "scripts-per-once",
+   "scripts-per-boot",
+   "scripts-per-instance",
+   "scripts-user",
+   "ssh-authkey-fingerprints",
+   "keys-to-console",
+   "phone-home",
+   "final-message",
+   "power-state-change"
+  ],
+  "cloud_init_modules": [
+   "migrator",
+   "seed_random",
+   "bootcmd",
+   "write-files",
+   "growpart",
+   "resizefs",
+   "disk_setup",
+   "mounts",
+   "set_hostname",
+   "update_hostname",
+   "update_etc_hosts",
+   "ca-certs",
+   "rsyslog",
+   "users-groups",
+   "ssh"
+  ],
+  "datasource_list": [
+   "NoCloud",
+   "ConfigDrive",
+   "OpenNebula",
+   "DigitalOcean",
+   "Azure",
+   "AltCloud",
+   "OVF",
+   "MAAS",
+   "GCE",
+   "OpenStack",
+   "CloudSigma",
+   "SmartOS",
+   "Bigstep",
+   "Scaleway",
+   "AliYun",
+   "Ec2",
+   "CloudStack",
+   "Exoscale",
+   "RbxCloud",
+   "None"
+  ],
+  "def_log_file": "/var/log/cloud-init.log",
+  "di_report": {
+   "datasource_list": [
+    "Ec2",
+    "None"
+   ]
+  },
+  "disable_root": true,
+  "log_cfgs": [
+   [
+    "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+    "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n"
+   ]
+  ],
+  "output": {
+   "all": "| tee -a /var/log/cloud-init-output.log"
+  },
+  "preserve_hostname": false,
+  "syslog_fix_perms": [
+   "syslog:adm",
+   "root:adm",
+   "root:wheel",
+   "root:root"
+  ],
+  "users": [
+   "default"
+  ],
+  "vendor_data": {
+   "enabled": true,
+   "prefix": []
+  }
+ },
+ "platform": "ec2",
+ "public_ssh_keys": [],
+ "python_version": "3.5.2",
+ "region": "us-east-1",
+ "sensitive_keys": [
+  "merged_cfg"
+ ],
+ "subplatform": "metadata (http://169.254.169.254)",
+ "sys_info": {
+  "dist": [
+   "ubuntu",
+   "16.04",
+   "xenial"
+  ],
+  "platform": "Linux-4.4.0-1113-aws-x86_64-with-Ubuntu-16.04-xenial",
+  "python": "3.5.2",
+  "release": "4.4.0-1113-aws",
+  "system": "Linux",
+  "uname": [
+   "Linux",
+   "ubuntu",
+   "4.4.0-1113-aws",
+   "#126-Ubuntu SMP Fri Aug 14 13:24:17 UTC 2020",
+   "x86_64",
+   "x86_64"
+  ],
+  "variant": "ubuntu"
+ },
+ "system_platform": "Linux-4.4.0-1113-aws-x86_64-with-Ubuntu-16.04-xenial",
+ "userdata": "#cloud-config\napt_mirror: \"\"\nbootcmd:\n- |-\n  printf '%s\\n' 'Acquire::http::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::https::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::http::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::https::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::http::Proxy::\"::1\" \"DIRECT\";\n  Acquire::https::Proxy::\"::1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"::1\" \"DIRECT\";' > /etc/apt/apt.conf.d/95-juju-proxy-settings\noutput:\n  all: '| tee -a /var/log/cloud-init-output.log'\npackage_update: true\npackage_upgrade: true\npackages:\n- curl\n- cpu-checker\n- bridge-utils\n- tmux\n- ubuntu-fan\nruncmd:\n- set -xe\n- install -D -m 644 /dev/null '/var/lib/juju/nonce.txt'\n- printf '%s\\n' 'machine-0:2ee1405f-b5d0-4aaa-8580-8a9374bae22b' > '/var/lib/juju/nonce.txt'\n- test -n \"$JUJU_PROGRESS_FD\" || (exec {JUJU_PROGRESS_FD}>&2) 2>/dev/null && exec\n  {JUJU_PROGRESS_FD}>&2 || JUJU_PROGRESS_FD=2\n- '[ -e /etc/profile.d/juju-proxy.sh ] || printf ''\\n# Added by juju\\n[ -f \"/etc/juju-proxy.conf\"\n  ] && . \"/etc/juju-proxy.conf\"\\n'' >> /etc/profile.d/juju-proxy.sh'\n- mkdir -p /var/lib/juju/locks\n- (id ubuntu &> /dev/null) && chown ubuntu:ubuntu /var/lib/juju/locks\n- mkdir -p /var/log/juju\n- chown syslog:adm /var/log/juju\n- bin='/var/lib/juju/tools/2.8.1-xenial-amd64'\n- mkdir -p $bin\n- echo 'Fetching Juju agent version 2.8.1 for amd64' >&$JUJU_PROGRESS_FD\n- |2-\n\n  n=1\n  while true; do\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      echo \"Download failed, retrying in 15s\"\n      sleep 15\n      n=$((n+1))\n  done\n- sha256sum $bin/tools.tar.gz > $bin/juju2.8.1-xenial-amd64.sha256\n- grep 'f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8' $bin/juju2.8.1-xenial-amd64.sha256\n  || (echo \"Tools checksum mismatch\"; exit 1)\n- tar zxf $bin/tools.tar.gz -C $bin\n- printf %s '{\"version\":\"2.8.1-xenial-amd64\",\"url\":\"https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-xenial-amd64\",\"sha256\":\"f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8\",\"size\":38345802}'\n  > $bin/downloaded-tools.txt\n- mkdir -p '/var/lib/juju/agents/machine-1'\n- |-\n  cat > '/var/lib/juju/agents/machine-1/agent.conf' << 'EOF'\n  # format 2.0\n  tag: machine-1\n  datadir: /var/lib/juju\n  transient-datadir: /var/run/juju\n  logdir: /var/log/juju\n  metricsspooldir: /var/lib/juju/metricspool\n  nonce: machine-0:2ee1405f-b5d0-4aaa-8580-8a9374bae22b\n  jobs:\n  - JobHostUnits\n  upgradedToVersion: 2.8.1\n  cacert: |\n    -----BEGIN CERTIFICATE-----\n    MIID9DCCAlygAwIBAgIVAKPIF83jtSCcg9is/SeZG1t7UgDyMA0GCSqGSIb3DQEB\n    CwUAMCExDTALBgNVBAoTBEp1anUxEDAOBgNVBAMTB2p1anUtY2EwHhcNMjAwODI0\n    MTUwMTExWhcNMzAwODI0MTUwNjExWjAhMQ0wCwYDVQQKEwRKdWp1MRAwDgYDVQQD\n    EwdqdWp1LWNhMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAzP2TpKNo\n    xUIAcf2V1P8D0JTOpxXghVbguFiB/qq26F02dXdNBIA4XfsmGSKE0A8xsOirOfWY\n    nR/9EbYx9dhkblTZpcwbDYOZ2tU988pFLfhqCnkCwB4Rm+kzMoUmc/xopEA1kgTG\n    V3Suwq7VU/DoKulXia4fWIfD4kl5HVapBBm4DUvSfguKraFcJoz7XnYaI/H9+bwl\n    sbQlgvFXLa5bwWePUP7YUYz7VbycVGPmHp2L/CWCAIbooJitxgsBjs8Up9U9FP7O\n    9qXiqZe8uUK0LYfvsKOI4wwU2t5uppYhpR4AiIVoW50rdRV0nZ6j1ilXOQ4tb7Vo\n    Mkwi4Buxh7AT2XmBftVtIriF5IuqFKTj4qmi9B2gqL5taRQX9rfWUWQVNoGXIDri\n    FYqo6jlqErUzDZ8r+rZU8ltY3LnnBamSsygFEVWibxMM1Nla9UUXStvFziobnMU7\n    RQdtj83g0WbrlQAAScVpKl9eKn0+lBUBzHxZ8C6irYITwV+4mNknbBu7AgMBAAGj\n    IzAhMA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEB\n    CwUAA4IBgQBv27aDnOKTeIQDQ5+lJ2q8zem7XeTWcfUHxAcuqe6X7fsA3Z6u6CWL\n    N1G80mkA8HKBBPDOkvyLwyvyAb2hJdhg3VqwyR9fsQsTNy3TZeLoSl449S4lPGtd\n    5PMLFUTzYTtUOzGUWO0up4WroyicVqaMS8wGb0P8jRh0YfgQvtH3jMCji4FEuxfT\n    yaHgdRlAA+v7kolqzwUXcL423T1/8aNf+u4mQKJ5cn/pKrBDoXBCojtVMOWSg0iM\n    PBJM8l9qz+cnm0wVQDecv9YOilCxeKQJu6AAr39OqZeUKF9lt2oVmmS6bdMQRDCl\n    iOKFRDfqf5fOHgfQTA+9kGTAVZjRaer8jnbvaum1ovxPfRisD1CGpm+coG7z3NOu\n    4eHMIn0HknwR9vd23xIXtRRucCWGQzsODOe3Mgnb+oFsWvtvuDYrduXONWdPxe4N\n    MT0HBJeYwAkFEpCjr5C+oC7vBLCWCrswU4XqXE8LtaSEFuHhS1JaJikn4tvob5KZ\n    svchu1m6ibc=\n    -----END CERTIFICATE-----\n  controller: controller-c8feca5c-0c7e-4126-86ee-0b154884da01\n  model: model-ea6165b4-3970-40b1-8a7d-2ef078577938\n  apiaddresses:\n  - 172.31.9.167:17070\n  - 252.9.167.1:17070\n  - 3.237.87.200:17070\n  oldpassword: DiEdNzc2NjZ0CsDiVXSDiKju\n  values:\n    AGENT_SERVICE_NAME: jujud-machine-1\n    CONTAINER_TYPE: \"\"\n    PROVIDER_TYPE: ec2\n  mongoversion: \"0.0\"\n\n  EOF\n- chmod 0600 '/var/lib/juju/agents/machine-1/agent.conf'\n- install -D -m 755 /dev/null '/sbin/remove-juju-services'\n- |-\n  printf '%s\\n' '#!/bin/bash\n\n  # WARNING\n  # This script will clean a host previously used to run a Juju controller/machine.\n  # Running this on a live installation will render Juju inoperable.\n\n  for path_to_unit in $(ls /etc/systemd/system/juju*); do\n    echo \"removing juju service: $path_to_unit\"\n    unit=$(basename \"$path_to_unit\")\n    systemctl stop \"$unit\"\n    systemctl disable \"$unit\"\n    systemctl daemon-reload\n    rm -f \"$path_to_unit\"\n  done\n\n  echo \"removing /var/lib/juju/db/*\"\n  rm -rf /var/lib/juju/db/*\n\n  echo \"removing /var/lib/juju/raft/*\"\n  rm -rf /var/lib/juju/raft/*\n\n  echo \"removing /var/run/juju/*\"\n  rm -rf /var/run/juju/*\n\n  has_juju_db_snap=$(snap info juju-db | grep installed)\n  if [ ! -z \"$has_juju_db_snap\" ]; then\n    echo \"removing juju-db snap and any persisted database data\"\n    snap remove --purge juju-db\n  fi\n  ' > '/sbin/remove-juju-services'\n- ln -s 2.8.1-xenial-amd64 '/var/lib/juju/tools/machine-1'\n- echo 'Starting Juju machine agent (service jujud-machine-1)' >&$JUJU_PROGRESS_FD\n- |-\n  cat > '/etc/systemd/system/jujud-machine-1-exec-start.sh' << 'EOF'\n  #!/usr/bin/env bash\n\n  # Set up logging.\n  touch '/var/log/juju/machine-1.log'\n  chown syslog:adm '/var/log/juju/machine-1.log'\n  chmod 0640 '/var/log/juju/machine-1.log'\n  exec >> '/var/log/juju/machine-1.log'\n  exec 2>&1\n\n  # Run the script.\n  '/var/lib/juju/tools/machine-1/jujud' machine --data-dir '/var/lib/juju' --machine-id 1 --debug\n  EOF\n- chmod 0755 '/etc/systemd/system/jujud-machine-1-exec-start.sh'\n- |-\n  cat > '/etc/systemd/system/jujud-machine-1.service' << 'EOF'\n  [Unit]\n  Description=juju agent for machine-1\n  After=syslog.target\n  After=network.target\n  After=systemd-user-sessions.service\n\n  [Service]\n  LimitNOFILE=64000\n  ExecStart=/etc/systemd/system/jujud-machine-1-exec-start.sh\n  Restart=on-failure\n  TimeoutSec=300\n\n  [Install]\n  WantedBy=multi-user.target\n\n\n  EOF\n- /bin/systemctl link '/etc/systemd/system/jujud-machine-1.service'\n- /bin/systemctl daemon-reload\n- /bin/systemctl enable '/etc/systemd/system/jujud-machine-1.service'\n- /bin/systemctl start jujud-machine-1.service\n- rm $bin/tools.tar.gz && rm $bin/juju2.8.1-xenial-amd64.sha256\nusers:\n- groups:\n  - adm\n  - audio\n  - cdrom\n  - dialout\n  - dip\n  - floppy\n  - netdev\n  - plugdev\n  - sudo\n  - video\n  lock_passwd: true\n  name: ubuntu\n  shell: /bin/bash\n  ssh-authorized-keys:\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDaMY6oXvUp2r7l+/0rEBF/EjTmgWcVCZF1gh5W0SkjN0cXqgxrIz3pBIXW0Hf6zQnkAVqnspyk4s6H4x4idSv3HRe7/wL46YMomuDtPRl6cbIvnsZUnGH+rJPbs16CVatNBXUlpplCMa/qax2FPi3C5LOCubKWCxQtLtf3tqiD6fj4AcRSSNZH1xOIN5hhscNvp3Dr52m6moSuZrpKOHp0tfpGbF1F9+zfs0lzwy9mKa7CE2z6eVIoo1S1tTUOP8aPj8Z/hE2pFNYh34gT5BjyzmvX0yN8E4jFeeEscly+SKk3RpY3LepmOKiEkvIiNNAnpvBQm868JHQDnVrmihA/\n    Juju:juju-client-key\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB\n    Juju:csmith@fringe\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0Ar0EDgSpnCXuAejkLpQDRU0ODIk8+Iv/n2mOVFLTbnhgW7rgobSpwn6Fl0hp74EgawOi+4TsQ2ndwXogo+lC1WqE/+EDp1/EeKzsYxOpUc8PuIgCiuMCo+KttZJRi8zg2c2cECitcNLx/Qj1LIrSooqRRtmjZSy5Mv4H1G6aDmKeCYDxGOlIKBxGkSF+nBzLmx7vfK+LsPAYiZn/PaSmU0Qrn9ZlHuxNsrdUZTupUlagRa1f1+eMt7HaiZEjNcRcxYBPoJTe3+Hv0YyVY158/YmNQqUVP98bYF3gI1UWmaQ1/8Y3L6XzVS/R1vs0sLI4P5wYyXRA7X9pKXnWLw4j\n    Juju:juju-system-key\n  sudo:\n  - ALL=(ALL) NOPASSWD:ALL\n",
+ "v1": {
+  "_beta_keys": [
+   "subplatform"
+  ],
+  "availability_zone": "us-east-1b",
+  "cloud_name": "aws",
+  "distro": "ubuntu",
+  "distro_release": "xenial",
+  "distro_version": "16.04",
+  "instance_id": "i-09dd17658ad9fdec4",
+  "kernel_release": "4.4.0-1113-aws",
+  "local_hostname": "ip-172-31-87-167",
+  "machine": "x86_64",
+  "platform": "ec2",
+  "public_ssh_keys": [],
+  "python_version": "3.5.2",
+  "region": "us-east-1",
+  "subplatform": "metadata (http://169.254.169.254)",
+  "system_platform": "Linux-4.4.0-1113-aws-x86_64-with-Ubuntu-16.04-xenial",
+  "variant": "ubuntu"
+ },
+ "variant": "ubuntu",
+ "vendordata": ""
+}
+Connection to 3.89.115.187 closed.
+SUCCESS
+=== BEGIN  bionic
+Expected decode error
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 11, in <module>
+    load_entry_point('cloud-init==20.2', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 893, in main
+    get_uptime=True, func=functor, args=(name, args))
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2620, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/query.py", line 123, in handle_args
+    instance_data['userdata'] = util.load_file(user_data_fn)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 1432, in load_file
+    return decode_binary(contents)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 132, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x8b in position 1: invalid start byte
+Connection to 54.205.208.150 closed.
+EXPECTED FAILURE BOVE
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~18.04.1 [434 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+{
+ "_beta_keys": [
+  "subplatform"
+ ],
+ "availability_zone": "us-east-1c",
+ "base64_encoded_keys": [],
+ "cloud_name": "aws",
+ "distro": "ubuntu",
+ "distro_release": "bionic",
+ "distro_version": "18.04",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "_metadata_api_version": "2018-09-24",
+  "dynamic": {
+   "instance_identity": {
+    "document": {
+     "accountId": "329910648901",
+     "architecture": "x86_64",
+     "availabilityZone": "us-east-1c",
+     "billingProducts": null,
+     "devpayProductCodes": null,
+     "imageId": "ami-06b263d6ceff0b3dd",
+     "instanceId": "i-0f3aead0471e0483a",
+     "instanceType": "t3.micro",
+     "kernelId": null,
+     "marketplaceProductCodes": null,
+     "pendingTime": "2020-09-04T18:25:36Z",
+     "privateIp": "172.31.22.64",
+     "ramdiskId": null,
+     "region": "us-east-1",
+     "version": "2017-09-30"
+    },
+    "pkcs7": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExCzAJBgUrDgMCGgUAMIAGCSqGSIb3DQEHAaCAJIAEggHcewog",
+     "ICJhY2NvdW50SWQiIDogIjMyOTkxMDY0ODkwMSIsCiAgImFyY2hpdGVjdHVyZSIgOiAieDg2XzY0",
+     "IiwKICAiYXZhaWxhYmlsaXR5Wm9uZSIgOiAidXMtZWFzdC0xYyIsCiAgImJpbGxpbmdQcm9kdWN0",
+     "cyIgOiBudWxsLAogICJkZXZwYXlQcm9kdWN0Q29kZXMiIDogbnVsbCwKICAibWFya2V0cGxhY2VQ",
+     "cm9kdWN0Q29kZXMiIDogbnVsbCwKICAiaW1hZ2VJZCIgOiAiYW1pLTA2YjI2M2Q2Y2VmZjBiM2Rk",
+     "IiwKICAiaW5zdGFuY2VJZCIgOiAiaS0wZjNhZWFkMDQ3MWUwNDgzYSIsCiAgImluc3RhbmNlVHlw",
+     "ZSIgOiAidDMubWljcm8iLAogICJrZXJuZWxJZCIgOiBudWxsLAogICJwZW5kaW5nVGltZSIgOiAi",
+     "MjAyMC0wOS0wNFQxODoyNTozNloiLAogICJwcml2YXRlSXAiIDogIjE3Mi4zMS4yMi42NCIsCiAg",
+     "InJhbWRpc2tJZCIgOiBudWxsLAogICJyZWdpb24iIDogInVzLWVhc3QtMSIsCiAgInZlcnNpb24i",
+     "IDogIjIwMTctMDktMzAiCn0AAAAAAAAxggEXMIIBEwIBATBpMFwxCzAJBgNVBAYTAlVTMRkwFwYD",
+     "VQQIExBXYXNoaW5ndG9uIFN0YXRlMRAwDgYDVQQHEwdTZWF0dGxlMSAwHgYDVQQKExdBbWF6b24g",
+     "V2ViIFNlcnZpY2VzIExMQwIJAJa6SNnlXhpnMAkGBSsOAwIaBQCgXTAYBgkqhkiG9w0BCQMxCwYJ",
+     "KoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yMDA5MDQxODI1NDFaMCMGCSqGSIb3DQEJBDEWBBTy",
+     "4W6sgiPlGCNtpsINo04HmA2ACjAJBgcqhkjOOAQDBC4wLAIURJ0ERDm+y5lv6WWgc6GN/SaUv1sC",
+     "FHUYtgPVYMwT4sjVcDMdsjTMKnVYAAAAAAAA"
+    ],
+    "rsa2048": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExDzANBglghkgBZQMEAgEFADCABgkqhkiG9w0BBwGggCSABIIB",
+     "3HsKICAiYWNjb3VudElkIiA6ICIzMjk5MTA2NDg5MDEiLAogICJhcmNoaXRlY3R1cmUiIDogIng4",
+     "Nl82NCIsCiAgImF2YWlsYWJpbGl0eVpvbmUiIDogInVzLWVhc3QtMWMiLAogICJiaWxsaW5nUHJv",
+     "ZHVjdHMiIDogbnVsbCwKICAiZGV2cGF5UHJvZHVjdENvZGVzIiA6IG51bGwsCiAgIm1hcmtldHBs",
+     "YWNlUHJvZHVjdENvZGVzIiA6IG51bGwsCiAgImltYWdlSWQiIDogImFtaS0wNmIyNjNkNmNlZmYw",
+     "YjNkZCIsCiAgImluc3RhbmNlSWQiIDogImktMGYzYWVhZDA0NzFlMDQ4M2EiLAogICJpbnN0YW5j",
+     "ZVR5cGUiIDogInQzLm1pY3JvIiwKICAia2VybmVsSWQiIDogbnVsbCwKICAicGVuZGluZ1RpbWUi",
+     "IDogIjIwMjAtMDktMDRUMTg6MjU6MzZaIiwKICAicHJpdmF0ZUlwIiA6ICIxNzIuMzEuMjIuNjQi",
+     "LAogICJyYW1kaXNrSWQiIDogbnVsbCwKICAicmVnaW9uIiA6ICJ1cy1lYXN0LTEiLAogICJ2ZXJz",
+     "aW9uIiA6ICIyMDE3LTA5LTMwIgp9AAAAAAAAMYIB/zCCAfsCAQEwaTBcMQswCQYDVQQGEwJVUzEZ",
+     "MBcGA1UECBMQV2FzaGluZ3RvbiBTdGF0ZTEQMA4GA1UEBxMHU2VhdHRsZTEgMB4GA1UEChMXQW1h",
+     "em9uIFdlYiBTZXJ2aWNlcyBMTEMCCQCxacxAFVmkGTANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3",
+     "DQEJAzELBgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIwMDkwNDE4MjU0MVowLwYJKoZIhvcN",
+     "AQkEMSIEIIkR4Xd+xa0Agkb1JZlWWgVrRW7ZpKbIKJWosUAU9aL0MA0GCSqGSIb3DQEBAQUABIIB",
+     "AAB4YM7bwc/3nj3SLXiQBb41NCBtWFWPmifLYpLN37riuhiIV8eHY3Ruis7tkjysenuVyX7a0vK+",
+     "oSfztLxUAURD0wiOnCvnF2nz9jPG+tm+vHRH55sz83p5JMz7+ygXpuho5pl1E+rXK+UVubwqJcJY",
+     "Fwlt0vV25ysH/k0Cuf/leGq9QEsyzZIJ1tS7hKsjr0hRgyxGoAW1itxhJ43yXLj6PIybWcH8vSaf",
+     "taj7YM1lgClH0lgmQPXPUecq0ibZqFy7NmTKQdopLh9/pcbB7UYAWdFqqYwsSVRLaB5N1G4nWl2g",
+     "1cumqXJ8m1BBMF5KMPZxAb/60+Gnv+XkKkUzueAAAAAAAAA="
+    ],
+    "signature": [
+     "aMFi4uGAceSbrxudYDIn1R7GttO8vmw4WbnaVtkFcxpG2DEQ4JnUZSEXA1D3uF3Z1PbUGLXPn6ih",
+     "XLTyew+UXfHNTkYpeHBdNJd2jOjI0gRUj7Y7UXDmg51LTVRBCsBLysl7MhOWPzSryq6KYTM4L6A2",
+     "R8TgrJ5ztmB5vTJsqpk="
+    ]
+   }
+  },
+  "meta_data": {
+   "ami_id": "ami-06b263d6ceff0b3dd",
+   "ami_launch_index": "0",
+   "ami_manifest_path": "(unknown)",
+   "block_device_mapping": {
+    "ami": "sda1",
+    "ephemeral0": "sdb",
+    "ephemeral1": "sdc",
+    "ephemeral2": "sdd",
+    "ephemeral3": "sde",
+    "root": "/dev/sda1"
+   },
+   "events": {
+    "maintenance": {
+     "history": "[]",
+     "scheduled": "[]"
+    }
+   },
+   "hostname": "ip-172-31-22-64.ec2.internal",
+   "identity_credentials": {
+    "ec2": {
+     "info": {
+      "AccountId": "329910648901",
+      "Code": "Success",
+      "LastUpdated": "2020-09-04T18:26:36Z"
+     }
+    }
+   },
+   "instance_action": "none",
+   "instance_id": "i-0f3aead0471e0483a",
+   "instance_type": "t3.micro",
+   "local_hostname": "ip-172-31-22-64.ec2.internal",
+   "local_ipv4": "172.31.22.64",
+   "mac": "0a:f3:df:c3:fc:5b",
+   "metrics": {
+    "vhostmd": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+   },
+   "network": {
+    "interfaces": {
+     "macs": {
+      "0a:f3:df:c3:fc:5b": {
+       "device_number": "0",
+       "interface_id": "eni-073c1ba7628a26933",
+       "ipv4_associations": {
+        "54.205.208.150": "172.31.22.64"
+       },
+       "local_hostname": "ip-172-31-22-64.ec2.internal",
+       "local_ipv4s": "172.31.22.64",
+       "mac": "0a:f3:df:c3:fc:5b",
+       "owner_id": "329910648901",
+       "public_hostname": "ec2-54-205-208-150.compute-1.amazonaws.com",
+       "public_ipv4s": "54.205.208.150",
+       "security_group_ids": [
+        "sg-07356d43cbdecf37b",
+        "sg-0f4eaa0080750ee01"
+       ],
+       "security_groups": [
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-2",
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938"
+       ],
+       "subnet_id": "subnet-68fa3e25",
+       "subnet_ipv4_cidr_block": "172.31.16.0/20",
+       "vpc_id": "vpc-210b4b5b",
+       "vpc_ipv4_cidr_block": "172.31.0.0/16",
+       "vpc_ipv4_cidr_blocks": "172.31.0.0/16"
+      }
+     }
+    }
+   },
+   "placement": {
+    "availability_zone": "us-east-1c"
+   },
+   "profile": "default-hvm",
+   "public_hostname": "ec2-54-205-208-150.compute-1.amazonaws.com",
+   "public_ipv4": "54.205.208.150",
+   "reservation_id": "r-078e134e304390b8b",
+   "security_groups": [
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-2",
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938"
+   ],
+   "services": {
+    "domain": "amazonaws.com",
+    "partition": "aws"
+   }
+  }
+ },
+ "instance_id": "i-0f3aead0471e0483a",
+ "kernel_release": "5.3.0-1034-aws",
+ "local_hostname": "ip-172-31-22-64",
+ "machine": "x86_64",
+ "merged_cfg": {
+  "_doc": "Merged cloud-init system config from /etc/cloud/cloud.cfg and /etc/cloud/cloud.cfg.d/",
+  "_log": [
+   "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+   "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n",
+   "[handler_cloudLogHandler]\nclass=handlers.SysLogHandler\nlevel=DEBUG\nformatter=simpleFormatter\nargs=(\"/dev/log\", handlers.SysLogHandler.LOG_USER)\n"
+  ],
+  "cloud_config_modules": [
+   "emit_upstart",
+   "snap",
+   "ssh-import-id",
+   "locale",
+   "set-passwords",
+   "grub-dpkg",
+   "apt-pipelining",
+   "apt-configure",
+   "ubuntu-advantage",
+   "ntp",
+   "timezone",
+   "disable-ec2-metadata",
+   "runcmd",
+   "byobu"
+  ],
+  "cloud_final_modules": [
+   "package-update-upgrade-install",
+   "fan",
+   "landscape",
+   "lxd",
+   "ubuntu-drivers",
+   "puppet",
+   "chef",
+   "mcollective",
+   "salt-minion",
+   "rightscale_userdata",
+   "scripts-vendor",
+   "scripts-per-once",
+   "scripts-per-boot",
+   "scripts-per-instance",
+   "scripts-user",
+   "ssh-authkey-fingerprints",
+   "keys-to-console",
+   "phone-home",
+   "final-message",
+   "power-state-change"
+  ],
+  "cloud_init_modules": [
+   "migrator",
+   "seed_random",
+   "bootcmd",
+   "write-files",
+   "growpart",
+   "resizefs",
+   "disk_setup",
+   "mounts",
+   "set_hostname",
+   "update_hostname",
+   "update_etc_hosts",
+   "ca-certs",
+   "rsyslog",
+   "users-groups",
+   "ssh"
+  ],
+  "datasource_list": [
+   "Ec2",
+   "None"
+  ],
+  "def_log_file": "/var/log/cloud-init.log",
+  "disable_root": true,
+  "log_cfgs": [
+   [
+    "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+    "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n"
+   ]
+  ],
+  "output": {
+   "all": "| tee -a /var/log/cloud-init-output.log"
+  },
+  "preserve_hostname": false,
+  "syslog_fix_perms": [
+   "syslog:adm",
+   "root:adm",
+   "root:wheel",
+   "root:root"
+  ],
+  "users": [
+   "default"
+  ],
+  "vendor_data": {
+   "enabled": true,
+   "prefix": []
+  }
+ },
+ "platform": "ec2",
+ "public_ssh_keys": [],
+ "python_version": "3.6.9",
+ "region": "us-east-1",
+ "sensitive_keys": [
+  "merged_cfg"
+ ],
+ "subplatform": "metadata (http://169.254.169.254)",
+ "sys_info": {
+  "dist": [
+   "ubuntu",
+   "18.04",
+   "bionic"
+  ],
+  "platform": "Linux-5.3.0-1034-aws-x86_64-with-Ubuntu-18.04-bionic",
+  "python": "3.6.9",
+  "release": "5.3.0-1034-aws",
+  "system": "Linux",
+  "uname": [
+   "Linux",
+   "ubuntu",
+   "5.3.0-1034-aws",
+   "#36-Ubuntu SMP Tue Aug 18 08:58:43 UTC 2020",
+   "x86_64",
+   "x86_64"
+  ],
+  "variant": "ubuntu"
+ },
+ "system_platform": "Linux-5.3.0-1034-aws-x86_64-with-Ubuntu-18.04-bionic",
+ "userdata": "#cloud-config\napt_mirror: \"\"\nbootcmd:\n- |-\n  printf '%s\\n' 'Acquire::http::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::https::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::http::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::https::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::http::Proxy::\"::1\" \"DIRECT\";\n  Acquire::https::Proxy::\"::1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"::1\" \"DIRECT\";' > /etc/apt/apt.conf.d/95-juju-proxy-settings\noutput:\n  all: '| tee -a /var/log/cloud-init-output.log'\npackage_update: true\npackage_upgrade: true\npackages:\n- curl\n- cpu-checker\n- bridge-utils\n- tmux\n- ubuntu-fan\nruncmd:\n- set -xe\n- install -D -m 644 /dev/null '/var/lib/juju/nonce.txt'\n- printf '%s\\n' 'machine-0:b8b40720-715f-417c-88ea-26a0a4933fea' > '/var/lib/juju/nonce.txt'\n- test -n \"$JUJU_PROGRESS_FD\" || (exec {JUJU_PROGRESS_FD}>&2) 2>/dev/null && exec\n  {JUJU_PROGRESS_FD}>&2 || JUJU_PROGRESS_FD=2\n- '[ -e /etc/profile.d/juju-proxy.sh ] || printf ''\\n# Added by juju\\n[ -f \"/etc/juju-proxy.conf\"\n  ] && . \"/etc/juju-proxy.conf\"\\n'' >> /etc/profile.d/juju-proxy.sh'\n- mkdir -p /var/lib/juju/locks\n- (id ubuntu &> /dev/null) && chown ubuntu:ubuntu /var/lib/juju/locks\n- mkdir -p /var/log/juju\n- chown syslog:adm /var/log/juju\n- bin='/var/lib/juju/tools/2.8.1-bionic-amd64'\n- mkdir -p $bin\n- echo 'Fetching Juju agent version 2.8.1 for amd64' >&$JUJU_PROGRESS_FD\n- |2-\n\n  n=1\n  while true; do\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      echo \"Download failed, retrying in 15s\"\n      sleep 15\n      n=$((n+1))\n  done\n- sha256sum $bin/tools.tar.gz > $bin/juju2.8.1-bionic-amd64.sha256\n- grep 'f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8' $bin/juju2.8.1-bionic-amd64.sha256\n  || (echo \"Tools checksum mismatch\"; exit 1)\n- tar zxf $bin/tools.tar.gz -C $bin\n- printf %s '{\"version\":\"2.8.1-bionic-amd64\",\"url\":\"https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-bionic-amd64\",\"sha256\":\"f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8\",\"size\":38345802}'\n  > $bin/downloaded-tools.txt\n- mkdir -p '/var/lib/juju/agents/machine-2'\n- |-\n  cat > '/var/lib/juju/agents/machine-2/agent.conf' << 'EOF'\n  # format 2.0\n  tag: machine-2\n  datadir: /var/lib/juju\n  transient-datadir: /var/run/juju\n  logdir: /var/log/juju\n  metricsspooldir: /var/lib/juju/metricspool\n  nonce: machine-0:b8b40720-715f-417c-88ea-26a0a4933fea\n  jobs:\n  - JobHostUnits\n  upgradedToVersion: 2.8.1\n  cacert: |\n    -----BEGIN CERTIFICATE-----\n    MIID9DCCAlygAwIBAgIVAKPIF83jtSCcg9is/SeZG1t7UgDyMA0GCSqGSIb3DQEB\n    CwUAMCExDTALBgNVBAoTBEp1anUxEDAOBgNVBAMTB2p1anUtY2EwHhcNMjAwODI0\n    MTUwMTExWhcNMzAwODI0MTUwNjExWjAhMQ0wCwYDVQQKEwRKdWp1MRAwDgYDVQQD\n    EwdqdWp1LWNhMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAzP2TpKNo\n    xUIAcf2V1P8D0JTOpxXghVbguFiB/qq26F02dXdNBIA4XfsmGSKE0A8xsOirOfWY\n    nR/9EbYx9dhkblTZpcwbDYOZ2tU988pFLfhqCnkCwB4Rm+kzMoUmc/xopEA1kgTG\n    V3Suwq7VU/DoKulXia4fWIfD4kl5HVapBBm4DUvSfguKraFcJoz7XnYaI/H9+bwl\n    sbQlgvFXLa5bwWePUP7YUYz7VbycVGPmHp2L/CWCAIbooJitxgsBjs8Up9U9FP7O\n    9qXiqZe8uUK0LYfvsKOI4wwU2t5uppYhpR4AiIVoW50rdRV0nZ6j1ilXOQ4tb7Vo\n    Mkwi4Buxh7AT2XmBftVtIriF5IuqFKTj4qmi9B2gqL5taRQX9rfWUWQVNoGXIDri\n    FYqo6jlqErUzDZ8r+rZU8ltY3LnnBamSsygFEVWibxMM1Nla9UUXStvFziobnMU7\n    RQdtj83g0WbrlQAAScVpKl9eKn0+lBUBzHxZ8C6irYITwV+4mNknbBu7AgMBAAGj\n    IzAhMA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEB\n    CwUAA4IBgQBv27aDnOKTeIQDQ5+lJ2q8zem7XeTWcfUHxAcuqe6X7fsA3Z6u6CWL\n    N1G80mkA8HKBBPDOkvyLwyvyAb2hJdhg3VqwyR9fsQsTNy3TZeLoSl449S4lPGtd\n    5PMLFUTzYTtUOzGUWO0up4WroyicVqaMS8wGb0P8jRh0YfgQvtH3jMCji4FEuxfT\n    yaHgdRlAA+v7kolqzwUXcL423T1/8aNf+u4mQKJ5cn/pKrBDoXBCojtVMOWSg0iM\n    PBJM8l9qz+cnm0wVQDecv9YOilCxeKQJu6AAr39OqZeUKF9lt2oVmmS6bdMQRDCl\n    iOKFRDfqf5fOHgfQTA+9kGTAVZjRaer8jnbvaum1ovxPfRisD1CGpm+coG7z3NOu\n    4eHMIn0HknwR9vd23xIXtRRucCWGQzsODOe3Mgnb+oFsWvtvuDYrduXONWdPxe4N\n    MT0HBJeYwAkFEpCjr5C+oC7vBLCWCrswU4XqXE8LtaSEFuHhS1JaJikn4tvob5KZ\n    svchu1m6ibc=\n    -----END CERTIFICATE-----\n  controller: controller-c8feca5c-0c7e-4126-86ee-0b154884da01\n  model: model-ea6165b4-3970-40b1-8a7d-2ef078577938\n  apiaddresses:\n  - 172.31.9.167:17070\n  - 252.9.167.1:17070\n  - 3.237.87.200:17070\n  oldpassword: R15IMeguJ9Hnmhhv5GdLs+G4\n  values:\n    AGENT_SERVICE_NAME: jujud-machine-2\n    CONTAINER_TYPE: \"\"\n    PROVIDER_TYPE: ec2\n  mongoversion: \"0.0\"\n\n  EOF\n- chmod 0600 '/var/lib/juju/agents/machine-2/agent.conf'\n- install -D -m 755 /dev/null '/sbin/remove-juju-services'\n- |-\n  printf '%s\\n' '#!/bin/bash\n\n  # WARNING\n  # This script will clean a host previously used to run a Juju controller/machine.\n  # Running this on a live installation will render Juju inoperable.\n\n  for path_to_unit in $(ls /etc/systemd/system/juju*); do\n    echo \"removing juju service: $path_to_unit\"\n    unit=$(basename \"$path_to_unit\")\n    systemctl stop \"$unit\"\n    systemctl disable \"$unit\"\n    systemctl daemon-reload\n    rm -f \"$path_to_unit\"\n  done\n\n  echo \"removing /var/lib/juju/db/*\"\n  rm -rf /var/lib/juju/db/*\n\n  echo \"removing /var/lib/juju/raft/*\"\n  rm -rf /var/lib/juju/raft/*\n\n  echo \"removing /var/run/juju/*\"\n  rm -rf /var/run/juju/*\n\n  has_juju_db_snap=$(snap info juju-db | grep installed)\n  if [ ! -z \"$has_juju_db_snap\" ]; then\n    echo \"removing juju-db snap and any persisted database data\"\n    snap remove --purge juju-db\n  fi\n  ' > '/sbin/remove-juju-services'\n- ln -s 2.8.1-bionic-amd64 '/var/lib/juju/tools/machine-2'\n- echo 'Starting Juju machine agent (service jujud-machine-2)' >&$JUJU_PROGRESS_FD\n- |-\n  cat > '/etc/systemd/system/jujud-machine-2-exec-start.sh' << 'EOF'\n  #!/usr/bin/env bash\n\n  # Set up logging.\n  touch '/var/log/juju/machine-2.log'\n  chown syslog:adm '/var/log/juju/machine-2.log'\n  chmod 0640 '/var/log/juju/machine-2.log'\n  exec >> '/var/log/juju/machine-2.log'\n  exec 2>&1\n\n  # Run the script.\n  '/var/lib/juju/tools/machine-2/jujud' machine --data-dir '/var/lib/juju' --machine-id 2 --debug\n  EOF\n- chmod 0755 '/etc/systemd/system/jujud-machine-2-exec-start.sh'\n- |-\n  cat > '/etc/systemd/system/jujud-machine-2.service' << 'EOF'\n  [Unit]\n  Description=juju agent for machine-2\n  After=syslog.target\n  After=network.target\n  After=systemd-user-sessions.service\n\n  [Service]\n  LimitNOFILE=64000\n  ExecStart=/etc/systemd/system/jujud-machine-2-exec-start.sh\n  Restart=on-failure\n  TimeoutSec=300\n\n  [Install]\n  WantedBy=multi-user.target\n\n\n  EOF\n- /bin/systemctl link '/etc/systemd/system/jujud-machine-2.service'\n- /bin/systemctl daemon-reload\n- /bin/systemctl enable '/etc/systemd/system/jujud-machine-2.service'\n- /bin/systemctl start jujud-machine-2.service\n- rm $bin/tools.tar.gz && rm $bin/juju2.8.1-bionic-amd64.sha256\nusers:\n- groups:\n  - adm\n  - audio\n  - cdrom\n  - dialout\n  - dip\n  - floppy\n  - netdev\n  - plugdev\n  - sudo\n  - video\n  lock_passwd: true\n  name: ubuntu\n  shell: /bin/bash\n  ssh-authorized-keys:\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDaMY6oXvUp2r7l+/0rEBF/EjTmgWcVCZF1gh5W0SkjN0cXqgxrIz3pBIXW0Hf6zQnkAVqnspyk4s6H4x4idSv3HRe7/wL46YMomuDtPRl6cbIvnsZUnGH+rJPbs16CVatNBXUlpplCMa/qax2FPi3C5LOCubKWCxQtLtf3tqiD6fj4AcRSSNZH1xOIN5hhscNvp3Dr52m6moSuZrpKOHp0tfpGbF1F9+zfs0lzwy9mKa7CE2z6eVIoo1S1tTUOP8aPj8Z/hE2pFNYh34gT5BjyzmvX0yN8E4jFeeEscly+SKk3RpY3LepmOKiEkvIiNNAnpvBQm868JHQDnVrmihA/\n    Juju:juju-client-key\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB\n    Juju:csmith@fringe\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0Ar0EDgSpnCXuAejkLpQDRU0ODIk8+Iv/n2mOVFLTbnhgW7rgobSpwn6Fl0hp74EgawOi+4TsQ2ndwXogo+lC1WqE/+EDp1/EeKzsYxOpUc8PuIgCiuMCo+KttZJRi8zg2c2cECitcNLx/Qj1LIrSooqRRtmjZSy5Mv4H1G6aDmKeCYDxGOlIKBxGkSF+nBzLmx7vfK+LsPAYiZn/PaSmU0Qrn9ZlHuxNsrdUZTupUlagRa1f1+eMt7HaiZEjNcRcxYBPoJTe3+Hv0YyVY158/YmNQqUVP98bYF3gI1UWmaQ1/8Y3L6XzVS/R1vs0sLI4P5wYyXRA7X9pKXnWLw4j\n    Juju:juju-system-key\n  sudo:\n  - ALL=(ALL) NOPASSWD:ALL\n",
+ "v1": {
+  "_beta_keys": [
+   "subplatform"
+  ],
+  "availability_zone": "us-east-1c",
+  "cloud_name": "aws",
+  "distro": "ubuntu",
+  "distro_release": "bionic",
+  "distro_version": "18.04",
+  "instance_id": "i-0f3aead0471e0483a",
+  "kernel_release": "5.3.0-1034-aws",
+  "local_hostname": "ip-172-31-22-64",
+  "machine": "x86_64",
+  "platform": "ec2",
+  "public_ssh_keys": [],
+  "python_version": "3.6.9",
+  "region": "us-east-1",
+  "subplatform": "metadata (http://169.254.169.254)",
+  "system_platform": "Linux-5.3.0-1034-aws-x86_64-with-Ubuntu-18.04-bionic",
+  "variant": "ubuntu"
+ },
+ "variant": "ubuntu",
+ "vendordata": ""
+}
+Connection to 54.205.208.150 closed.
+SUCCESS
+=== BEGIN  focal
+Expected decode error
+Traceback (most recent call last):
+  File "/usr/bin/cloud-init", line 11, in <module>
+    load_entry_point('cloud-init==20.2', 'console_scripts', 'cloud-init')()
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 891, in main
+    retval = util.log_time(
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 2620, in log_time
+    ret = func(*args, **kwargs)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/query.py", line 123, in handle_args
+    instance_data['userdata'] = util.load_file(user_data_fn)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 1432, in load_file
+    return decode_binary(contents)
+  File "/usr/lib/python3/dist-packages/cloudinit/util.py", line 132, in decode_binary
+    return blob.decode(encoding)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x8b in position 1: invalid start byte
+Connection to 3.92.232.88 closed.
+EXPECTED FAILURE BOVE
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~20.04.1 [429 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+{
+ "_beta_keys": [
+  "subplatform"
+ ],
+ "availability_zone": "us-east-1d",
+ "base64_encoded_keys": [],
+ "cloud_name": "aws",
+ "distro": "ubuntu",
+ "distro_release": "focal",
+ "distro_version": "20.04",
+ "ds": {
+  "_doc": "EXPERIMENTAL: The structure and format of content scoped under the 'ds' key may change in subsequent releases of cloud-init.",
+  "_metadata_api_version": "2018-09-24",
+  "dynamic": {
+   "instance_identity": {
+    "document": {
+     "accountId": "329910648901",
+     "architecture": "x86_64",
+     "availabilityZone": "us-east-1d",
+     "billingProducts": null,
+     "devpayProductCodes": null,
+     "imageId": "ami-05cf2c352da0bfb2e",
+     "instanceId": "i-025e45048c96ddd56",
+     "instanceType": "t3.micro",
+     "kernelId": null,
+     "marketplaceProductCodes": null,
+     "pendingTime": "2020-09-04T18:25:53Z",
+     "privateIp": "172.31.45.85",
+     "ramdiskId": null,
+     "region": "us-east-1",
+     "version": "2017-09-30"
+    },
+    "pkcs7": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExCzAJBgUrDgMCGgUAMIAGCSqGSIb3DQEHAaCAJIAEggHcewog",
+     "ICJhY2NvdW50SWQiIDogIjMyOTkxMDY0ODkwMSIsCiAgImFyY2hpdGVjdHVyZSIgOiAieDg2XzY0",
+     "IiwKICAiYXZhaWxhYmlsaXR5Wm9uZSIgOiAidXMtZWFzdC0xZCIsCiAgImJpbGxpbmdQcm9kdWN0",
+     "cyIgOiBudWxsLAogICJkZXZwYXlQcm9kdWN0Q29kZXMiIDogbnVsbCwKICAibWFya2V0cGxhY2VQ",
+     "cm9kdWN0Q29kZXMiIDogbnVsbCwKICAiaW1hZ2VJZCIgOiAiYW1pLTA1Y2YyYzM1MmRhMGJmYjJl",
+     "IiwKICAiaW5zdGFuY2VJZCIgOiAiaS0wMjVlNDUwNDhjOTZkZGQ1NiIsCiAgImluc3RhbmNlVHlw",
+     "ZSIgOiAidDMubWljcm8iLAogICJrZXJuZWxJZCIgOiBudWxsLAogICJwZW5kaW5nVGltZSIgOiAi",
+     "MjAyMC0wOS0wNFQxODoyNTo1M1oiLAogICJwcml2YXRlSXAiIDogIjE3Mi4zMS40NS44NSIsCiAg",
+     "InJhbWRpc2tJZCIgOiBudWxsLAogICJyZWdpb24iIDogInVzLWVhc3QtMSIsCiAgInZlcnNpb24i",
+     "IDogIjIwMTctMDktMzAiCn0AAAAAAAAxggEXMIIBEwIBATBpMFwxCzAJBgNVBAYTAlVTMRkwFwYD",
+     "VQQIExBXYXNoaW5ndG9uIFN0YXRlMRAwDgYDVQQHEwdTZWF0dGxlMSAwHgYDVQQKExdBbWF6b24g",
+     "V2ViIFNlcnZpY2VzIExMQwIJAJa6SNnlXhpnMAkGBSsOAwIaBQCgXTAYBgkqhkiG9w0BCQMxCwYJ",
+     "KoZIhvcNAQcBMBwGCSqGSIb3DQEJBTEPFw0yMDA5MDQxODI2MDBaMCMGCSqGSIb3DQEJBDEWBBTq",
+     "RE0QFs1LUnX2rM08oMSxHjbtYjAJBgcqhkjOOAQDBC4wLAIUPGNkdnaRkS9yFg76k0qhW0T+LxQC",
+     "FGlBZ+KeoClR26VVUDjeBP5YrUS1AAAAAAAA"
+    ],
+    "rsa2048": [
+     "MIAGCSqGSIb3DQEHAqCAMIACAQExDzANBglghkgBZQMEAgEFADCABgkqhkiG9w0BBwGggCSABIIB",
+     "3HsKICAiYWNjb3VudElkIiA6ICIzMjk5MTA2NDg5MDEiLAogICJhcmNoaXRlY3R1cmUiIDogIng4",
+     "Nl82NCIsCiAgImF2YWlsYWJpbGl0eVpvbmUiIDogInVzLWVhc3QtMWQiLAogICJiaWxsaW5nUHJv",
+     "ZHVjdHMiIDogbnVsbCwKICAiZGV2cGF5UHJvZHVjdENvZGVzIiA6IG51bGwsCiAgIm1hcmtldHBs",
+     "YWNlUHJvZHVjdENvZGVzIiA6IG51bGwsCiAgImltYWdlSWQiIDogImFtaS0wNWNmMmMzNTJkYTBi",
+     "ZmIyZSIsCiAgImluc3RhbmNlSWQiIDogImktMDI1ZTQ1MDQ4Yzk2ZGRkNTYiLAogICJpbnN0YW5j",
+     "ZVR5cGUiIDogInQzLm1pY3JvIiwKICAia2VybmVsSWQiIDogbnVsbCwKICAicGVuZGluZ1RpbWUi",
+     "IDogIjIwMjAtMDktMDRUMTg6MjU6NTNaIiwKICAicHJpdmF0ZUlwIiA6ICIxNzIuMzEuNDUuODUi",
+     "LAogICJyYW1kaXNrSWQiIDogbnVsbCwKICAicmVnaW9uIiA6ICJ1cy1lYXN0LTEiLAogICJ2ZXJz",
+     "aW9uIiA6ICIyMDE3LTA5LTMwIgp9AAAAAAAAMYIB/zCCAfsCAQEwaTBcMQswCQYDVQQGEwJVUzEZ",
+     "MBcGA1UECBMQV2FzaGluZ3RvbiBTdGF0ZTEQMA4GA1UEBxMHU2VhdHRsZTEgMB4GA1UEChMXQW1h",
+     "em9uIFdlYiBTZXJ2aWNlcyBMTEMCCQCxacxAFVmkGTANBglghkgBZQMEAgEFAKBpMBgGCSqGSIb3",
+     "DQEJAzELBgkqhkiG9w0BBwEwHAYJKoZIhvcNAQkFMQ8XDTIwMDkwNDE4MjYwMFowLwYJKoZIhvcN",
+     "AQkEMSIEIKOBS4ov0ywRq/ApIInUJSK5XpzwTGrMEUAW6ZMtf+j+MA0GCSqGSIb3DQEBAQUABIIB",
+     "AHpiPggUenQG/TtaVBrcRuLqd05Zvk7fCcIwtIqUUzYe4H+6aPeUI+j14UQRgqJOYbuiH9LzGEc5",
+     "jXhxJZXlPShRN+IZMrFY2EucrWlgAfyL9bjdqrQlbezWppcow7Jt9piThecpk5y9Gl2m/ODq1lyR",
+     "GR6Xj4A+5CcKNTMSE+KJP2VSXmOjDxIFuIA7wQ0HHUJnHX/Y4FUs4ZcAgXvZsnBuOA2EFuXEyBGt",
+     "STN/2WbbQ7B5hzj+qg26SwcFTe19V5P5FcPnHQenmkPI0egQE6A6c+W6/aaxTPisCztFkcHiux3x",
+     "SL3i0nI4KzIfkjPSUGQ0zJlMqICkkIXlFqHLO9kAAAAAAAA="
+    ],
+    "signature": [
+     "d7ep/JTLXmAgl2R8T4Dw3+GIsKb2mp0/jZfOLmIOWwF5qLTY8q32y9NplI4M1pokj5Z8/Op09kd+",
+     "Q48FfcAfkFoJzb/bNlNFVuo+T4S+G0UEtfrEu19jZ5e9HEK6nbcAJzUNlea3ska5hxW2YUJPS6Rh",
+     "0WsxP3jzGJa7ZJssOWQ="
+    ]
+   }
+  },
+  "meta_data": {
+   "ami_id": "ami-05cf2c352da0bfb2e",
+   "ami_launch_index": "0",
+   "ami_manifest_path": "(unknown)",
+   "block_device_mapping": {
+    "ami": "sda1",
+    "ephemeral0": "sdb",
+    "ephemeral1": "sdc",
+    "ephemeral2": "sdd",
+    "ephemeral3": "sde",
+    "root": "/dev/sda1"
+   },
+   "events": {
+    "maintenance": {
+     "history": "[]",
+     "scheduled": "[]"
+    }
+   },
+   "hostname": "ip-172-31-45-85.ec2.internal",
+   "identity_credentials": {
+    "ec2": {
+     "info": {
+      "AccountId": "329910648901",
+      "Code": "Success",
+      "LastUpdated": "2020-09-04T18:25:31Z"
+     }
+    }
+   },
+   "instance_action": "none",
+   "instance_id": "i-025e45048c96ddd56",
+   "instance_type": "t3.micro",
+   "local_hostname": "ip-172-31-45-85.ec2.internal",
+   "local_ipv4": "172.31.45.85",
+   "mac": "0e:9c:f1:2d:1f:73",
+   "metrics": {
+    "vhostmd": "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+   },
+   "network": {
+    "interfaces": {
+     "macs": {
+      "0e:9c:f1:2d:1f:73": {
+       "device_number": "0",
+       "interface_id": "eni-0d4ae5fc14026cb03",
+       "ipv4_associations": {
+        "3.92.232.88": "172.31.45.85"
+       },
+       "local_hostname": "ip-172-31-45-85.ec2.internal",
+       "local_ipv4s": "172.31.45.85",
+       "mac": "0e:9c:f1:2d:1f:73",
+       "owner_id": "329910648901",
+       "public_hostname": "ec2-3-92-232-88.compute-1.amazonaws.com",
+       "public_ipv4s": "3.92.232.88",
+       "security_group_ids": [
+        "sg-0b639b8204d061f1d",
+        "sg-0f4eaa0080750ee01"
+       ],
+       "security_groups": [
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-3",
+        "juju-ea6165b4-3970-40b1-8a7d-2ef078577938"
+       ],
+       "subnet_id": "subnet-0affce56",
+       "subnet_ipv4_cidr_block": "172.31.32.0/20",
+       "vpc_id": "vpc-210b4b5b",
+       "vpc_ipv4_cidr_block": "172.31.0.0/16",
+       "vpc_ipv4_cidr_blocks": "172.31.0.0/16"
+      }
+     }
+    }
+   },
+   "placement": {
+    "availability_zone": "us-east-1d"
+   },
+   "profile": "default-hvm",
+   "public_hostname": "ec2-3-92-232-88.compute-1.amazonaws.com",
+   "public_ipv4": "3.92.232.88",
+   "reservation_id": "r-0083d36066df1ca67",
+   "security_groups": [
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938-3",
+    "juju-ea6165b4-3970-40b1-8a7d-2ef078577938"
+   ],
+   "services": {
+    "domain": "amazonaws.com",
+    "partition": "aws"
+   }
+  }
+ },
+ "instance_id": "i-025e45048c96ddd56",
+ "kernel_release": "5.4.0-1021-aws",
+ "local_hostname": "ip-172-31-45-85",
+ "machine": "x86_64",
+ "merged_cfg": {
+  "_doc": "Merged cloud-init system config from /etc/cloud/cloud.cfg and /etc/cloud/cloud.cfg.d/",
+  "_log": [
+   "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+   "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n",
+   "[handler_cloudLogHandler]\nclass=handlers.SysLogHandler\nlevel=DEBUG\nformatter=simpleFormatter\nargs=(\"/dev/log\", handlers.SysLogHandler.LOG_USER)\n"
+  ],
+  "cloud_config_modules": [
+   "emit_upstart",
+   "snap",
+   "ssh-import-id",
+   "locale",
+   "set-passwords",
+   "grub-dpkg",
+   "apt-pipelining",
+   "apt-configure",
+   "ubuntu-advantage",
+   "ntp",
+   "timezone",
+   "disable-ec2-metadata",
+   "runcmd",
+   "byobu"
+  ],
+  "cloud_final_modules": [
+   "package-update-upgrade-install",
+   "fan",
+   "landscape",
+   "lxd",
+   "ubuntu-drivers",
+   "puppet",
+   "chef",
+   "mcollective",
+   "salt-minion",
+   "rightscale_userdata",
+   "scripts-vendor",
+   "scripts-per-once",
+   "scripts-per-boot",
+   "scripts-per-instance",
+   "scripts-user",
+   "ssh-authkey-fingerprints",
+   "keys-to-console",
+   "phone-home",
+   "final-message",
+   "power-state-change"
+  ],
+  "cloud_init_modules": [
+   "migrator",
+   "seed_random",
+   "bootcmd",
+   "write-files",
+   "growpart",
+   "resizefs",
+   "disk_setup",
+   "mounts",
+   "set_hostname",
+   "update_hostname",
+   "update_etc_hosts",
+   "ca-certs",
+   "rsyslog",
+   "users-groups",
+   "ssh"
+  ],
+  "datasource_list": [
+   "Ec2",
+   "None"
+  ],
+  "def_log_file": "/var/log/cloud-init.log",
+  "disable_root": true,
+  "log_cfgs": [
+   [
+    "[loggers]\nkeys=root,cloudinit\n\n[handlers]\nkeys=consoleHandler,cloudLogHandler\n\n[formatters]\nkeys=simpleFormatter,arg0Formatter\n\n[logger_root]\nlevel=DEBUG\nhandlers=consoleHandler,cloudLogHandler\n\n[logger_cloudinit]\nlevel=DEBUG\nqualname=cloudinit\nhandlers=\npropagate=1\n\n[handler_consoleHandler]\nclass=StreamHandler\nlevel=WARNING\nformatter=arg0Formatter\nargs=(sys.stderr,)\n\n[formatter_arg0Formatter]\nformat=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s\n\n[formatter_simpleFormatter]\nformat=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s\n",
+    "[handler_cloudLogHandler]\nclass=FileHandler\nlevel=DEBUG\nformatter=arg0Formatter\nargs=('/var/log/cloud-init.log',)\n"
+   ]
+  ],
+  "output": {
+   "all": "| tee -a /var/log/cloud-init-output.log"
+  },
+  "preserve_hostname": false,
+  "syslog_fix_perms": [
+   "syslog:adm",
+   "root:adm",
+   "root:wheel",
+   "root:root"
+  ],
+  "users": [
+   "default"
+  ],
+  "vendor_data": {
+   "enabled": true,
+   "prefix": []
+  }
+ },
+ "platform": "ec2",
+ "public_ssh_keys": [],
+ "python_version": "3.8.2",
+ "region": "us-east-1",
+ "sensitive_keys": [
+  "merged_cfg"
+ ],
+ "subplatform": "metadata (http://169.254.169.254)",
+ "sys_info": {
+  "dist": [
+   "ubuntu",
+   "20.04",
+   "focal"
+  ],
+  "platform": "Linux-5.4.0-1021-aws-x86_64-with-glibc2.29",
+  "python": "3.8.2",
+  "release": "5.4.0-1021-aws",
+  "system": "Linux",
+  "uname": [
+   "Linux",
+   "ubuntu",
+   "5.4.0-1021-aws",
+   "#21-Ubuntu SMP Fri Jul 24 09:42:29 UTC 2020",
+   "x86_64",
+   "x86_64"
+  ],
+  "variant": "ubuntu"
+ },
+ "system_platform": "Linux-5.4.0-1021-aws-x86_64-with-glibc2.29",
+ "userdata": "#cloud-config\napt_mirror: \"\"\nbootcmd:\n- |-\n  printf '%s\\n' 'Acquire::http::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::https::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"127.0.0.1\" \"DIRECT\";\n  Acquire::http::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::https::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"localhost\" \"DIRECT\";\n  Acquire::http::Proxy::\"::1\" \"DIRECT\";\n  Acquire::https::Proxy::\"::1\" \"DIRECT\";\n  Acquire::ftp::Proxy::\"::1\" \"DIRECT\";' > /etc/apt/apt.conf.d/95-juju-proxy-settings\noutput:\n  all: '| tee -a /var/log/cloud-init-output.log'\npackage_update: true\npackage_upgrade: true\npackages:\n- curl\n- cpu-checker\n- bridge-utils\n- tmux\n- ubuntu-fan\nruncmd:\n- set -xe\n- install -D -m 644 /dev/null '/var/lib/juju/nonce.txt'\n- printf '%s\\n' 'machine-0:9c75b8a6-56c7-4f53-86f4-5463a8f59f1d' > '/var/lib/juju/nonce.txt'\n- test -n \"$JUJU_PROGRESS_FD\" || (exec {JUJU_PROGRESS_FD}>&2) 2>/dev/null && exec\n  {JUJU_PROGRESS_FD}>&2 || JUJU_PROGRESS_FD=2\n- '[ -e /etc/profile.d/juju-proxy.sh ] || printf ''\\n# Added by juju\\n[ -f \"/etc/juju-proxy.conf\"\n  ] && . \"/etc/juju-proxy.conf\"\\n'' >> /etc/profile.d/juju-proxy.sh'\n- mkdir -p /var/lib/juju/locks\n- (id ubuntu &> /dev/null) && chown ubuntu:ubuntu /var/lib/juju/locks\n- mkdir -p /var/log/juju\n- chown syslog:adm /var/log/juju\n- bin='/var/lib/juju/tools/2.8.1-focal-amd64'\n- mkdir -p $bin\n- echo 'Fetching Juju agent version 2.8.1 for amd64' >&$JUJU_PROGRESS_FD\n- |2-\n\n  n=1\n  while true; do\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://252.9.167.1:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      printf \"Attempt $n to download agent binaries from %s...\\n\" 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64'\n      curl -sSfw 'agent binaries from %{url_effective} downloaded: HTTP %{http_code}; time %{time_total}s; size %{size_download} bytes; speed %{speed_download} bytes/s ' --connect-timeout 20 --noproxy \"*\" --insecure -o $bin/tools.tar.gz 'https://3.237.87.200:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64' && echo \"Agent binaries downloaded successfully.\" && break\n\n      echo \"Download failed, retrying in 15s\"\n      sleep 15\n      n=$((n+1))\n  done\n- sha256sum $bin/tools.tar.gz > $bin/juju2.8.1-focal-amd64.sha256\n- grep 'f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8' $bin/juju2.8.1-focal-amd64.sha256\n  || (echo \"Tools checksum mismatch\"; exit 1)\n- tar zxf $bin/tools.tar.gz -C $bin\n- printf %s '{\"version\":\"2.8.1-focal-amd64\",\"url\":\"https://172.31.9.167:17070/model/ea6165b4-3970-40b1-8a7d-2ef078577938/tools/2.8.1-focal-amd64\",\"sha256\":\"f93bb296dd8550400e28ea2b50b19ef668e58c3f0aacdfe9b5cd87701c6ef8c8\",\"size\":38345802}'\n  > $bin/downloaded-tools.txt\n- mkdir -p '/var/lib/juju/agents/machine-3'\n- |-\n  cat > '/var/lib/juju/agents/machine-3/agent.conf' << 'EOF'\n  # format 2.0\n  tag: machine-3\n  datadir: /var/lib/juju\n  transient-datadir: /var/run/juju\n  logdir: /var/log/juju\n  metricsspooldir: /var/lib/juju/metricspool\n  nonce: machine-0:9c75b8a6-56c7-4f53-86f4-5463a8f59f1d\n  jobs:\n  - JobHostUnits\n  upgradedToVersion: 2.8.1\n  cacert: |\n    -----BEGIN CERTIFICATE-----\n    MIID9DCCAlygAwIBAgIVAKPIF83jtSCcg9is/SeZG1t7UgDyMA0GCSqGSIb3DQEB\n    CwUAMCExDTALBgNVBAoTBEp1anUxEDAOBgNVBAMTB2p1anUtY2EwHhcNMjAwODI0\n    MTUwMTExWhcNMzAwODI0MTUwNjExWjAhMQ0wCwYDVQQKEwRKdWp1MRAwDgYDVQQD\n    EwdqdWp1LWNhMIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEAzP2TpKNo\n    xUIAcf2V1P8D0JTOpxXghVbguFiB/qq26F02dXdNBIA4XfsmGSKE0A8xsOirOfWY\n    nR/9EbYx9dhkblTZpcwbDYOZ2tU988pFLfhqCnkCwB4Rm+kzMoUmc/xopEA1kgTG\n    V3Suwq7VU/DoKulXia4fWIfD4kl5HVapBBm4DUvSfguKraFcJoz7XnYaI/H9+bwl\n    sbQlgvFXLa5bwWePUP7YUYz7VbycVGPmHp2L/CWCAIbooJitxgsBjs8Up9U9FP7O\n    9qXiqZe8uUK0LYfvsKOI4wwU2t5uppYhpR4AiIVoW50rdRV0nZ6j1ilXOQ4tb7Vo\n    Mkwi4Buxh7AT2XmBftVtIriF5IuqFKTj4qmi9B2gqL5taRQX9rfWUWQVNoGXIDri\n    FYqo6jlqErUzDZ8r+rZU8ltY3LnnBamSsygFEVWibxMM1Nla9UUXStvFziobnMU7\n    RQdtj83g0WbrlQAAScVpKl9eKn0+lBUBzHxZ8C6irYITwV+4mNknbBu7AgMBAAGj\n    IzAhMA4GA1UdDwEB/wQEAwICpDAPBgNVHRMBAf8EBTADAQH/MA0GCSqGSIb3DQEB\n    CwUAA4IBgQBv27aDnOKTeIQDQ5+lJ2q8zem7XeTWcfUHxAcuqe6X7fsA3Z6u6CWL\n    N1G80mkA8HKBBPDOkvyLwyvyAb2hJdhg3VqwyR9fsQsTNy3TZeLoSl449S4lPGtd\n    5PMLFUTzYTtUOzGUWO0up4WroyicVqaMS8wGb0P8jRh0YfgQvtH3jMCji4FEuxfT\n    yaHgdRlAA+v7kolqzwUXcL423T1/8aNf+u4mQKJ5cn/pKrBDoXBCojtVMOWSg0iM\n    PBJM8l9qz+cnm0wVQDecv9YOilCxeKQJu6AAr39OqZeUKF9lt2oVmmS6bdMQRDCl\n    iOKFRDfqf5fOHgfQTA+9kGTAVZjRaer8jnbvaum1ovxPfRisD1CGpm+coG7z3NOu\n    4eHMIn0HknwR9vd23xIXtRRucCWGQzsODOe3Mgnb+oFsWvtvuDYrduXONWdPxe4N\n    MT0HBJeYwAkFEpCjr5C+oC7vBLCWCrswU4XqXE8LtaSEFuHhS1JaJikn4tvob5KZ\n    svchu1m6ibc=\n    -----END CERTIFICATE-----\n  controller: controller-c8feca5c-0c7e-4126-86ee-0b154884da01\n  model: model-ea6165b4-3970-40b1-8a7d-2ef078577938\n  apiaddresses:\n  - 172.31.9.167:17070\n  - 252.9.167.1:17070\n  - 3.237.87.200:17070\n  oldpassword: dU/JcYgsMSlNj8NmsTpw3Gpm\n  values:\n    AGENT_SERVICE_NAME: jujud-machine-3\n    CONTAINER_TYPE: \"\"\n    PROVIDER_TYPE: ec2\n  mongoversion: \"0.0\"\n\n  EOF\n- chmod 0600 '/var/lib/juju/agents/machine-3/agent.conf'\n- install -D -m 755 /dev/null '/sbin/remove-juju-services'\n- |-\n  printf '%s\\n' '#!/bin/bash\n\n  # WARNING\n  # This script will clean a host previously used to run a Juju controller/machine.\n  # Running this on a live installation will render Juju inoperable.\n\n  for path_to_unit in $(ls /etc/systemd/system/juju*); do\n    echo \"removing juju service: $path_to_unit\"\n    unit=$(basename \"$path_to_unit\")\n    systemctl stop \"$unit\"\n    systemctl disable \"$unit\"\n    systemctl daemon-reload\n    rm -f \"$path_to_unit\"\n  done\n\n  echo \"removing /var/lib/juju/db/*\"\n  rm -rf /var/lib/juju/db/*\n\n  echo \"removing /var/lib/juju/raft/*\"\n  rm -rf /var/lib/juju/raft/*\n\n  echo \"removing /var/run/juju/*\"\n  rm -rf /var/run/juju/*\n\n  has_juju_db_snap=$(snap info juju-db | grep installed)\n  if [ ! -z \"$has_juju_db_snap\" ]; then\n    echo \"removing juju-db snap and any persisted database data\"\n    snap remove --purge juju-db\n  fi\n  ' > '/sbin/remove-juju-services'\n- ln -s 2.8.1-focal-amd64 '/var/lib/juju/tools/machine-3'\n- echo 'Starting Juju machine agent (service jujud-machine-3)' >&$JUJU_PROGRESS_FD\n- |-\n  cat > '/etc/systemd/system/jujud-machine-3-exec-start.sh' << 'EOF'\n  #!/usr/bin/env bash\n\n  # Set up logging.\n  touch '/var/log/juju/machine-3.log'\n  chown syslog:adm '/var/log/juju/machine-3.log'\n  chmod 0640 '/var/log/juju/machine-3.log'\n  exec >> '/var/log/juju/machine-3.log'\n  exec 2>&1\n\n  # Run the script.\n  '/var/lib/juju/tools/machine-3/jujud' machine --data-dir '/var/lib/juju' --machine-id 3 --debug\n  EOF\n- chmod 0755 '/etc/systemd/system/jujud-machine-3-exec-start.sh'\n- |-\n  cat > '/etc/systemd/system/jujud-machine-3.service' << 'EOF'\n  [Unit]\n  Description=juju agent for machine-3\n  After=syslog.target\n  After=network.target\n  After=systemd-user-sessions.service\n\n  [Service]\n  LimitNOFILE=64000\n  ExecStart=/etc/systemd/system/jujud-machine-3-exec-start.sh\n  Restart=on-failure\n  TimeoutSec=300\n\n  [Install]\n  WantedBy=multi-user.target\n\n\n  EOF\n- /bin/systemctl link '/etc/systemd/system/jujud-machine-3.service'\n- /bin/systemctl daemon-reload\n- /bin/systemctl enable '/etc/systemd/system/jujud-machine-3.service'\n- /bin/systemctl start jujud-machine-3.service\n- rm $bin/tools.tar.gz && rm $bin/juju2.8.1-focal-amd64.sha256\nusers:\n- groups:\n  - adm\n  - audio\n  - cdrom\n  - dialout\n  - dip\n  - floppy\n  - netdev\n  - plugdev\n  - sudo\n  - video\n  lock_passwd: true\n  name: ubuntu\n  shell: /bin/bash\n  ssh-authorized-keys:\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDaMY6oXvUp2r7l+/0rEBF/EjTmgWcVCZF1gh5W0SkjN0cXqgxrIz3pBIXW0Hf6zQnkAVqnspyk4s6H4x4idSv3HRe7/wL46YMomuDtPRl6cbIvnsZUnGH+rJPbs16CVatNBXUlpplCMa/qax2FPi3C5LOCubKWCxQtLtf3tqiD6fj4AcRSSNZH1xOIN5hhscNvp3Dr52m6moSuZrpKOHp0tfpGbF1F9+zfs0lzwy9mKa7CE2z6eVIoo1S1tTUOP8aPj8Z/hE2pFNYh34gT5BjyzmvX0yN8E4jFeeEscly+SKk3RpY3LepmOKiEkvIiNNAnpvBQm868JHQDnVrmihA/\n    Juju:juju-client-key\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDSL7uWGj8cgWyIOaspgKdVy0cKJ+UTjfv7jBOjG2H/GN8bJVXy72XAvnhM0dUM+CCs8FOf0YlPX+Frvz2hKInrmRhZVwRSL129PasD12MlI3l44u6IwS1o/W86Q+tkQYEljtqDOo0a+cOsaZkvUNzUyEXUwz/lmYa6G4hMKZH4NBj7nbAAF96wsMCoyNwbWryBnDYUr6wMbjRR1J9Pw7Xh7WRC73wy4Va2YuOgbD3V/5ZrFPLbWZW/7TFXVrql04QVbyei4aiFR5n//GvoqwQDNe58LmbzX/xvxyKJYdny2zXmdAhMxbrpFQsfpkJ9E/H5w0yOdSvnWbUoG5xNGoOB\n    Juju:csmith@fringe\n  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC0Ar0EDgSpnCXuAejkLpQDRU0ODIk8+Iv/n2mOVFLTbnhgW7rgobSpwn6Fl0hp74EgawOi+4TsQ2ndwXogo+lC1WqE/+EDp1/EeKzsYxOpUc8PuIgCiuMCo+KttZJRi8zg2c2cECitcNLx/Qj1LIrSooqRRtmjZSy5Mv4H1G6aDmKeCYDxGOlIKBxGkSF+nBzLmx7vfK+LsPAYiZn/PaSmU0Qrn9ZlHuxNsrdUZTupUlagRa1f1+eMt7HaiZEjNcRcxYBPoJTe3+Hv0YyVY158/YmNQqUVP98bYF3gI1UWmaQ1/8Y3L6XzVS/R1vs0sLI4P5wYyXRA7X9pKXnWLw4j\n    Juju:juju-system-key\n  sudo:\n  - ALL=(ALL) NOPASSWD:ALL\n",
+ "v1": {
+  "_beta_keys": [
+   "subplatform"
+  ],
+  "availability_zone": "us-east-1d",
+  "cloud_name": "aws",
+  "distro": "ubuntu",
+  "distro_release": "focal",
+  "distro_version": "20.04",
+  "instance_id": "i-025e45048c96ddd56",
+  "kernel_release": "5.4.0-1021-aws",
+  "local_hostname": "ip-172-31-45-85",
+  "machine": "x86_64",
+  "platform": "ec2",
+  "public_ssh_keys": [],
+  "python_version": "3.8.2",
+  "region": "us-east-1",
+  "subplatform": "metadata (http://169.254.169.254)",
+  "system_platform": "Linux-5.4.0-1021-aws-x86_64-with-glibc2.29",
+  "variant": "ubuntu"
+ },
+ "variant": "ubuntu",
+ "vendordata": ""
+}
+Connection to 3.92.232.88 closed.
+SUCCESS
+
+===
