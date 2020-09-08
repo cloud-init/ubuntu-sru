@@ -1,6 +1,8 @@
 #!/bin/bash
 # Manual OpenStack upgrade and clean install validation Xenial, Bionic, Eoan and Focal
 
+set -ex
+
 SRU_VARS=./sru-scripts/sru-vars.template
 
 if [ ! -f $SRU_VARS ]; then
@@ -35,7 +37,7 @@ retry_ssh_command ubuntu@$VM_IP "cloud-init status --wait --long" 5
 # Capture current state
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cat /run/cloud-init/result.json
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- grep Trace /var/log/cloud-init.log
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
@@ -49,13 +51,13 @@ ssh "${SSHOPTS[@]}" ubuntu@$VM_IP sudo bash $PROPOSED_SCRIPT 2>&1 | egrep 'cloud
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo hostname SRU-didnt-work
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo rm -f $NETCFG_FILE
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot || true
 ssh-keygen -f "/home/ubuntu/.ssh/known_hosts" -R $VM_IP
 
 retry_ssh_command ubuntu@$VM_IP "cloud-init status --wait --long" 5
 
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- hostname
-ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- ! grep Trace /var/log/cloud-init.log
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- systemd-analyze blame
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init analyze show
