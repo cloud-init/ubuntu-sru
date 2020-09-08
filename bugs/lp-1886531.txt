@@ -1,0 +1,48 @@
+http://pad.lv/1886531
+https://bugs.launchpad.net/ubuntu/+source/cloud-init/+bug/1886531
+
+=== Begin SRU Template ===
+[Impact]
+
+If a system does not have `/etc/fstab` when cloud-init runs cc_mounts (which it
+does on instance's first boots), then cloud-init would traceback previously.
+
+This fix ensures that it will no longer traceback.
+
+[Test Case]
+
+cat << EOF > lp1886531.yaml
+#cloud-config
+bootcmd:
+  - rm /etc/fstab
+EOF
+
+lp1886531() {
+    release=$1
+    ref=$release-proposed
+    name=$release-lp1886531
+
+    # Attempt to remove container from a previous run
+    lxc delete -f $name || true
+
+    # https://github.com/cloud-init/qa-scripts/blob/master/scripts/lxc-proposed-snapshot
+    lxc-proposed-snapshot --proposed --publish $release $ref
+
+    lxc launch -c user.user-data="$(cat lp1886531.yaml)" $ref $name
+
+    lxc exec $name -- cloud-init status --wait
+
+    echo "There should be 0 warnings in cloud-init.log:"
+    lxc exec $name -- grep -c WARNING /var/log/cloud-init.log
+}
+
+[Regression Potential]
+
+This modifies a code path which all cloud-init boots take; the chance of
+regression which isn't caught in our testing is very low.
+
+[Other Info]
+Upstream commit at
+  https://github.com/canonical/cloud-init/commit/3d06abc2e0017436dadbf9c26fefa9f95368db9a
+
+=== End SRU Template ===
