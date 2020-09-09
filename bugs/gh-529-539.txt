@@ -305,10 +305,17 @@ for nics in "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${AZURE_NIC_NAME}2-$UBUNTU_R
     echo "REBOOTING TO Confirm boot extra timeout across reboot LP: #1830740"  #bbsw
     ssh "${SSHOPTS[@]}" $IP -- sudo reboot || true
     ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
-    echo "--- TEST: BEGIN EXPECT Long boot time LP: #1830740"
+    if [ "${UBUNTU_RELEASE}" = "xenial" ]; then
+	time_expected_msg="EXPECT short boot time LP: #1830740. Because xenial renders dhcp only on eth0"
+	network_diff_msg="EXPECT no network config diff because xenial renders only dhcp on eth0"
+    else
+	time_expected_msg="EXPECT long boot time LP: #1830740."
+	network_diff_msg="EXPECT Expect driver directives in network diff"
+    fi
+    echo "--- TEST: BEGIN $time_expected_msg"
     ssh "${SSHOPTS[@]}" $IP -- systemd-analyze
     ssh "${SSHOPTS[@]}" $IP -- systemd-analyze blame | grep cloud-init
-    echo "--- TEST: END EXPECT Long boot time LP: #1830740"
+    echo "--- TEST: END $time_expected_msg"
     echo 'Writing networking config: previous-network.out'
     ssh "${SSHOPTS[@]}" $IP -- cat $netcfg > previous-network.out
     ssh "${SSHOPTS[@]}" $IP -- ip -4 route >> previous-network.out
@@ -342,9 +349,9 @@ for nics in "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${AZURE_NIC_NAME}2-$UBUNTU_R
     echo "--- TEST: BEGIN EXPECT no delayed boot time LP: #1830740"  #bbsw
     ssh "${SSHOPTS[@]}" $IP -- sudo systemd-analyze blame | grep cloud-init
     echo "--- TEST: END EXPECT no delayed boot time LP: #1830740"
-    echo '------- TEST: BEGIN Expect driver directives in diff previous-network to post-upgrade-network expect ------'  #bbsw
+    echo "------- TEST: BEGIN ${network_diff_msg}"
     diff -urN previous-network.out upgrade-network.out
-    echo '------- TEST: END Expect driver directives in diff previous-network to post-upgrade-network expect ------'
+    echo "------- TEST: END ${network_diff_msg}"
 
     echo '--- TEST: Expect success count of 2 for temporary_hostname'  #bbsw
     SUCCESS_COUNT=$(ssh "${SSHOPTS[@]}" $IP -- "egrep -c 'finish.*SUCCESS: temporary_hostname' /var/log/cloud-init.log")
