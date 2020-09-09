@@ -1,0 +1,2734 @@
+=== Begin SRU Template ===
+[Impact]
+Reboots of cloud-init 20.2 network config on "accelerated networking" instances introduced a delay in cloud-init.local systed service.
+
+ GH #539 solves this by adding a driver match directive in netplan for hv_netvsc to avoid matching duplicate SRIOV NIC MACs.
+
+Confirm netplan config diff adds driver directive and ensure reboot timeout is
+resolved with cloud-init 20.3-2.
+
+Also KVP binary upload events of compressed cloud-init.logs is now performed.
+Enusre log messages related to that event is created and no traces occur in
+that logging.
+
+[Test Case]
+
+```
+# adapted our manual azure-sru test case to additionally check KVP logs and boot timeout across reboots. Look for marker comment #bbsw for script changes
+
+#!/bin/bash
+# Manually deploy on Azure using Azure CLI client.
+# Validate upgrade to proposed version of cloud-init
+# Check Tracebacks or error conditions on clean boot
+
+SRU_VARS=./sru-scripts/sru-vars.template
+
+if [ ! -f $SRU_VARS ]; then
+   echo "Missing config environment file $SRU_VARS."
+   exit 1
+fi
+
+. $SRU_VARS
+
+parse_args $0 $@
+assert_expected_vars PROPOSED_SCRIPT AZURE_REGION AZURE_VNET_NAME \
+  AZURE_NETWORK_SECURITY_GROUP AZURE_NIC_NAME AZURE_RESOURCE_GROUP \
+  AZURE_BOOT_DIAG SSH_KEY SAMPLE_CLOUDCONFIG AZURE_ADVANCED_NIC_TESTS
+create_samplecloudconfig SAMPLE_CLOUDCONFIG
+create_setup_proposed_script
+
+AZURE_VNET_NAME=$AZURE_VNET_NAME-$UBUNTU_RELEASE
+
+
+IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+
+
+if [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; then
+    echo "Account is not yet registered for AllowIPv6VirtualNetwork or AllowIPv6CAOnStandardLB. Can take 30 mins. Activate feature now (y/n)?"
+    read RESP
+    if [ "$RESP" = "y" ]; then
+        az feature register --name AllowIPv6VirtualNetwork --namespace Microsoft.Network
+        az feature register --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network
+    else
+        echo "Skipping any advanced network tests because you opted to avoid registering IPv6 feature"
+        echo -n "Proceed without any advanced networking tests (y/n)? "
+        read OK
+        if [ "$OK" = "y" ]; then
+            AZURE_ADVANCED_NIC_TESTS=false
+        else
+            echo "quit the test run"
+            exit 1
+        fi
+    fi
+    echo "Waiting for AllowIPv6VirtualNetwork feature registration"
+    while [ "$IPV6_NET_REGISTERED" != "Registered" -o "$IPV6_CA_LB_REGISTERED" != "Registered" ]; do
+        echo -n "."
+        sleep 5
+        IPV6_NET_REGISTERED=$(az feature show --name AllowIPv6VirtualNetwork --namespace Microsoft.Network | jq -r '.properties.state')
+        IPV6_CA_LB_REGISTERED=$(az feature show --name AllowIPv6CAOnStandardLB --namespace Microsoft.Network | jq -r '.properties.state')
+    done
+fi
+
+IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+echo "Waiting for Microsoft.Network IPv6 feature registration"
+while [ "$IPV6_REGISTRATION_COMPLETE"  != "Registered" ]; do
+    echo -n "."
+    sleep 5
+    IPV6_REGISTRATION_COMPLETE=$(az provider show -n Microsoft.Network | jq -r ".registrationState")
+done
+
+
+echo "### BEGIN $UBUNTU_RELEASE"
+
+az group show -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az group create --name $AZURE_RESOURCE_GROUP --location $AZURE_REGION
+
+if [ -n "${AZURE_BOOT_DIAG}" ]; then
+     az storage account show --name $AZURE_BOOT_DIAG > /dev/null 2>&1 ||
+         az storage account create \
+             --name $AZURE_BOOT_DIAG \
+             --resource-group $AZURE_RESOURCE_GROUP \
+             --location $AZURE_REGION \
+             --sku Standard_RAGRS \
+             --kind StorageV2
+    AZURE_BOOT_DIAG_ARG="--boot-diagnostics-storage ${AZURE_BOOT_DIAG}"
+else
+    AZURE_BOOT_DIAG_ARG=""
+fi
+
+az resource list --output json | jq '.[].id' > resource.ids
+egrep "${AZURE_NETWORK_SECURITY_GROUP}\"" resource.ids || az network nsg create \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --location $AZURE_REGION \
+    --name $AZURE_NETWORK_SECURITY_GROUP
+
+az network nsg rule show --name allowSSHIn --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
+    --name allowSSHIn  \
+    --nsg-name $AZURE_NETWORK_SECURITY_GROUP  \
+    --resource-group $AZURE_RESOURCE_GROUP  \
+    --priority 100  \
+    --description "Allow SSH In"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Inbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges 22
+
+az network nsg rule show --name allowAllOut --nsg-name $AZURE_NETWORK_SECURITY_GROUP -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network nsg rule create \
+    --name allowAllOut  \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --nsg-name $AZURE_NETWORK_SECURITY_GROUP \
+    --priority 200  \
+    --description "Allow All Out"  \
+    --access Allow  \
+    --protocol "*"  \
+    --direction Outbound  \
+    --source-address-prefixes "*"  \
+    --source-port-ranges "*"  \
+    --destination-address-prefixes "*"  \
+    --destination-port-ranges "*"
+
+az network vnet show --name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet create \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --location $AZURE_REGION \
+    --name $AZURE_VNET_NAME \
+    --address-prefixes "10.0.0.0/16" "ace:cab:deca::/48"
+
+az network vnet subnet show --name sruSubnet --vnet-name $AZURE_VNET_NAME -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 || az network vnet subnet create \
+    --name sruSubnet \
+    --resource-group $AZURE_RESOURCE_GROUP \
+    --vnet-name $AZURE_VNET_NAME \
+    --address-prefixes "10.0.0.0/24" "ace:cab:deca:deed::/64" \
+    --network-security-group $AZURE_NETWORK_SECURITY_GROUP
+
+
+netcfg="/etc/netplan/50-cloud-init.yaml"
+case $UBUNTU_RELEASE in
+    xenial) image_version=Canonical:UbuntuServer:16.04-DAILY-LTS
+            netcfg="/etc/network/interfaces.d/50-cloud-init.cfg";;
+    bionic) image_version=Canonical:UbuntuServer:18.04-DAILY-LTS;;
+    eoan) image_version=Canonical:UbuntuServer:19.10-DAILY;;
+    focal) image_version=Canonical:0001-com-ubuntu-server-focal-daily:20_04-daily-lts;;
+    *) echo "!! UPDATE FAMILY CASE STATEMENT !!"; exit 1;;
+esac
+# Note: accelerated network requires bigger size than our default DS1
+for nics in "--nics $AZURE_NIC_NAME-$UBUNTU_RELEASE ${AZURE_NIC_NAME}2-$UBUNTU_RELEASE --size Standard_DS2_v2"; do
+    if [ "" = "$nics" ]; then
+        echo "Creating standard network vm"
+        name=test-sru-$UBUNTU_RELEASE
+    else
+        if [ $AZURE_ADVANCED_NIC_TESTS = false ]; then
+            echo "Skipping advanced nic tests because ipv6 feature is disabled"
+            continue
+        fi
+        echo "Creating advanced network vm"
+        name=test-sru-$UBUNTU_RELEASE-advanced
+        # Dual stack load balancer setup with only 1 dualstack/dual nic vm
+        # Create VM IP address
+        az network public-ip create \
+            --name vmPublicIP-IPv4-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --location $AZURE_REGION \
+            --sku BASIC \
+            --allocation-method dynamic \
+            --version IPv4
+        # Create an IPV4 IP address for LB
+        az network public-ip create \
+            --name lbPublicIP_v4_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --location $AZURE_REGION  \
+            --sku BASIC  \
+            --allocation-method dynamic  \
+            --version IPv4
+
+        # Create an IPV6 IP address for LB
+        az network public-ip create \
+            --name lbPublicIP_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --location $AZURE_REGION \
+            --sku BASIC  \
+            --allocation-method dynamic  \
+            --version IPv6
+
+        # Create LB
+        az network lb create \
+            --name dsLB_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --sku Basic \
+            --location $AZURE_REGION \
+            --frontend-ip-name dsLbFrontEnd_v4_$UBUNTU_RELEASE  \
+            --public-ip-address lbPublicIP_v4_$UBUNTU_RELEASE  \
+            --backend-pool-name dsLbBackEndPool_v4_$UBUNTU_RELEASE
+
+        # Create LB ipv6 frontend
+        az network lb frontend-ip create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLbFrontEnd_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --public-ip-address lbPublicIP_v6_$UBUNTU_RELEASE
+
+        # Create LB ipv6 backend
+        az network lb address-pool create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLbBackEndPool_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP
+
+        # Create LB health probe for ssh port
+        az network lb probe create -g $AZURE_RESOURCE_GROUP  \
+            --lb-name dsLB_$UBUNTU_RELEASE -n dsProbe_$UBUNTU_RELEASE --protocol tcp \
+            --port 22
+
+        az network lb rule create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLBrule_v4_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --frontend-ip-name dsLbFrontEnd_v4_$UBUNTU_RELEASE  \
+            --protocol Tcp  \
+            --frontend-port 22  \
+            --backend-port 22  \
+            --probe-name dsProbe_$UBUNTU_RELEASE \
+            --backend-pool-name dsLbBackEndPool_v4_$UBUNTU_RELEASE
+
+        az network lb rule create \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --name dsLBrule_v6_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP  \
+            --frontend-ip-name dsLbFrontEnd_v6_$UBUNTU_RELEASE  \
+            --protocol Tcp  \
+            --frontend-port 22  \
+            --backend-port 22  \
+            --probe-name dsProbe_$UBUNTU_RELEASE \
+            --backend-pool-name dsLbBackEndPool_v6_$UBUNTU_RELEASE
+
+        az vm availability-set create \
+            --name dsAVset_$UBUNTU_RELEASE  \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --location $AZURE_REGION \
+            --platform-fault-domain-count 2  \
+            --platform-update-domain-count 2
+
+        az network nic create \
+            --name $AZURE_NIC_NAME-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --network-security-group $AZURE_NETWORK_SECURITY_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+             --accelerated-networking true \
+            --subnet sruSubnet \
+            --private-ip-address-version IPv4 \
+            --lb-address-pools dsLbBackEndPool_v4_$UBUNTU_RELEASE  \
+            --lb-name dsLB_$UBUNTU_RELEASE  \
+            --public-ip-address vmPublicIP-IPv4-$UBUNTU_RELEASE
+
+        az network nic create \
+            --name ${AZURE_NIC_NAME}2-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --network-security-group $AZURE_NETWORK_SECURITY_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+            --accelerated-networking true \
+            --subnet sruSubnet \
+            --private-ip-address-version IPv4
+
+        # Add IPv6 on primary nic
+        az network nic ip-config create \
+            --name $AZURE_NIC_NAME-$UBUNTU_RELEASE-v6 \
+            --nic-name $AZURE_NIC_NAME-$UBUNTU_RELEASE \
+            --resource-group $AZURE_RESOURCE_GROUP \
+            --vnet-name $AZURE_VNET_NAME \
+            --subnet sruSubnet \
+            --lb-address-pools dsLbBackEndPool_v6_$UBUNTU_RELEASE  \
+            --lb-name dsLB_$UBUNTU_RELEASE \
+            --private-ip-address-version IPv6
+
+    fi
+    az vm show --name $name -g $AZURE_RESOURCE_GROUP > /dev/null 2>&1 ||
+        az vm create --name=$name \
+            --image=$image_version:latest \
+            --admin-username=root --admin-username=ubuntu \
+            -g $AZURE_RESOURCE_GROUP --ssh-key-value $SSH_KEY \
+            $AZURE_BOOT_DIAG_ARG \
+            --custom-data $SAMPLE_CLOUDCONFIG $nics
+    IP=$(az vm list-ip-addresses --name $name | jq -r '.[] | .virtualMachine.network.publicIpAddresses[].ipAddress'| awk '{printf "ubuntu@%s", $1}')
+
+    echo "Created $name: $IP"
+
+    sleep 30
+    retry_ssh_command $IP "cloud-init status --wait --long" 5
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+    echo "--- TEST: EXPECT NO KVP dump logs in cloud-init.log" #bbsw
+    ssh "${SSHOPTS[@]}" $IP -- ! grep -i dump /var/log/cloud-init.log  || echo "FAILURE: Found KVP dump logs in /var/log/cloud-init.log"
+    ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze blame | grep cloud-init
+    echo "REBOOTING TO Confirm boot extra timeout across reboot LP: #1830740"  #bbsw
+    ssh "${SSHOPTS[@]}" $IP -- sudo reboot || true
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+    echo "--- TEST: BEGIN EXPECT Long boot time LP: #1830740"
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze
+    ssh "${SSHOPTS[@]}" $IP -- systemd-analyze blame | grep cloud-init
+    echo "--- TEST: END EXPECT Long boot time LP: #1830740"
+    echo 'Writing networking config: previous-network.out'
+    ssh "${SSHOPTS[@]}" $IP -- cat $netcfg > previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 route >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 addr >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 route >> previous-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 addr >> previous-network.out
+
+    scp "${SSHOPTS[@]}" ${PROPOSED_SCRIPT} $IP:.
+    ssh "${SSHOPTS[@]}" $IP -- sudo bash ${PROPOSED_SCRIPT} 2>&1 | egrep 'cloud-init'
+    ssh "${SSHOPTS[@]}" $IP -- dpkg-query --show cloud-init
+    ssh "${SSHOPTS[@]}" $IP -- sudo rm -f $netcfg
+    ssh "${SSHOPTS[@]}" $IP -- sudo cloud-init clean --logs --reboot || true
+
+    sleep 60
+    ssh "${SSHOPTS[@]}" $IP -- cloud-init status --wait --long
+    ssh "${SSHOPTS[@]}" $IP -- sudo cat /run/cloud-init/result.json
+    echo "--- TEST: BEGIN EXPECT to find KVP dump logs in cloud-init.log" #bbsw
+    ssh "${SSHOPTS[@]}" $IP -- grep -i dump /var/log/cloud-init.log  || echo "FAILURE: Did not find KVP dump logs in /var/log/cloud-init.log"
+    echo "--- TEST: END EXPECT to find KVP dump logs in cloud-init.log"
+    ssh "${SSHOPTS[@]}" $IP -- sudo systemd-analyze blame | grep cloud-init
+    echo 'After upgrade write network config: upgrade-network.out'
+    ssh "${SSHOPTS[@]}" $IP -- cat $netcfg > upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 route >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -4 addr >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 route >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- ip -6 addr >> upgrade-network.out
+    ssh "${SSHOPTS[@]}" $IP -- sudo reboot || true
+    sleep 60
+    retry_ssh_command $IP "cloud-init status --wait --long" 5
+    echo 'After reboot'
+    echo "--- TEST: BEGIN EXPECT no delayed boot time LP: #1830740"  #bbsw
+    ssh "${SSHOPTS[@]}" $IP -- sudo systemd-analyze blame | grep cloud-init
+    echo "--- TEST: END EXPECT no delayed boot time LP: #1830740"
+    echo '------- TEST: BEGIN Expect driver directives in diff previous-network to post-upgrade-network expect ------'  #bbsw
+    diff -urN previous-network.out upgrade-network.out
+    echo '------- TEST: END Expect driver directives in diff previous-network to post-upgrade-network expect ------'
+
+    echo '--- TEST: Expect success count of 2 for temporary_hostname'  #bbsw
+    SUCCESS_COUNT=$(ssh "${SSHOPTS[@]}" $IP -- "egrep -c 'finish.*SUCCESS: temporary_hostname' /var/log/cloud-init.log")
+    if [ "$SUCCESS_COUNT" != "2" ]; then
+        echo "FAILURE: Expected 2 successful temporary_hostname runs. Found: $SUCCESS_COUNT"
+    else
+        echo "SUCCESS: counted two successful temporary_hostname runs"
+    fi
+done
+echo "### END $UBUNTU_RELEASE"
+```
+
+[Verification Logs]
+
+sru-scripts/manual/azure-sru focal
+Waiting for Microsoft.Network IPv6 feature registration
+### BEGIN focal
+The default kind for created storage account will change to 'StorageV2' from 'Storage' in future
+{
+  "accessTier": "Hot",
+  "azureFilesIdentityBasedAuthentication": null,
+  "creationTime": "2020-09-09T16:00:41.932200+00:00",
+  "customDomain": null,
+  "enableHttpsTrafficOnly": true,
+  "encryption": {
+    "keySource": "Microsoft.Storage",
+    "keyVaultProperties": null,
+    "services": {
+      "blob": {
+        "enabled": true,
+        "lastEnabledTime": "2020-09-09T16:00:42.010326+00:00"
+      },
+      "file": {
+        "enabled": true,
+        "lastEnabledTime": "2020-09-09T16:00:42.010326+00:00"
+      },
+      "queue": null,
+      "table": null
+    }
+  },
+  "failoverInProgress": null,
+  "geoReplicationStats": null,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Storage/storageAccounts/storeitsru",
+  "identity": null,
+  "isHnsEnabled": null,
+  "kind": "StorageV2",
+  "largeFileSharesState": null,
+  "lastGeoFailoverTime": null,
+  "location": "eastus2",
+  "name": "storeitsru",
+  "networkRuleSet": {
+    "bypass": "AzureServices",
+    "defaultAction": "Allow",
+    "ipRules": [],
+    "virtualNetworkRules": []
+  },
+  "primaryEndpoints": {
+    "blob": "https://storeitsru.blob.core.windows.net/",
+    "dfs": "https://storeitsru.dfs.core.windows.net/",
+    "file": "https://storeitsru.file.core.windows.net/",
+    "queue": "https://storeitsru.queue.core.windows.net/",
+    "table": "https://storeitsru.table.core.windows.net/",
+    "web": "https://storeitsru.z20.web.core.windows.net/"
+  },
+  "primaryLocation": "eastus2",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "secondaryEndpoints": {
+    "blob": "https://storeitsru-secondary.blob.core.windows.net/",
+    "dfs": "https://storeitsru-secondary.dfs.core.windows.net/",
+    "file": null,
+    "queue": "https://storeitsru-secondary.queue.core.windows.net/",
+    "table": "https://storeitsru-secondary.table.core.windows.net/",
+    "web": "https://storeitsru-secondary.z20.web.core.windows.net/"
+  },
+  "secondaryLocation": "centralus",
+  "sku": {
+    "capabilities": null,
+    "kind": null,
+    "locations": null,
+    "name": "Standard_RAGRS",
+    "resourceType": null,
+    "restrictions": null,
+    "tier": "Standard"
+  },
+  "statusOfPrimary": "available",
+  "statusOfSecondary": "available",
+  "tags": {},
+  "type": "Microsoft.Storage/storageAccounts"
+}
+{
+  "NewNSG": {
+    "defaultSecurityRules": [
+      {
+        "access": "Allow",
+        "description": "Allow inbound traffic from all VMs in VNET",
+        "destinationAddressPrefix": "VirtualNetwork",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Inbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/AllowVnetInBound",
+        "name": "AllowVnetInBound",
+        "priority": 65000,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "VirtualNetwork",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      },
+      {
+        "access": "Allow",
+        "description": "Allow inbound traffic from azure load balancer",
+        "destinationAddressPrefix": "*",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Inbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/AllowAzureLoadBalancerInBound",
+        "name": "AllowAzureLoadBalancerInBound",
+        "priority": 65001,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "AzureLoadBalancer",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      },
+      {
+        "access": "Deny",
+        "description": "Deny all inbound traffic",
+        "destinationAddressPrefix": "*",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Inbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/DenyAllInBound",
+        "name": "DenyAllInBound",
+        "priority": 65500,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "*",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      },
+      {
+        "access": "Allow",
+        "description": "Allow outbound traffic from all VMs to all VMs in VNET",
+        "destinationAddressPrefix": "VirtualNetwork",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Outbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/AllowVnetOutBound",
+        "name": "AllowVnetOutBound",
+        "priority": 65000,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "VirtualNetwork",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      },
+      {
+        "access": "Allow",
+        "description": "Allow outbound traffic from all VMs to Internet",
+        "destinationAddressPrefix": "Internet",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Outbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/AllowInternetOutBound",
+        "name": "AllowInternetOutBound",
+        "priority": 65001,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "*",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      },
+      {
+        "access": "Deny",
+        "description": "Deny all outbound traffic",
+        "destinationAddressPrefix": "*",
+        "destinationAddressPrefixes": [],
+        "destinationApplicationSecurityGroups": null,
+        "destinationPortRange": "*",
+        "destinationPortRanges": [],
+        "direction": "Outbound",
+        "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/defaultSecurityRules/DenyAllOutBound",
+        "name": "DenyAllOutBound",
+        "priority": 65500,
+        "protocol": "*",
+        "provisioningState": "Succeeded",
+        "resourceGroup": "srugroupIPV6",
+        "sourceAddressPrefix": "*",
+        "sourceAddressPrefixes": [],
+        "sourceApplicationSecurityGroups": null,
+        "sourcePortRange": "*",
+        "sourcePortRanges": [],
+        "type": "Microsoft.Network/networkSecurityGroups/defaultSecurityRules"
+      }
+    ],
+    "etag": "W/\"9a9689d5-a700-49f7-ad0e-114a61d92ee3\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+    "location": "eastus2",
+    "name": "sruNetSecGroup",
+    "networkInterfaces": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "dd0dc309-238f-479c-84db-c63f3ea5c178",
+    "securityRules": [],
+    "subnets": null,
+    "tags": null,
+    "type": "Microsoft.Network/networkSecurityGroups"
+  }
+}
+{
+  "access": "Allow",
+  "description": "Allow SSH In",
+  "destinationAddressPrefix": "*",
+  "destinationAddressPrefixes": [],
+  "destinationApplicationSecurityGroups": null,
+  "destinationPortRange": "22",
+  "destinationPortRanges": [],
+  "direction": "Inbound",
+  "etag": "W/\"2586981c-f173-4be4-a0a6-84bc273d20aa\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/securityRules/allowSSHIn",
+  "name": "allowSSHIn",
+  "priority": 100,
+  "protocol": "*",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "sourceAddressPrefix": "*",
+  "sourceAddressPrefixes": [],
+  "sourceApplicationSecurityGroups": null,
+  "sourcePortRange": "*",
+  "sourcePortRanges": [],
+  "type": "Microsoft.Network/networkSecurityGroups/securityRules"
+}
+{
+  "access": "Allow",
+  "description": "Allow All Out",
+  "destinationAddressPrefix": "*",
+  "destinationAddressPrefixes": [],
+  "destinationApplicationSecurityGroups": null,
+  "destinationPortRange": "*",
+  "destinationPortRanges": [],
+  "direction": "Outbound",
+  "etag": "W/\"2394530d-982b-44e4-a6a4-11d7cd1e20d1\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup/securityRules/allowAllOut",
+  "name": "allowAllOut",
+  "priority": 200,
+  "protocol": "*",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "sourceAddressPrefix": "*",
+  "sourceAddressPrefixes": [],
+  "sourceApplicationSecurityGroups": null,
+  "sourcePortRange": "*",
+  "sourcePortRanges": [],
+  "type": "Microsoft.Network/networkSecurityGroups/securityRules"
+}
+{
+  "newVNet": {
+    "addressSpace": {
+      "addressPrefixes": [
+        "10.0.0.0/16",
+        "ace:cab:deca::/48"
+      ]
+    },
+    "ddosProtectionPlan": null,
+    "dhcpOptions": {
+      "dnsServers": []
+    },
+    "enableDdosProtection": false,
+    "enableVmProtection": false,
+    "etag": "W/\"511c16aa-3f92-4835-aab5-31a1823eeb92\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-focal",
+    "location": "eastus2",
+    "name": "sruVnet-focal",
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "a33b8d87-47b1-445e-be17-87447be62504",
+    "subnets": [],
+    "tags": {},
+    "type": "Microsoft.Network/virtualNetworks",
+    "virtualNetworkPeerings": []
+  }
+}
+{
+  "addressPrefix": null,
+  "addressPrefixes": [
+    "10.0.0.0/24",
+    "ace:cab:deca:deed::/64"
+  ],
+  "delegations": [],
+  "etag": "W/\"c7f0d2e6-41df-47c5-acbe-cb46cc959efb\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-focal/subnets/sruSubnet",
+  "ipConfigurationProfiles": null,
+  "ipConfigurations": null,
+  "name": "sruSubnet",
+  "natGateway": null,
+  "networkSecurityGroup": {
+    "defaultSecurityRules": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+    "location": null,
+    "name": null,
+    "networkInterfaces": null,
+    "provisioningState": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "securityRules": null,
+    "subnets": null,
+    "tags": null,
+    "type": null
+  },
+  "privateEndpointNetworkPolicies": "Enabled",
+  "privateEndpoints": null,
+  "privateLinkServiceNetworkPolicies": "Enabled",
+  "provisioningState": "Succeeded",
+  "purpose": null,
+  "resourceGroup": "srugroupIPV6",
+  "resourceNavigationLinks": null,
+  "routeTable": null,
+  "serviceAssociationLinks": null,
+  "serviceEndpointPolicies": null,
+  "serviceEndpoints": null,
+  "type": "Microsoft.Network/virtualNetworks/subnets"
+}
+Creating advanced network vm
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"3eb0f4e1-e06f-43cc-a2c6-1a28b33c3df3\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-focal",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "vmPublicIP-IPv4-focal",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "6e664829-958c-43e7-aeff-696d3b33c1dc",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"6dd2a3ff-250a-4f2e-9d05-121b0a2a885d\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_focal",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v4_focal",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "9a9ca40e-2bd3-4de2-9e47-5c471103ebc6",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"b6ba4b9b-77a7-4e24-aa4d-4a7e4322b86f\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_focal",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v6_focal",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv6",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "d2796cf5-6fc6-45a1-864b-28a56bec81e1",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "loadBalancer": {
+    "backendAddressPools": [
+      {
+        "etag": "W/\"5519936c-d7c0-4dff-bbdf-b90aeb7eaaab\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v4_focal",
+        "name": "dsLbBackEndPool_v4_focal",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+      }
+    ],
+    "frontendIPConfigurations": [
+      {
+        "etag": "W/\"5519936c-d7c0-4dff-bbdf-b90aeb7eaaab\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/frontendIPConfigurations/dsLbFrontEnd_v4_focal",
+        "name": "dsLbFrontEnd_v4_focal",
+        "properties": {
+          "privateIPAddressVersion": "IPv4",
+          "privateIPAllocationMethod": "Dynamic",
+          "provisioningState": "Succeeded",
+          "publicIPAddress": {
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_focal",
+            "resourceGroup": "srugroupIPV6"
+          }
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations"
+      }
+    ],
+    "inboundNatPools": [],
+    "inboundNatRules": [],
+    "loadBalancingRules": [],
+    "probes": [],
+    "provisioningState": "Succeeded",
+    "resourceGuid": "508750f9-fe03-43da-8ce9-aee71a9cc7a6"
+  }
+}
+{
+  "etag": "W/\"7d8b04e7-9474-4070-ac48-b521df76accf\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/frontendIPConfigurations/dsLbFrontEnd_v6_focal",
+  "inboundNatPools": null,
+  "inboundNatRules": null,
+  "loadBalancingRules": null,
+  "name": "dsLbFrontEnd_v6_focal",
+  "outboundRules": null,
+  "privateIpAddress": null,
+  "privateIpAddressVersion": "IPv4",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_focal",
+    "idleTimeoutInMinutes": null,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": null,
+    "location": null,
+    "name": null,
+    "provisioningState": null,
+    "publicIpAddressVersion": null,
+    "publicIpAllocationMethod": null,
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "sku": null,
+    "tags": null,
+    "type": null,
+    "zones": null
+  },
+  "publicIpPrefix": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": null,
+  "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations",
+  "zones": null
+}
+{
+  "backendIpConfigurations": null,
+  "etag": "W/\"8b461d6f-f54d-4efd-96cb-dc11fd156860\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v6_focal",
+  "loadBalancingRules": null,
+  "name": "dsLbBackEndPool_v6_focal",
+  "outboundRule": null,
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+}
+{
+  "etag": "W/\"a9451768-0703-4bbc-9f91-10c4cd6e0175\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/probes/dsProbe_focal",
+  "intervalInSeconds": 15,
+  "loadBalancingRules": null,
+  "name": "dsProbe_focal",
+  "numberOfProbes": 2,
+  "port": 22,
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "requestPath": null,
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/probes"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v4_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"09341fe7-84e8-4875-be06-7a89d7cad53e\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/frontendIPConfigurations/dsLbFrontEnd_v4_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/loadBalancingRules/dsLBrule_v4_focal",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v4_focal",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/probes/dsProbe_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v6_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"78c3c916-92ce-4ee3-a781-dbd17d2b94c1\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/frontendIPConfigurations/dsLbFrontEnd_v6_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/loadBalancingRules/dsLBrule_v6_focal",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v6_focal",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/probes/dsProbe_focal",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/availabilitySets/dsAVset_focal",
+  "location": "eastus2",
+  "name": "dsAVset_focal",
+  "platformFaultDomainCount": 2,
+  "platformUpdateDomainCount": 2,
+  "proximityPlacementGroup": null,
+  "resourceGroup": "srugroupIPV6",
+  "sku": {
+    "capacity": null,
+    "name": "Aligned",
+    "tier": null
+  },
+  "statuses": null,
+  "tags": {},
+  "type": "Microsoft.Compute/availabilitySets",
+  "virtualMachines": []
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "q4gtxi3ri3pejpqxq3chxzrfae.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"a58a29d3-0c62-4fe7-9471-1ab43bad3d70\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-focal",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"a58a29d3-0c62-4fe7-9471-1ab43bad3d70\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-focal/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": [
+          {
+            "backendIpConfigurations": null,
+            "etag": null,
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v4_focal",
+            "loadBalancingRules": null,
+            "name": null,
+            "outboundRule": null,
+            "provisioningState": null,
+            "resourceGroup": "srugroupIPV6"
+          }
+        ],
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.4",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": {
+          "ddosSettings": null,
+          "dnsSettings": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-focal",
+          "idleTimeoutInMinutes": null,
+          "ipAddress": null,
+          "ipConfiguration": null,
+          "ipTags": null,
+          "location": null,
+          "name": null,
+          "provisioningState": null,
+          "publicIpAddressVersion": null,
+          "publicIpAllocationMethod": null,
+          "publicIpPrefix": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceGuid": null,
+          "sku": null,
+          "tags": null,
+          "type": null,
+          "zones": null
+        },
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-focal/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic-focal",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "35ae8aa3-f0a5-433b-83ec-8fef5101226e",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "q4gtxi3ri3pejpqxq3chxzrfae.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"31d69fd3-a3c1-4cf1-899c-978ad72c7c2a\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-focal",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"31d69fd3-a3c1-4cf1-899c-978ad72c7c2a\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-focal/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": null,
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.5",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": null,
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-focal/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic2-focal",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "9b56fd80-3a0b-4a59-a09f-dbb3778ca75a",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "applicationGatewayBackendAddressPools": null,
+  "applicationSecurityGroups": null,
+  "etag": "W/\"520c459a-d8c8-4ca9-b48e-13d9aebf59ee\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-focal/ipConfigurations/sruNic-focal-v6",
+  "loadBalancerBackendAddressPools": [
+    {
+      "backendIpConfigurations": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_focal/backendAddressPools/dsLbBackEndPool_v6_focal",
+      "loadBalancingRules": null,
+      "name": null,
+      "outboundRule": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6"
+    }
+  ],
+  "loadBalancerInboundNatRules": null,
+  "name": "sruNic-focal-v6",
+  "primary": null,
+  "privateIpAddress": "ace:cab:deca:deed::4",
+  "privateIpAddressVersion": "IPv6",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": {
+    "addressPrefix": null,
+    "addressPrefixes": null,
+    "delegations": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-focal/subnets/sruSubnet",
+    "ipConfigurationProfiles": null,
+    "ipConfigurations": null,
+    "name": null,
+    "natGateway": null,
+    "networkSecurityGroup": null,
+    "privateEndpointNetworkPolicies": null,
+    "privateEndpoints": null,
+    "privateLinkServiceNetworkPolicies": null,
+    "provisioningState": null,
+    "purpose": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceNavigationLinks": null,
+    "routeTable": null,
+    "serviceAssociationLinks": null,
+    "serviceEndpointPolicies": null,
+    "serviceEndpoints": null
+  },
+  "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+  "virtualNetworkTaps": null
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/virtualMachines/test-sru-focal-advanced",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-02-40-DA,00-0D-3A-02-4B-9D",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4,ace:cab:deca:deed::4,10.0.0.5",
+  "publicIpAddress": "20.186.64.235",
+  "resourceGroup": "srugroupIPV6",
+  "zones": ""
+}
+Created test-sru-focal-advanced: ubuntu@20.186.64.235
+
+status: done
+time: Wed, 09 Sep 2020 16:09:59 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+--- TEST: EXPECT NO KVP dump logs in cloud-init.log
+cloud-init	20.2-45-g5f7825e2-0ubuntu1~20.04.1
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Startup finished in 4.054s (kernel) + 49.863s (userspace) = 53.917s 
+graphical.target reached after 49.018s in userspace
+10.150s cloud-init.service                  
+ 6.239s cloud-init-local.service            
+REBOOTING TO Confirm boot extra timeout across reboot LP: #1830740
+Connection to 20.186.64.235 closed by remote host.
+--- TEST: BEGIN EXPECT Long boot time LP: #1830740
+Startup finished in 2.841s (kernel) + 2min 11.214s (userspace) = 2min 14.056s 
+graphical.target reached after 2min 10.554s in userspace
+   2.450s cloud-init-local.service                                   
+   1.484s cloud-init.service                                         
+--- TEST: END EXPECT Long boot time LP: #1830740
+Writing networking config: previous-network.out
+setup_proposed.sh                             100%  196     3.0KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~20.04.1 [429 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+cloud-init	20.3-2-g371b392c-0ubuntu1~20.04.1
+Connection to 20.186.64.235 closed by remote host.
+
+status: done
+time: Wed, 09 Sep 2020 16:26:57 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+--- TEST: BEGIN EXPECT to find KVP dump logs in cloud-init.log
+2020-09-09 16:26:50,291 - azure.py[DEBUG]: Dumping cloud-init.log file to KVP
+2020-09-09 16:26:50,291 - handlers.py[DEBUG]: diagnostic: diagnostic message: Dumping last 65948 bytes of cloud-init.log file to KVP
+--- TEST: END EXPECT to find KVP dump logs in cloud-init.log
+3.268s cloud-init.service                                         
+1.625s cloud-init-local.service                                   
+After upgrade write network config: upgrade-network.out
+   
+status: done
+time: Wed, 09 Sep 2020 16:28:09 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+After reboot
+--- TEST: BEGIN EXPECT no delayed boot time LP: #1830740
+2.055s cloud-init-local.service                                   
+1.368s cloud-init.service                                         
+--- TEST: END EXPECT no delayed boot time LP: #1830740
+------- TEST: BEGIN Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- previous-network.out	2020-09-09 16:26:00.360171472 +0000
++++ upgrade-network.out	2020-09-09 16:27:43.393781873 +0000
+@@ -12,6 +12,7 @@
+             dhcp6: true
+             dhcp6-overrides: *id001
+             match:
++                driver: hv_netvsc
+                 macaddress: 00:0d:3a:02:40:da
+             set-name: eth0
+         eth1:
+@@ -21,6 +22,7 @@
+             dhcp6: true
+             dhcp6-overrides: *id002
+             match:
++                driver: hv_netvsc
+                 macaddress: 00:0d:3a:02:4b:9d
+             set-name: eth1
+     version: 2
+@@ -48,7 +50,7 @@
+        valid_lft forever preferred_lft forever
+ 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP qlen 1000
+     inet6 ace:cab:deca:deed::4/128 scope global dynamic noprefixroute 
+-       valid_lft 17279091sec preferred_lft 8639091sec
++       valid_lft 17279947sec preferred_lft 8639947sec
+     inet6 fe80::20d:3aff:fe02:40da/64 scope link 
+        valid_lft forever preferred_lft forever
+ 3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP qlen 1000
+------- TEST: END Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- TEST: Expect success count of 2 for temporary_hostname
+SUCCESS: counted two successful temporary_hostname runs
+### END focal
+
+Waiting for Microsoft.Network IPv6 feature registration
+### BEGIN bionic
+"/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup"
+{
+  "newVNet": {
+    "addressSpace": {
+      "addressPrefixes": [
+        "10.0.0.0/16",
+        "ace:cab:deca::/48"
+      ]
+    },
+    "ddosProtectionPlan": null,
+    "dhcpOptions": {
+      "dnsServers": []
+    },
+    "enableDdosProtection": false,
+    "enableVmProtection": false,
+    "etag": "W/\"0e62415b-4cff-43ed-a9fd-767721f4da44\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-bionic",
+    "location": "eastus2",
+    "name": "sruVnet-bionic",
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "30afad07-ee1b-4d97-9cf0-698a72e05491",
+    "subnets": [],
+    "tags": {},
+    "type": "Microsoft.Network/virtualNetworks",
+    "virtualNetworkPeerings": []
+  }
+}
+{
+  "addressPrefix": null,
+  "addressPrefixes": [
+    "10.0.0.0/24",
+    "ace:cab:deca:deed::/64"
+  ],
+  "delegations": [],
+  "etag": "W/\"567d3115-3219-4bed-b9d4-9f2ea46eda77\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-bionic/subnets/sruSubnet",
+  "ipConfigurationProfiles": null,
+  "ipConfigurations": null,
+  "name": "sruSubnet",
+  "natGateway": null,
+  "networkSecurityGroup": {
+    "defaultSecurityRules": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+    "location": null,
+    "name": null,
+    "networkInterfaces": null,
+    "provisioningState": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "securityRules": null,
+    "subnets": null,
+    "tags": null,
+    "type": null
+  },
+  "privateEndpointNetworkPolicies": "Enabled",
+  "privateEndpoints": null,
+  "privateLinkServiceNetworkPolicies": "Enabled",
+  "provisioningState": "Succeeded",
+  "purpose": null,
+  "resourceGroup": "srugroupIPV6",
+  "resourceNavigationLinks": null,
+  "routeTable": null,
+  "serviceAssociationLinks": null,
+  "serviceEndpointPolicies": null,
+  "serviceEndpoints": null,
+  "type": "Microsoft.Network/virtualNetworks/subnets"
+}
+Creating advanced network vm
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"5cfc0f4e-3208-4094-99fc-e0b39c358788\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-bionic",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "vmPublicIP-IPv4-bionic",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "9e78dba5-0cad-4538-9f53-084488614476",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"4b9c58eb-3478-482e-9de6-28b6e7558f5a\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_bionic",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v4_bionic",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "8f317fed-8623-4ad2-83a3-5d837d098083",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"13540ac4-e5a0-47eb-9cc1-c44a4f17eb22\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_bionic",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v6_bionic",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv6",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "4e91498e-197c-4a7f-8c18-86b3301132da",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "loadBalancer": {
+    "backendAddressPools": [
+      {
+        "etag": "W/\"bdad3a28-92b2-4f60-8851-7c77650a6da4\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v4_bionic",
+        "name": "dsLbBackEndPool_v4_bionic",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+      }
+    ],
+    "frontendIPConfigurations": [
+      {
+        "etag": "W/\"bdad3a28-92b2-4f60-8851-7c77650a6da4\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/frontendIPConfigurations/dsLbFrontEnd_v4_bionic",
+        "name": "dsLbFrontEnd_v4_bionic",
+        "properties": {
+          "privateIPAddressVersion": "IPv4",
+          "privateIPAllocationMethod": "Dynamic",
+          "provisioningState": "Succeeded",
+          "publicIPAddress": {
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_bionic",
+            "resourceGroup": "srugroupIPV6"
+          }
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations"
+      }
+    ],
+    "inboundNatPools": [],
+    "inboundNatRules": [],
+    "loadBalancingRules": [],
+    "probes": [],
+    "provisioningState": "Succeeded",
+    "resourceGuid": "0923020e-b534-4193-baad-2982692a918f"
+  }
+}
+{
+  "etag": "W/\"728e08bd-2b94-487b-b58b-6f808eb255f3\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/frontendIPConfigurations/dsLbFrontEnd_v6_bionic",
+  "inboundNatPools": null,
+  "inboundNatRules": null,
+  "loadBalancingRules": null,
+  "name": "dsLbFrontEnd_v6_bionic",
+  "outboundRules": null,
+  "privateIpAddress": null,
+  "privateIpAddressVersion": "IPv4",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_bionic",
+    "idleTimeoutInMinutes": null,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": null,
+    "location": null,
+    "name": null,
+    "provisioningState": null,
+    "publicIpAddressVersion": null,
+    "publicIpAllocationMethod": null,
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "sku": null,
+    "tags": null,
+    "type": null,
+    "zones": null
+  },
+  "publicIpPrefix": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": null,
+  "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations",
+  "zones": null
+}
+{
+  "backendIpConfigurations": null,
+  "etag": "W/\"2c588b6f-5046-405c-8f2d-70539ad25ef7\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v6_bionic",
+  "loadBalancingRules": null,
+  "name": "dsLbBackEndPool_v6_bionic",
+  "outboundRule": null,
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+}
+{
+  "etag": "W/\"630a749d-ba6b-4320-84d7-41d75fa63e85\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/probes/dsProbe_bionic",
+  "intervalInSeconds": 15,
+  "loadBalancingRules": null,
+  "name": "dsProbe_bionic",
+  "numberOfProbes": 2,
+  "port": 22,
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "requestPath": null,
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/probes"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v4_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"72e624cc-8ec5-426e-aaba-85558a267762\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/frontendIPConfigurations/dsLbFrontEnd_v4_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/loadBalancingRules/dsLBrule_v4_bionic",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v4_bionic",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/probes/dsProbe_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v6_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"0586ec94-38ff-4fca-8554-a83020bf8304\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/frontendIPConfigurations/dsLbFrontEnd_v6_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/loadBalancingRules/dsLBrule_v6_bionic",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v6_bionic",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/probes/dsProbe_bionic",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/availabilitySets/dsAVset_bionic",
+  "location": "eastus2",
+  "name": "dsAVset_bionic",
+  "platformFaultDomainCount": 2,
+  "platformUpdateDomainCount": 2,
+  "proximityPlacementGroup": null,
+  "resourceGroup": "srugroupIPV6",
+  "sku": {
+    "capacity": null,
+    "name": "Aligned",
+    "tier": null
+  },
+  "statuses": null,
+  "tags": {},
+  "type": "Microsoft.Compute/availabilitySets",
+  "virtualMachines": []
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "a4w04ma130lu1hhqngfhfycusb.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"fe43bc49-f68c-410d-b6b4-f5dfbf481981\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-bionic",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"fe43bc49-f68c-410d-b6b4-f5dfbf481981\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-bionic/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": [
+          {
+            "backendIpConfigurations": null,
+            "etag": null,
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v4_bionic",
+            "loadBalancingRules": null,
+            "name": null,
+            "outboundRule": null,
+            "provisioningState": null,
+            "resourceGroup": "srugroupIPV6"
+          }
+        ],
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.4",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": {
+          "ddosSettings": null,
+          "dnsSettings": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-bionic",
+          "idleTimeoutInMinutes": null,
+          "ipAddress": null,
+          "ipConfiguration": null,
+          "ipTags": null,
+          "location": null,
+          "name": null,
+          "provisioningState": null,
+          "publicIpAddressVersion": null,
+          "publicIpAllocationMethod": null,
+          "publicIpPrefix": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceGuid": null,
+          "sku": null,
+          "tags": null,
+          "type": null,
+          "zones": null
+        },
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-bionic/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic-bionic",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "f13440a7-c8e0-4520-9d3f-cbd401cacf82",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "a4w04ma130lu1hhqngfhfycusb.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"21aad49d-f5ef-4eb8-a138-f8fcf4290f34\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-bionic",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"21aad49d-f5ef-4eb8-a138-f8fcf4290f34\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-bionic/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": null,
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.5",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": null,
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-bionic/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic2-bionic",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "51799dc0-7fbb-430c-a763-24eade0e8345",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "applicationGatewayBackendAddressPools": null,
+  "applicationSecurityGroups": null,
+  "etag": "W/\"9ead2d38-a7d2-4d87-a972-f47d7bb26ad0\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-bionic/ipConfigurations/sruNic-bionic-v6",
+  "loadBalancerBackendAddressPools": [
+    {
+      "backendIpConfigurations": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_bionic/backendAddressPools/dsLbBackEndPool_v6_bionic",
+      "loadBalancingRules": null,
+      "name": null,
+      "outboundRule": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6"
+    }
+  ],
+  "loadBalancerInboundNatRules": null,
+  "name": "sruNic-bionic-v6",
+  "primary": null,
+  "privateIpAddress": "ace:cab:deca:deed::4",
+  "privateIpAddressVersion": "IPv6",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": {
+    "addressPrefix": null,
+    "addressPrefixes": null,
+    "delegations": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-bionic/subnets/sruSubnet",
+    "ipConfigurationProfiles": null,
+    "ipConfigurations": null,
+    "name": null,
+    "natGateway": null,
+    "networkSecurityGroup": null,
+    "privateEndpointNetworkPolicies": null,
+    "privateEndpoints": null,
+    "privateLinkServiceNetworkPolicies": null,
+    "provisioningState": null,
+    "purpose": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceNavigationLinks": null,
+    "routeTable": null,
+    "serviceAssociationLinks": null,
+    "serviceEndpointPolicies": null,
+    "serviceEndpoints": null
+  },
+  "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+  "virtualNetworkTaps": null
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/virtualMachines/test-sru-bionic-advanced",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-E2-D9-0E,00-0D-3A-E2-DE-17",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4,ace:cab:deca:deed::4,10.0.0.5",
+  "publicIpAddress": "20.186.47.45",
+  "resourceGroup": "srugroupIPV6",
+  "zones": ""
+}
+Created test-sru-bionic-advanced: ubuntu@20.186.47.45
+
+status: done
+time: Wed, 09 Sep 2020 16:37:21 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+--- TEST: EXPECT NO KVP dump logs in cloud-init.log
+cloud-init	20.2-45-g5f7825e2-0ubuntu1~18.04.1
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Startup finished in 7.397s (kernel) + 32.745s (userspace) = 40.142s
+graphical.target reached after 31.970s in userspace
+          9.038s cloud-init.service
+          6.552s cloud-init-local.service
+REBOOTING TO Confirm boot extra timeout across reboot LP: #1830740
+Connection to 20.186.47.45 closed by remote host.
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+ssh: connect to host 20.186.47.45 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@20.186.47.45 -- cloud-init status --wait --long 
+
+status: done
+time: Wed, 09 Sep 2020 16:40:06 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+--- TEST: BEGIN EXPECT Long boot time LP: #1830740
+Startup finished in 6.350s (kernel) + 1min 40.166s (userspace) = 1min 46.517s
+graphical.target reached after 1min 39.358s in userspace
+    1min 31.057s cloud-init-local.service
+          1.469s cloud-init.service
+--- TEST: END EXPECT Long boot time LP: #1830740
+Writing networking config: previous-network.out
+setup_proposed.sh                             100%  196     3.2KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~18.04.1 [434 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+cloud-init	20.3-2-g371b392c-0ubuntu1~18.04.1
+Connection to 20.186.47.45 closed by remote host.
+
+status: done
+time: Wed, 09 Sep 2020 16:41:23 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+--- TEST: BEGIN EXPECT to find KVP dump logs in cloud-init.log
+2020-09-09 16:41:18,650 - azure.py[DEBUG]: Dumping cloud-init.log file to KVP
+2020-09-09 16:41:18,650 - handlers.py[DEBUG]: diagnostic: diagnostic message: Dumping last 65855 bytes of cloud-init.log file to KVP
+--- TEST: END EXPECT to find KVP dump logs in cloud-init.log
+          2.035s cloud-init.service
+          1.630s cloud-init-local.service
+After upgrade write network config: upgrade-network.out
+Connection to 20.186.47.45 closed by remote host.
+
+status: done
+time: Wed, 09 Sep 2020 16:42:04 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+After reboot
+--- TEST: BEGIN EXPECT no delayed boot time LP: #1830740
+          2.026s cloud-init-local.service
+          1.510s cloud-init.service
+--- TEST: END EXPECT no delayed boot time LP: #1830740
+------- TEST: BEGIN Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- previous-network.out	2020-09-09 16:40:26.809401684 +0000
++++ upgrade-network.out	2020-09-09 16:41:39.258488819 +0000
+@@ -12,6 +12,7 @@
+             dhcp6: true
+             dhcp6-overrides: *id001
+             match:
++                driver: hv_netvsc
+                 macaddress: 00:0d:3a:e2:d9:0e
+             set-name: eth0
+         eth1:
+@@ -21,6 +22,7 @@
+             dhcp6: true
+             dhcp6-overrides: *id002
+             match:
++                driver: hv_netvsc
+                 macaddress: 00:0d:3a:e2:de:17
+             set-name: eth1
+     version: 2
+@@ -48,7 +50,7 @@
+        valid_lft forever preferred_lft forever
+ 2: eth0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP qlen 1000
+     inet6 ace:cab:deca:deed::4/128 scope global dynamic noprefixroute 
+-       valid_lft 17279974sec preferred_lft 8639974sec
++       valid_lft 17279979sec preferred_lft 8639979sec
+     inet6 fe80::20d:3aff:fee2:d90e/64 scope link 
+        valid_lft forever preferred_lft forever
+ 3: eth1: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 state UP qlen 1000
+------- TEST: END Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- TEST: Expect success count of 2 for temporary_hostname
+SUCCESS: counted two successful temporary_hostname runs
+### END bionic
+
+Waiting for Microsoft.Network IPv6 feature registration
+### BEGIN xenial
+"/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup"
+{
+  "newVNet": {
+    "addressSpace": {
+      "addressPrefixes": [
+        "10.0.0.0/16",
+        "ace:cab:deca::/48"
+      ]
+    },
+    "ddosProtectionPlan": null,
+    "dhcpOptions": {
+      "dnsServers": []
+    },
+    "enableDdosProtection": false,
+    "enableVmProtection": false,
+    "etag": "W/\"24eb0729-1c71-4ceb-8c67-6de9e1c321cd\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-xenial",
+    "location": "eastus2",
+    "name": "sruVnet-xenial",
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "dec89b9c-b6e0-4df4-b875-04c4b07b5b9e",
+    "subnets": [],
+    "tags": {},
+    "type": "Microsoft.Network/virtualNetworks",
+    "virtualNetworkPeerings": []
+  }
+}
+{
+  "addressPrefix": null,
+  "addressPrefixes": [
+    "10.0.0.0/24",
+    "ace:cab:deca:deed::/64"
+  ],
+  "delegations": [],
+  "etag": "W/\"bdeb26f7-c116-4e9b-99f1-d8c484ed664c\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-xenial/subnets/sruSubnet",
+  "ipConfigurationProfiles": null,
+  "ipConfigurations": null,
+  "name": "sruSubnet",
+  "natGateway": null,
+  "networkSecurityGroup": {
+    "defaultSecurityRules": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+    "location": null,
+    "name": null,
+    "networkInterfaces": null,
+    "provisioningState": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "securityRules": null,
+    "subnets": null,
+    "tags": null,
+    "type": null
+  },
+  "privateEndpointNetworkPolicies": "Enabled",
+  "privateEndpoints": null,
+  "privateLinkServiceNetworkPolicies": "Enabled",
+  "provisioningState": "Succeeded",
+  "purpose": null,
+  "resourceGroup": "srugroupIPV6",
+  "resourceNavigationLinks": null,
+  "routeTable": null,
+  "serviceAssociationLinks": null,
+  "serviceEndpointPolicies": null,
+  "serviceEndpoints": null,
+  "type": "Microsoft.Network/virtualNetworks/subnets"
+}
+Creating advanced network vm
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"f6f0e29b-e00f-4258-a14a-21c17421d702\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-xenial",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "vmPublicIP-IPv4-xenial",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "4da30417-5571-45ef-afea-62403526ec4c",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"6317f42c-afe0-4fd1-9ff5-add4e58f1406\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_xenial",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v4_xenial",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv4",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "f2f121e5-9a80-477b-bea2-752fb4ff31f1",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "publicIp": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": "W/\"12241210-077b-461a-969c-ac1373e9998d\"",
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_xenial",
+    "idleTimeoutInMinutes": 4,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": [],
+    "location": "eastus2",
+    "name": "lbPublicIP_v6_xenial",
+    "provisioningState": "Succeeded",
+    "publicIpAddressVersion": "IPv6",
+    "publicIpAllocationMethod": "Dynamic",
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "8c3570db-d0fa-42ba-93e1-f23425f2ed17",
+    "sku": {
+      "name": "Basic"
+    },
+    "tags": null,
+    "type": "Microsoft.Network/publicIPAddresses",
+    "zones": null
+  }
+}
+{
+  "loadBalancer": {
+    "backendAddressPools": [
+      {
+        "etag": "W/\"2bbed36e-166e-4b88-85e6-23cb7ac4481f\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v4_xenial",
+        "name": "dsLbBackEndPool_v4_xenial",
+        "properties": {
+          "provisioningState": "Succeeded"
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+      }
+    ],
+    "frontendIPConfigurations": [
+      {
+        "etag": "W/\"2bbed36e-166e-4b88-85e6-23cb7ac4481f\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/frontendIPConfigurations/dsLbFrontEnd_v4_xenial",
+        "name": "dsLbFrontEnd_v4_xenial",
+        "properties": {
+          "privateIPAddressVersion": "IPv4",
+          "privateIPAllocationMethod": "Dynamic",
+          "provisioningState": "Succeeded",
+          "publicIPAddress": {
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v4_xenial",
+            "resourceGroup": "srugroupIPV6"
+          }
+        },
+        "resourceGroup": "srugroupIPV6",
+        "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations"
+      }
+    ],
+    "inboundNatPools": [],
+    "inboundNatRules": [],
+    "loadBalancingRules": [],
+    "probes": [],
+    "provisioningState": "Succeeded",
+    "resourceGuid": "9e04efcb-4b17-453e-90f8-6ac7b3a94e79"
+  }
+}
+{
+  "etag": "W/\"6f2f22c0-0739-4766-addc-51d69eba6629\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/frontendIPConfigurations/dsLbFrontEnd_v6_xenial",
+  "inboundNatPools": null,
+  "inboundNatRules": null,
+  "loadBalancingRules": null,
+  "name": "dsLbFrontEnd_v6_xenial",
+  "outboundRules": null,
+  "privateIpAddress": null,
+  "privateIpAddressVersion": "IPv4",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": {
+    "ddosSettings": null,
+    "dnsSettings": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/lbPublicIP_v6_xenial",
+    "idleTimeoutInMinutes": null,
+    "ipAddress": null,
+    "ipConfiguration": null,
+    "ipTags": null,
+    "location": null,
+    "name": null,
+    "provisioningState": null,
+    "publicIpAddressVersion": null,
+    "publicIpAllocationMethod": null,
+    "publicIpPrefix": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": null,
+    "sku": null,
+    "tags": null,
+    "type": null,
+    "zones": null
+  },
+  "publicIpPrefix": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": null,
+  "type": "Microsoft.Network/loadBalancers/frontendIPConfigurations",
+  "zones": null
+}
+{
+  "backendIpConfigurations": null,
+  "etag": "W/\"62a33ddf-dd42-4862-895d-c521346a8ad7\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v6_xenial",
+  "loadBalancingRules": null,
+  "name": "dsLbBackEndPool_v6_xenial",
+  "outboundRule": null,
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/backendAddressPools"
+}
+{
+  "etag": "W/\"6cdf850a-f781-43b2-91fd-63d93223c605\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/probes/dsProbe_xenial",
+  "intervalInSeconds": 15,
+  "loadBalancingRules": null,
+  "name": "dsProbe_xenial",
+  "numberOfProbes": 2,
+  "port": 22,
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "requestPath": null,
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/probes"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v4_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"cb3ff392-67d0-4756-86ae-fc22ee92e276\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/frontendIPConfigurations/dsLbFrontEnd_v4_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/loadBalancingRules/dsLBrule_v4_xenial",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v4_xenial",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/probes/dsProbe_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "backendAddressPool": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v6_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "backendPort": 22,
+  "disableOutboundSnat": null,
+  "enableFloatingIp": false,
+  "enableTcpReset": false,
+  "etag": "W/\"171f1588-9e47-4a83-911c-19b5f4a4b560\"",
+  "frontendIpConfiguration": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/frontendIPConfigurations/dsLbFrontEnd_v6_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "frontendPort": 22,
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/loadBalancingRules/dsLBrule_v6_xenial",
+  "idleTimeoutInMinutes": 4,
+  "loadDistribution": "Default",
+  "name": "dsLBrule_v6_xenial",
+  "probe": {
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/probes/dsProbe_xenial",
+    "resourceGroup": "srugroupIPV6"
+  },
+  "protocol": "Tcp",
+  "provisioningState": "Succeeded",
+  "resourceGroup": "srugroupIPV6",
+  "type": "Microsoft.Network/loadBalancers/loadBalancingRules"
+}
+{
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/availabilitySets/dsAVset_xenial",
+  "location": "eastus2",
+  "name": "dsAVset_xenial",
+  "platformFaultDomainCount": 2,
+  "platformUpdateDomainCount": 2,
+  "proximityPlacementGroup": null,
+  "resourceGroup": "srugroupIPV6",
+  "sku": {
+    "capacity": null,
+    "name": "Aligned",
+    "tier": null
+  },
+  "statuses": null,
+  "tags": {},
+  "type": "Microsoft.Compute/availabilitySets",
+  "virtualMachines": []
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "tsn2rxxaw10e1odvatcla401tg.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"c6bb2475-a677-4661-8bd9-695650f4fd35\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-xenial",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"c6bb2475-a677-4661-8bd9-695650f4fd35\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-xenial/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": [
+          {
+            "backendIpConfigurations": null,
+            "etag": null,
+            "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v4_xenial",
+            "loadBalancingRules": null,
+            "name": null,
+            "outboundRule": null,
+            "provisioningState": null,
+            "resourceGroup": "srugroupIPV6"
+          }
+        ],
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.4",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": {
+          "ddosSettings": null,
+          "dnsSettings": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/publicIPAddresses/vmPublicIP-IPv4-xenial",
+          "idleTimeoutInMinutes": null,
+          "ipAddress": null,
+          "ipConfiguration": null,
+          "ipTags": null,
+          "location": null,
+          "name": null,
+          "provisioningState": null,
+          "publicIpAddressVersion": null,
+          "publicIpAllocationMethod": null,
+          "publicIpPrefix": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceGuid": null,
+          "sku": null,
+          "tags": null,
+          "type": null,
+          "zones": null
+        },
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-xenial/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic-xenial",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "4ca14df8-cedd-4b61-a012-95de868f972c",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "NewNIC": {
+    "dnsSettings": {
+      "appliedDnsServers": [],
+      "dnsServers": [],
+      "internalDnsNameLabel": null,
+      "internalDomainNameSuffix": "tsn2rxxaw10e1odvatcla401tg.cx.internal.cloudapp.net",
+      "internalFqdn": null
+    },
+    "enableAcceleratedNetworking": true,
+    "enableIpForwarding": false,
+    "etag": "W/\"a1ecf854-79f0-4309-b352-c13966515653\"",
+    "hostedWorkloads": [],
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-xenial",
+    "ipConfigurations": [
+      {
+        "applicationGatewayBackendAddressPools": null,
+        "applicationSecurityGroups": null,
+        "etag": "W/\"a1ecf854-79f0-4309-b352-c13966515653\"",
+        "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic2-xenial/ipConfigurations/ipconfig1",
+        "loadBalancerBackendAddressPools": null,
+        "loadBalancerInboundNatRules": null,
+        "name": "ipconfig1",
+        "primary": true,
+        "privateIpAddress": "10.0.0.5",
+        "privateIpAddressVersion": "IPv4",
+        "privateIpAllocationMethod": "Dynamic",
+        "provisioningState": "Succeeded",
+        "publicIpAddress": null,
+        "resourceGroup": "srugroupIPV6",
+        "subnet": {
+          "addressPrefix": null,
+          "addressPrefixes": null,
+          "delegations": null,
+          "etag": null,
+          "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-xenial/subnets/sruSubnet",
+          "ipConfigurationProfiles": null,
+          "ipConfigurations": null,
+          "name": null,
+          "natGateway": null,
+          "networkSecurityGroup": null,
+          "privateEndpointNetworkPolicies": null,
+          "privateEndpoints": null,
+          "privateLinkServiceNetworkPolicies": null,
+          "provisioningState": null,
+          "purpose": null,
+          "resourceGroup": "srugroupIPV6",
+          "resourceNavigationLinks": null,
+          "routeTable": null,
+          "serviceAssociationLinks": null,
+          "serviceEndpointPolicies": null,
+          "serviceEndpoints": null
+        },
+        "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+        "virtualNetworkTaps": null
+      }
+    ],
+    "location": "eastus2",
+    "macAddress": null,
+    "name": "sruNic2-xenial",
+    "networkSecurityGroup": {
+      "defaultSecurityRules": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkSecurityGroups/sruNetSecGroup",
+      "location": null,
+      "name": null,
+      "networkInterfaces": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6",
+      "resourceGuid": null,
+      "securityRules": null,
+      "subnets": null,
+      "tags": null,
+      "type": null
+    },
+    "primary": null,
+    "privateEndpoint": null,
+    "provisioningState": "Succeeded",
+    "resourceGroup": "srugroupIPV6",
+    "resourceGuid": "8b99beb7-61a3-4634-926f-e8e83d3f8c04",
+    "tags": null,
+    "tapConfigurations": [],
+    "type": "Microsoft.Network/networkInterfaces",
+    "virtualMachine": null
+  }
+}
+{
+  "applicationGatewayBackendAddressPools": null,
+  "applicationSecurityGroups": null,
+  "etag": "W/\"d7c7d295-ae45-4044-8ec1-609047877acc\"",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/networkInterfaces/sruNic-xenial/ipConfigurations/sruNic-xenial-v6",
+  "loadBalancerBackendAddressPools": [
+    {
+      "backendIpConfigurations": null,
+      "etag": null,
+      "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/loadBalancers/dsLB_xenial/backendAddressPools/dsLbBackEndPool_v6_xenial",
+      "loadBalancingRules": null,
+      "name": null,
+      "outboundRule": null,
+      "provisioningState": null,
+      "resourceGroup": "srugroupIPV6"
+    }
+  ],
+  "loadBalancerInboundNatRules": null,
+  "name": "sruNic-xenial-v6",
+  "primary": null,
+  "privateIpAddress": "ace:cab:deca:deed::4",
+  "privateIpAddressVersion": "IPv6",
+  "privateIpAllocationMethod": "Dynamic",
+  "provisioningState": "Succeeded",
+  "publicIpAddress": null,
+  "resourceGroup": "srugroupIPV6",
+  "subnet": {
+    "addressPrefix": null,
+    "addressPrefixes": null,
+    "delegations": null,
+    "etag": null,
+    "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Network/virtualNetworks/sruVnet-xenial/subnets/sruSubnet",
+    "ipConfigurationProfiles": null,
+    "ipConfigurations": null,
+    "name": null,
+    "natGateway": null,
+    "networkSecurityGroup": null,
+    "privateEndpointNetworkPolicies": null,
+    "privateEndpoints": null,
+    "privateLinkServiceNetworkPolicies": null,
+    "provisioningState": null,
+    "purpose": null,
+    "resourceGroup": "srugroupIPV6",
+    "resourceNavigationLinks": null,
+    "routeTable": null,
+    "serviceAssociationLinks": null,
+    "serviceEndpointPolicies": null,
+    "serviceEndpoints": null
+  },
+  "type": "Microsoft.Network/networkInterfaces/ipConfigurations",
+  "virtualNetworkTaps": null
+}
+{
+  "fqdns": "",
+  "id": "/subscriptions/12aad61c-6de4-4e53-a6c6-5aff52a83777/resourceGroups/srugroupIPV6/providers/Microsoft.Compute/virtualMachines/test-sru-xenial-advanced",
+  "location": "eastus2",
+  "macAddress": "00-0D-3A-DE-17-D7,00-0D-3A-DE-16-7E",
+  "powerState": "VM running",
+  "privateIpAddress": "10.0.0.4,ace:cab:deca:deed::4,10.0.0.5",
+  "publicIpAddress": "52.254.19.101",
+  "resourceGroup": "srugroupIPV6",
+  "zones": ""
+}
+Created test-sru-xenial-advanced: ubuntu@52.254.19.101
+
+status: done
+time: Wed, 09 Sep 2020 16:50:12 +0000
+detail:
+DataSourceAzure [seed=/dev/sr0]
+--- TEST: EXPECT NO KVP dump logs in cloud-init.log
+cloud-init	20.2-45-g5f7825e2-0ubuntu1~16.04.1
+sudo: unable to resolve host SRU-worked-azure
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+Startup finished in 5.532s (kernel) + 24.126s (userspace) = 29.659s
+          7.326s cloud-init.service
+          4.374s cloud-init-local.service
+REBOOTING TO Confirm boot extra timeout across reboot LP: #1830740
+sudo: unable to resolve host SRU-worked-azure
+Connection to 52.254.19.101 closed by remote host.
+ssh: connect to host 52.254.19.101 port 22: Connection reset by peer
+Retrying in 5 seconds: ssh ubuntu@52.254.19.101 -- cloud-init status --wait --long 
+ssh: connect to host 52.254.19.101 port 22: Connection timed out
+Retrying in 5 seconds: ssh ubuntu@52.254.19.101 -- cloud-init status --wait --long 
+
+status: done
+time: Wed, 09 Sep 2020 16:51:25 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+--- TEST: BEGIN EXPECT Long boot time LP: #1830740
+Startup finished in 6.058s (kernel) + 11.818s (userspace) = 17.877s
+          3.956s cloud-init.service
+          2.037s cloud-init-local.service
+--- TEST: END EXPECT Long boot time LP: #1830740
+Writing networking config: previous-network.out
+setup_proposed.sh                             100%  196     2.7KB/s   00:00    
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~16.04.1 [439 kB]
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+cloud-init	20.3-2-g371b392c-0ubuntu1~16.04.1
+sudo: unable to resolve host SRU-worked-azure
+sudo: unable to resolve host SRU-worked-azure
+Connection to 52.254.19.101 closed by remote host.
+
+status: done
+time: Wed, 09 Sep 2020 16:52:30 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+sudo: unable to resolve host SRU-worked-azure
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/var/lib/waagent]",
+  "errors": []
+ }
+}
+--- TEST: BEGIN EXPECT to find KVP dump logs in cloud-init.log
+2020-09-09 16:52:25,670 - azure.py[DEBUG]: Dumping cloud-init.log file to KVP
+2020-09-09 16:52:25,670 - handlers.py[DEBUG]: diagnostic: diagnostic message: Dumping last 68989 bytes of cloud-init.log file to KVP
+--- TEST: END EXPECT to find KVP dump logs in cloud-init.log
+sudo: unable to resolve host SRU-worked-azure
+          1.847s cloud-init.service
+          1.441s cloud-init-local.service
+After upgrade write network config: upgrade-network.out
+sudo: unable to resolve host SRU-worked-azure
+Connection to 52.254.19.101 closed by remote host.
+
+status: done
+time: Wed, 09 Sep 2020 16:53:10 +0000
+detail:
+DataSourceAzure [seed=/var/lib/waagent]
+After reboot
+--- TEST: BEGIN EXPECT no delayed boot time LP: #1830740
+sudo: unable to resolve host SRU-worked-azure
+          3.477s cloud-init.service
+          2.071s cloud-init-local.service
+--- TEST: END EXPECT no delayed boot time LP: #1830740
+------- TEST: BEGIN Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- previous-network.out	2020-09-09 16:51:34.907387753 +0000
++++ upgrade-network.out	2020-09-09 16:52:41.616846442 +0000
+@@ -23,8 +23,8 @@
+     inet 10.0.0.5/24 brd 10.0.0.255 scope global eth1
+        valid_lft forever preferred_lft forever
+ ace:cab:deca:deed::/64 dev eth0  proto kernel  metric 256  pref medium
+-fe80::/64 dev eth1  proto kernel  metric 256  pref medium
+ fe80::/64 dev eth0  proto kernel  metric 256  pref medium
++fe80::/64 dev eth1  proto kernel  metric 256  pref medium
+ default via fe80::1234:5678:9abc dev eth0  proto ra  metric 1024  expires 8999sec pref medium
+ 1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 state UNKNOWN qlen 1000
+     inet6 ::1/128 scope host 
+------- TEST: END Expect driver directives in diff previous-network to post-upgrade-network expect ------
+--- TEST: Expect success count of 2 for temporary_hostname
+SUCCESS: counted two successful temporary_hostname runs
+### END xenial
+
+
+
