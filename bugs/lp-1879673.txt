@@ -1,0 +1,643 @@
+=== Begin SRU Template ===
+[Impact]
+When reading network configuration from metadata, we can have situations were we would not have the
+parameters key in that config. Under this scenario, we should not fail when running cloud-init,
+since this a possible scenario.
+
+[Test Case]
+
+```
+set -x
+# Manually deploy on a lxc container
+
+cat > problematic-network-config << EOF
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+EOF
+
+create_setup_dev() {
+release=$1
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+echo "deb http://archive.ubuntu.com/ubuntu $release-proposed main" | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+}
+
+restart_cloudinit() {
+   name=$1
+
+   lxc exec $name -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+   lxc exec $name -- cloud-init clean --logs
+   lxc exec $name -- cloud-init init --local
+   lxc exec $name -- cloud-init init > /dev/null
+   lxc exec $name -- cloud-init modules --mode=config
+   lxc exec $name -- cloud-init modules --mode=final
+   lxc exec $name -- cloud-init status --wait --long
+}
+
+configure_network_metadata() {
+   name=$1
+   file=$2
+
+   echo "###########################################"
+   echo "Configuring network metadata"
+   lxc file push $file $name/var/lib/cloud/seed/nocloud-net/network-config
+   lxc exec $name -- cat /var/lib/cloud/seed/nocloud-net/network-config
+   echo -e "###########################################\n"
+}
+
+
+for SERIES in bionic focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name
+   lxc exec $name -- cloud-init status --wait --long
+
+   configure_network_metadata $name "problematic-network-config"
+
+   echo "###########################################"
+   echo "Check cloud-init log for parameter error in version 20.3"
+   restart_cloudinit $name
+
+   expected_error="KeyError: 'parameters'"
+   log_error=$(lxc exec $name -- cat /var/log/cloud-init.log | grep -m 1 "$expected_error")
+
+   if [ "$log_error" = "$expected_error" ]; then
+       echo "SUCCESS: cloud-init raised errors regarding the parameters key"
+   else
+       echo "FAILURE: cloud-init did raise errors for missing parameters in network-config"
+   fi
+
+   #restart_cloudinit $name
+
+   expected_message="status: error"
+   actual_message=$(lxc exec $name -- cloud-init status)
+
+   if [ "$actual_message" = "$expected_message" ]; then
+       echo "SUCCESS: cloud-init showed error in status"
+   else
+       echo "FAILURE: cloud-init did not show error on status"
+   fi
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Reset network metadata"
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name
+   lxc exec $name -- cloud-init status --wait --long
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Update cloud-init"
+   create_setup_dev $SERIES
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- bash /var/tmp/setup_dev_proposed.sh
+   echo -e "###########################################\n"
+
+   configure_network_metadata $name "problematic-network-config"
+
+   echo "###########################################"
+   echo "Check cloud-init log for parameter error"
+   restart_cloudinit $name
+
+   log_error=$(lxc exec $name -- cat /var/log/cloud-init.log | grep -m 1 "$expected_error")
+
+   if [ -z "$log_error"]; then
+       echo "SUCCESS: cloud-init did not raise errors regarding parameters key"
+   else
+       echo "FAILURE: cloud-init raised errors for missing parameters in network-config"
+   fi
+
+   expected_message="status: done"
+   actual_message=$(lxc exec $name -- cloud-init status)
+
+   if [ "$actual_message" = "$expected_message" ]; then
+       echo "SUCCESS: cloud-init completed without errors"
+   else
+       echo "FAILURE: cloud-init did not complete"
+   fi
+   echo -e "###########################################\n"
+done
+```
+
+[Regression Potential]
+Since we are not adding any new behavior, just accessing the parameters key in a safer way, we
+believe that this modification should not pose a risk of regression.
+
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
+=== BEGIN  bionic
+Creating test-bionic
+Starting test-bionic
+................................
+status: done
+time: Wed, 09 Sep 2020 13:27:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (877.55MB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error in version 20.3
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'init-local' at Wed, 09 Sep 2020 13:27:27 +0000. Up 10.42 seconds.
+2020-09-09 13:27:27,757 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 708, in apply_network_config
+    return self.distro.apply_network_config(netcfg, bring_up=bring_up)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 180, in apply_network_config
+    dev_names = self._write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/debian.py", line 115, in _write_network_config
+    return self._supported_write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 95, in _supported_write_network_config
+    renderer.render_network_config(network_config)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/renderer.py", line 55, in render_network_config
+    network_state=parse_net_config_data(network_config),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 76, in parse_net_config_data
+    nsi.parse_config(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 292, in parse_config
+    self.parse_config_v2(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 323, in parse_config_v2
+    handler(self, command)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 599, in handle_bridges
+    self._handle_bond_bridge(command, cmd_type='bridge')
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 728, in _handle_bond_bridge
+    params = item_params['parameters']
+KeyError: 'parameters'
+------------------------------------------------------------
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:27:29 +0000. Up 12.07 seconds.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:27:30 +0000. Up 12.88 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~18.04.1 finished at Wed, 09 Sep 2020 13:27:30 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 13.01 seconds
+
+status: error
+time: Wed, 09 Sep 2020 13:27:30 +0000
+detail:
+'parameters'
+SUCCESS: cloud-init raised errors regarding the parameters key
+SUCCESS: cloud-init showed error in status
+###########################################
+
+###########################################
+Reset network metadata
+Creating test-bionic
+Starting test-bionic
+................................
+status: done
+time: Wed, 09 Sep 2020 13:27:44 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (581.63MB/s)
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [849 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [701 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [232 kB]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [8512 B]
+Get:11 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2908 B]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [1072 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1107 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [344 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [19.6 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6768 B]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7736 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4588 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [58.6 kB]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [24.1 kB]
+Fetched 18.7 MB in 8s (2454 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 12 not upgraded.
+Need to get 434 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~18.04.1 [434 kB]
+Fetched 434 kB in 2s (286 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+###########################################
+
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (786.59MB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'init-local' at Wed, 09 Sep 2020 13:28:03 +0000. Up 27.37 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:28:05 +0000. Up 29.26 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:28:06 +0000. Up 30.13 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 finished at Wed, 09 Sep 2020 13:28:06 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 30.25 seconds
+
+status: done
+time: Wed, 09 Sep 2020 13:28:06 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+SUCCESS: cloud-init did not raise errors regarding parameters key
+SUCCESS: cloud-init completed without errors
+###########################################
+
+=== BEGIN  focal
+Creating test-focal
+Starting test-focal
+.......................................................................................
+status: done
+time: Wed, 09 Sep 2020 13:28:34 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (1.13GB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error in version 20.3
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'init-local' at Wed, 09 Sep 2020 13:28:36 +0000. Up 24.22 seconds.
+2020-09-09 13:28:36,273 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 708, in apply_network_config
+    return self.distro.apply_network_config(netcfg, bring_up=bring_up)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 180, in apply_network_config
+    dev_names = self._write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/debian.py", line 115, in _write_network_config
+    return self._supported_write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 95, in _supported_write_network_config
+    renderer.render_network_config(network_config)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/renderer.py", line 55, in render_network_config
+    network_state=parse_net_config_data(network_config),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 76, in parse_net_config_data
+    nsi.parse_config(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 292, in parse_config
+    self.parse_config_v2(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 323, in parse_config_v2
+    handler(self, command)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 599, in handle_bridges
+    self._handle_bond_bridge(command, cmd_type='bridge')
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 728, in _handle_bond_bridge
+    params = item_params['parameters']
+KeyError: 'parameters'
+------------------------------------------------------------
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:28:37 +0000. Up 25.97 seconds.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:28:38 +0000. Up 26.74 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~20.04.1 finished at Wed, 09 Sep 2020 13:28:38 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 26.84 seconds
+
+status: error
+time: Wed, 09 Sep 2020 13:28:38 +0000
+detail:
+'parameters'
+SUCCESS: cloud-init raised errors regarding the parameters key
+SUCCESS: cloud-init showed error in status
+###########################################
+
+###########################################
+Reset network metadata
+Creating test-focal
+Starting test-focal
+................................................................................
+status: done
+time: Wed, 09 Sep 2020 13:29:06 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (994.15MB/s)
+deb http://archive.ubuntu.com/ubuntu focal-proposed main
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [111 kB]
+Get:4 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [181 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [64.5 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [4504 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [34.3 kB]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [8916 B]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [56.0 kB]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [29.4 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [2312 B]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:16 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [353 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [133 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [8968 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [165 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [87.1 kB]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [5424 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [11.6 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [3892 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [480 B]
+Get:32 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [3088 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1448 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [224 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [76.7 kB]
+Get:39 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [31.8 kB]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [2484 B]
+Fetched 16.1 MB in 6s (2771 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 31 not upgraded.
+Need to get 429 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~20.04.1 [429 kB]
+Fetched 429 kB in 1s (308 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1.1) ...
+###########################################
+
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (934.78MB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'init-local' at Wed, 09 Sep 2020 13:29:27 +0000. Up 41.55 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:29:29 +0000. Up 43.55 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:29:30 +0000. Up 44.39 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 finished at Wed, 09 Sep 2020 13:29:30 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 44.49 seconds
+
+status: done
+time: Wed, 09 Sep 2020 13:29:30 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+SUCCESS: cloud-init did not raise errors regarding parameters key
+SUCCESS: cloud-init completed without errors
+###########################################
+
+=== BEGIN  xenial
+Creating test-xenial
+Starting test-xenial
+........................................
+status: done
+time: Wed, 09 Sep 2020 13:29:46 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (1.05GB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error in version 20.3
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'init-local' at Wed, 09 Sep 2020 13:29:47 +0000. Up 12.22 seconds.
+2020-09-09 13:29:48,119 - util.py[WARNING]: failed stage init-local
+failed run of stage init-local
+------------------------------------------------------------
+Traceback (most recent call last):
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 653, in status_wrapper
+    ret = functor(name, args)
+  File "/usr/lib/python3/dist-packages/cloudinit/cmd/main.py", line 362, in main_init
+    init.apply_network_config(bring_up=bool(mode != sources.DSMODE_LOCAL))
+  File "/usr/lib/python3/dist-packages/cloudinit/stages.py", line 708, in apply_network_config
+    return self.distro.apply_network_config(netcfg, bring_up=bring_up)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 180, in apply_network_config
+    dev_names = self._write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/debian.py", line 115, in _write_network_config
+    return self._supported_write_network_config(netconfig)
+  File "/usr/lib/python3/dist-packages/cloudinit/distros/__init__.py", line 95, in _supported_write_network_config
+    renderer.render_network_config(network_config)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/renderer.py", line 55, in render_network_config
+    network_state=parse_net_config_data(network_config),
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 76, in parse_net_config_data
+    nsi.parse_config(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 292, in parse_config
+    self.parse_config_v2(skip_broken=skip_broken)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 323, in parse_config_v2
+    handler(self, command)
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 599, in handle_bridges
+    self._handle_bond_bridge(command, cmd_type='bridge')
+  File "/usr/lib/python3/dist-packages/cloudinit/net/network_state.py", line 728, in _handle_bond_bridge
+    params = item_params['parameters']
+KeyError: 'parameters'
+------------------------------------------------------------
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:29:49 +0000. Up 13.76 seconds.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:29:50 +0000. Up 14.46 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.2-45-g5f7825e2-0ubuntu1~16.04.1 finished at Wed, 09 Sep 2020 13:29:50 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 14.57 seconds
+
+status: error
+time: Wed, 09 Sep 2020 13:29:50 +0000
+detail:
+'parameters'
+SUCCESS: cloud-init raised errors regarding the parameters key
+SUCCESS: cloud-init showed error in status
+###########################################
+
+###########################################
+Reset network metadata
+Creating test-xenial
+Starting test-xenial
+...............................
+status: done
+time: Wed, 09 Sep 2020 13:30:07 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (1.34GB/s)
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Get:1 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [927 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [343 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [502 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [207 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:12 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1199 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [447 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [805 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [338 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8316 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4476 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [50.6 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [21.2 kB]
+Fetched 17.6 MB in 5s (3171 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages were automatically installed and are no longer required:
+  libfreetype6 motd-news-config
+Use 'apt autoremove' to remove them.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 15 not upgraded.
+Need to get 439 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~16.04.1 [439 kB]
+Fetched 439 kB in 1s (288 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+###########################################
+
+###########################################
+Configuring network metadata
+Pushing /var/lib/snapd/hostfs/tmp/bridge-test/problematic-network-config to /var/lib/cloud/seed/nocloud-net/network-config: 100% (745.66MB/s)
+version: 2
+ethernets:
+  eth0:
+    match: {name: "eth0"}
+  eth1:
+    match: {name: "eth1"}
+bridges:
+  br0:
+    interfaces: [eth1]
+###########################################
+
+###########################################
+Check cloud-init log for parameter error
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'init-local' at Wed, 09 Sep 2020 13:30:23 +0000. Up 24.02 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'modules:config' at Wed, 09 Sep 2020 13:30:25 +0000. Up 25.57 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'modules:final' at Wed, 09 Sep 2020 13:30:25 +0000. Up 26.27 seconds.
+ci-info: no authorized SSH keys fingerprints found for user ubuntu.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 finished at Wed, 09 Sep 2020 13:30:25 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 26.39 seconds
+
+status: done
+time: Wed, 09 Sep 2020 13:30:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+SUCCESS: cloud-init did not raise errors regarding parameters key
+SUCCESS: cloud-init completed without errors
+###########################################
