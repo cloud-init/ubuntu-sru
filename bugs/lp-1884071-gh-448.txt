@@ -1,0 +1,281 @@
+=== Begin SRU Template ===
+
+[IMPACT]
+Hetzner cloud only supports user-data as a string (presumabily utf-8).
+
+In order to allow users on Hetzner to provide binary data to cloud-init,
+we will attempt to base64decode the userdata.
+
+The change here adds a 'maybe_b64decode' function that will decode data
+if and only if is base64 encoded.
+
+[REGRESSION POTENTIAL]
+Very low. In order to behave unexpectedly cloud-init should be fed plaintext
+user-data that happens to decode cleanly as base64 data, which is not
+plausible.
+
+Hetzner already ships a custom version of cloud-init with this change included.
+In general we can't guarantee conformance with modified version of cloud-init,
+but in this specific case the code being used in production matches what is
+now being included in cloud-init, so the upgrade path should be safe.
+
+[TEST CASE]
+#!/bin/bash
+
+set -uf -o pipefail
+
+# Redirect output to file
+exec > gh-448.log
+exec 2>&1
+
+export LC_ALL=C.UTF-8
+
+fail() {
+    echo "[VERIFICATION FAILED]"
+    exit 1
+}
+
+cleanup() {
+    [[ -n $name ]] || return
+    if hcloud server describe "$name" > /dev/null 2>&1; then
+        echo "Cleaning up instance $name"
+        hcloud server delete "$name"
+    fi
+}
+
+gh448() {
+    release=$1
+    name="gh448-$release"
+    keyname="paride"
+    sshopts=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+
+    echo "=== BEGIN $release ==="
+
+    # Cleanup on exit
+    trap cleanup EXIT
+
+    # Just in case we have a stale instance
+    cleanup
+
+    # Start the instance
+    hcloud server create --name "$name" --user-data-from-file gh-448.yaml.b64 --ssh-key "$keyname" --image "$release" --type cx11 || fail
+
+    # Arbitrary, good enough for this validation
+    sleep 60
+
+    echo "--- Started instance $name with image release"
+
+    ip=$(hcloud server describe -o json "$name" | jq --raw-output '.public_net.ipv4.ip')
+
+    ssh "${sshopts[@]}" "root@$ip" -- cloud-init status --wait --long
+
+    # Hetzner runs a patched version of cloud-init that already implements b64 decoding,
+    # so /tmp/gh-448-verification should be already present
+    echo "--- Verify that Hetzner's custom cloud-init decodes b64"
+    ssh "${sshopts[@]}" "root@$ip" -- test -f /tmp/gh-448-verification || fail
+    echo "--- OK"
+
+    # Reinstall stock cloud-init. The file shouldn't be created now.
+    echo "--- Verify that pre-SRU cloud-init does not decode b64"
+    ssh "${sshopts[@]}" "root@$ip" -- apt-get -qq update
+    ssh "${sshopts[@]}" "root@$ip" -- DEBIAN_FRONTEND=noninteractive apt-get -qq install --reinstall cloud-init
+    ssh "${sshopts[@]}" "root@$ip" -- cloud-init clean --logs --reboot
+    sleep 90
+    ssh "${sshopts[@]}" "root@$ip" -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" "root@$ip" -- test ! -f /tmp/gh-448-verification || fail
+    echo "--- OK"
+
+    # Add the -proposed repository, upgrade, reboot. The test file should now be present.
+    echo "--- Verify that -proposed cloud-init does decode b64"
+    ssh "${sshopts[@]}" "root@$ip" -- exec sh -c "'"'echo deb http://archive.ubuntu.com/ubuntu $(lsb_release -sc)-proposed main > /etc/apt/sources.list.d/proposed.list'"'"
+    ssh "${sshopts[@]}" "root@$ip" -- apt-get -qq update
+    ssh "${sshopts[@]}" "root@$ip" -- DEBIAN_FRONTEND=noninteractive apt-get -qq install cloud-init
+    ssh "${sshopts[@]}" "root@$ip" -- cloud-init clean --logs --reboot
+    sleep 90
+    ssh "${sshopts[@]}" "root@$ip" -- dpkg -l cloud-init | grep -E '^ii *cloud-init *20\.3-' || fail
+    ssh "${sshopts[@]}" "root@$ip" -- cloud-init status --wait --long
+    ssh "${sshopts[@]}" "root@$ip" -- test -f /tmp/gh-448-verification || fail
+    echo "--- OK"
+
+    # Make sure the decoded user-data is identical to the original
+    echo "--- Verify that decoded b64 user-data is identical to the original"
+    rm -f gh-448.yaml.decoded
+    scp "${sshopts[@]}" "root@$ip:/var/lib/cloud/instances/*/user-data.txt" gh-448.yaml.decoded
+    cmp gh-448.yaml gh-448.yaml.decoded || fail
+    echo "--- OK"
+
+    cleanup
+
+    echo "=== END $release ==="
+}
+
+rm -f gh-448.yaml gh-448.yaml.b64
+
+cat << EOF > gh-448.yaml
+#cloud-config
+runcmd:
+    - touch /tmp/gh-448-verification
+EOF
+
+# Wrapped b64 data is not supported.
+base64 --wrap=0 < gh-448.yaml > gh-448.yaml.b64
+
+echo "[TEST CASE]"
+cat "${BASH_SOURCE[0]}"
+echo "[END TEST CASE]"
+echo
+echo "[BEGIN VERIFICATION]"
+for release in ubuntu-16.04 ubuntu-18.04 ubuntu-20.04; do
+	gh448 $release
+done
+echo "[VERIFICATION SUCCEEDED]"
+[END TEST CASE]
+
+[BEGIN VERIFICATION]
+=== BEGIN ubuntu-16.04 ===
+Waiting for server 7611950 to have started... done
+Server 7611950 created
+IPv4: 95.217.218.104
+--- Started instance gh448-ubuntu-16.04 with image release
+
+status: done
+time: Mon, 14 Sep 2020 11:02:35 +0000
+detail:
+DataSourceHetzner
+--- Verify that Hetzner's custom cloud-init decodes b64
+--- OK
+--- Verify that pre-SRU cloud-init does not decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22665 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Connection to 95.217.218.104 closed by remote host.
+
+status: done
+time: Mon, 14 Sep 2020 11:04:00 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that -proposed cloud-init does decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 22665 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+Connection to 95.217.218.104 closed by remote host.
+ii  cloud-init     20.3-2-g371b392c-0ubuntu1~16.04.1 all          Init scripts for cloud instances
+
+status: done
+time: Mon, 14 Sep 2020 11:05:47 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that decoded b64 user-data is identical to the original
+--- OK
+Cleaning up instance gh448-ubuntu-16.04
+Server 7611950 deleted
+=== END ubuntu-16.04 ===
+=== BEGIN ubuntu-18.04 ===
+Waiting for server 7612000 to have started... done
+Server 7612000 created
+IPv4: 135.181.95.170
+--- Started instance gh448-ubuntu-18.04 with image release
+
+status: done
+time: Mon, 14 Sep 2020 11:07:32 +0000
+detail:
+DataSourceHetzner
+--- Verify that Hetzner's custom cloud-init decodes b64
+--- OK
+--- Verify that pre-SRU cloud-init does not decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 26328 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Connection to 135.181.95.170 closed by remote host.
+
+status: done
+time: Mon, 14 Sep 2020 11:09:00 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that -proposed cloud-init does decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 26328 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+Connection to 135.181.95.170 closed by remote host.
+ii  cloud-init     20.3-2-g371b392c-0ubuntu1~18.04.1 all          Init scripts for cloud instances
+
+status: done
+time: Mon, 14 Sep 2020 11:10:49 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that decoded b64 user-data is identical to the original
+--- OK
+Cleaning up instance gh448-ubuntu-18.04
+Server 7612000 deleted
+=== END ubuntu-18.04 ===
+=== BEGIN ubuntu-20.04 ===
+Waiting for server 7612047 to have started... done
+Server 7612047 created
+IPv4: 95.217.218.104
+--- Started instance gh448-ubuntu-20.04 with image release
+
+status: done
+time: Mon, 14 Sep 2020 11:12:29 +0000
+detail:
+DataSourceHetzner
+--- Verify that Hetzner's custom cloud-init decodes b64
+--- OK
+--- Verify that pre-SRU cloud-init does not decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 28257 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.2-45-g5f7825e2-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+Connection to 95.217.218.104 closed by remote host.
+
+status: done
+time: Mon, 14 Sep 2020 11:13:57 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that -proposed cloud-init does decode b64
+Preconfiguring packages ...
+(Reading database ... (Reading database ... 5%(Reading database ... 10%(Reading database ... 15%(Reading database ... 20%(Reading database ... 25%(Reading database ... 30%(Reading database ... 35%(Reading database ... 40%(Reading database ... 45%(Reading database ... 50%(Reading database ... 55%(Reading database ... 60%(Reading database ... 65%(Reading database ... 70%(Reading database ... 75%(Reading database ... 80%(Reading database ... 85%(Reading database ... 90%(Reading database ... 95%(Reading database ... 100%(Reading database ... 28257 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1) ...
+Connection to 95.217.218.104 closed by remote host.
+ii  cloud-init     20.3-2-g371b392c-0ubuntu1~20.04.1 all          initialization and customization tool for cloud instances
+
+status: done
+time: Mon, 14 Sep 2020 11:15:44 +0000
+detail:
+DataSourceHetzner
+--- OK
+--- Verify that decoded b64 user-data is identical to the original
+--- OK
+Cleaning up instance gh448-ubuntu-20.04
+Server 7612047 deleted
+=== END ubuntu-20.04 ===
+[VERIFICATION SUCCEEDED]
