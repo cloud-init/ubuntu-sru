@@ -1,0 +1,73 @@
+This SRU template covers three related commits:
+* https://github.com/canonical/cloud-init/commit/a6bb375a
+* https://github.com/canonical/cloud-init/commit/2d3533b5
+* https://github.com/canonical/cloud-init/commit/546617c4
+
+=== Begin SRU Template ===
+[Impact]
+
+On focal and later, Ubuntu images uses the Oracle data source.  This series of
+commits introduces support for Oracle's v2 IMDS, which is preferred over v1.
+
+(On pre-focal systems, we simply need to confirm that this change does not
+switch systems from using the OpenStack datasource to the Oracle datasource.)
+
+[Test Case]
+
+This test case assumes that you have launched standard Ubuntu images in OCI,
+and takes their IP address as an argument.
+
+gh528() {
+    set -e
+    release=$1
+    ip=$2
+
+    do_ssh() {
+        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR ubuntu@$ip -- $@
+    }
+
+    wait_for_boot() {
+        # Give the instance a chance to go down before we wait for it to come back
+        sleep 10
+
+        while ! do_ssh cloud-init status --wait; do
+            sleep 5
+        done
+    }
+
+    case "$release" in
+        xenial|bionic) expected_ds="DataSourceOpenStack";;
+        *) expected_ds="DataSourceOracle";;
+    esac
+
+    wait_for_boot
+
+    do_ssh cloud-init status --long | grep $expected_ds > /dev/null || { echo "PRECONDITION FAIL: $release has unexpected datasource"; return 1 }
+
+    echo "deb http://archive.ubuntu.com/ubuntu/ $release-proposed main universe" | do_ssh sudo tee /etc/apt/sources.list.d/proposed.list
+    do_ssh sudo apt-get update -q
+    do_ssh sudo apt-get install -qy cloud-init
+
+    do_ssh sudo reboot || true
+
+    wait_for_boot
+
+    # We should not change the datasource used on upgrade
+    do_ssh cloud-init status --wait --long | grep $expected_ds > /dev/null || { echo "REBOOT FAIL: $release has unexpected datasource"; return 1 }
+
+    echo "SUCCESS.  Don't forget to clean up your instance."
+}
+
+[Regression Potential]
+
+For xenial and bionic, this datasource is not used by the Ubuntu images
+published to Oracle: provided we confirm that the OpenStack datasource
+continues to be used, there is no regression potential.
+
+For focal, this substantially modifies the way the Oracle datasource fetches
+metadata.  This should have no impact for already-launched instances (as they
+have already fetched and cached metadata), but could have impact on the
+launching of instances.  This path is covered in the manual Oracle testing
+rather than specifically addressed here.
+
+=== End SRU Template ===
