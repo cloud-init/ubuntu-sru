@@ -14,9 +14,16 @@ fi
 
 parse_args $0 $@
 assert_expected_vars PROPOSED_SCRIPT SAMPLE_CLOUDCONFIG LP_USER SSHOPTS \
-    NETCFG_FILE
+    NETCFG_FILE OCI_COMPARTMENT_ID
 create_samplecloudconfig SAMPLE_CLOUDCONFIG
 create_setup_proposed_script
+
+declare -A releases
+releases=( ["xenial"]="16.04" ["bionic"]="18.04" ["focal"]="20.04" )
+if [ -z "${releases[${UBUNTU_RELEASE}]}" ]; then
+    echo "Invalid release specified $UBUNTU_RELEASE"
+    exit 1
+fi
 
 function cleanup {
     echo "Cleaning up instance ${INSTANCE_ID}"
@@ -25,16 +32,13 @@ function cleanup {
 
 echo "### BEGIN $UBUNTU_RELEASE"
 
-declare -A releases
-releases=( ["xenial"]="16.04" ["bionic"]="18.04" ["focal"]="20.04" )
-
-IMAGE_ID=$(oci compute image list --operating-system="Canonical Ubuntu" --operating-system-version="${releases[${UBUNTU_RELEASE}]}" --sort-by="TIMECREATED" --limit=1 2>/dev/null | jq -r '.data[0]["id"]')
-VCN_ID=$(oci network vcn list | jq -r '.data[0]["id"]')
-SUBNET_INFO=$(oci network subnet list --vcn-id="${VCN_ID}" | jq '.data[0] | {id: .id, "availability-domain": ."availability-domain"}')
+IMAGE_ID=$(oci compute image list --compartment-id="$OCI_COMPARTMENT_ID" --operating-system="Canonical Ubuntu" --operating-system-version="${releases[${UBUNTU_RELEASE}]}" --sort-by="TIMECREATED" --limit=1 2>/dev/null | jq -r '.data[0]["id"]')
+VCN_ID=$(oci network vcn list --compartment-id="$OCI_COMPARTMENT_ID" | jq -r '.data[0]["id"]')
+SUBNET_INFO=$(oci network subnet list --compartment-id="$OCI_COMPARTMENT_ID" --vcn-id="${VCN_ID}" | jq '.data[0] | {id: .id, "availability-domain": ."availability-domain"}')
 SUBNET_ID=$(echo ${SUBNET_INFO} | jq -r '.id')
 AVAILABILITY_DOMAIN=$(echo ${SUBNET_INFO} | jq -r '."availability-domain"')
 
-INSTANCE_ID=$(oci compute instance launch --availability-domain="${AVAILABILITY_DOMAIN}" --shape="VM.Standard1.1" --image-id="${IMAGE_ID}" --subnet-id="${SUBNET_ID}" --ssh-authorized-keys-file="${SSH_KEY}" | jq -r '.data["id"]')
+INSTANCE_ID=$(oci compute instance launch --compartment-id="$OCI_COMPARTMENT_ID" --availability-domain="${AVAILABILITY_DOMAIN}" --shape="VM.Standard1.1" --image-id="${IMAGE_ID}" --subnet-id="${SUBNET_ID}" --ssh-authorized-keys-file="${SSH_KEY}" | jq -r '.data["id"]')
 
 trap cleanup EXIT
 
@@ -44,12 +48,9 @@ while [ "${status}" != "RUNNING" ]; do
     status=$(oci compute instance get --instance-id="${INSTANCE_ID}" | jq -r '.data."lifecycle-state"')
 done
 
-oci compute instance list-vnics --instance-id="${INSTANCE_ID}"
 VM_IP=$(oci compute instance list-vnics --instance-id="${INSTANCE_ID}" | jq -r '.["data"][0]["public-ip"]')
 
-while ! ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
-    sleep 5
-done
+retry_ssh_command ubuntu@$VM_IP "cloud-init status --wait --long"
 
 # Capture current state
 ssh "${SSHOPTS[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
