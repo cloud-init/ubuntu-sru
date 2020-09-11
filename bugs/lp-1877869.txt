@@ -1,0 +1,439 @@
+=== Begin SRU Template ===
+[Impact]
+cloud-init has a list of ssh key types that can be added to authorized_keys file through
+ssh_authorized_keys. If an user try to add a key type that is not present in the type list,
+cloud-init will ignore that key. This is checking if the new key types are now appearing at
+the authorized_keys file.
+
+[Test Case]
+
+```
+set -x
+# Manually deploy on a lxc container
+
+create_setup_dev() {
+release=$1
+
+cat > setup_dev_proposed.sh <<EOF
+#/bin/bash
+echo "deb http://archive.ubuntu.com/ubuntu $release-proposed main" | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q;
+apt-get install -qy cloud-init;
+EOF
+}
+
+cat > ssh-data.yaml <<EOF
+#cloud-config
+ssh_authorized_keys:
+  - "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC2qSqrC6lsKqpY6fKF2LDxET/DuCJcKGTFnpFHPWj0yqVsvqooUIDKXCgEXx0rOJaqUpnnXWfij0/Yr4l8GxmJGr9hpkG+MXhwYehDvbZHrP5C/MPyyOCqjPlr3d4touBAhCTNJapFSHYnoQfguuGbZDS8Nfvu6JYS0ODvbgp8z5BnZVVFW4J7ms2QQwHIyvc5kk6sUvlL1xqRu+2mLz4vPxTqGPPLDdfbSOapCI5i4yZxLziIWSOdPBUlAnFRV4ONKT7m3/pT2wUkObprCKZAMH+bL52GYxOToUXm6EaFUGR+ptiMWbQXHIxiZfxtinp6LfZouRJz9/+vKQoTBPXJ"
+  - "sk-ecdsa-sha2-nistp256@openssh.com AAAAInNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3BlbnNzaC5jb20AAAAIbmlzdHAyNTYAAABBBIofALjMlvK/KmwHVhzqIV4HTylBjos4xQqRE+GKQqe1a/LOKTGluhneCq3WE5L9578ZLQENWPrqIoUWjg/XcxAAAAAEc3NoOg=="
+  - "sk-ecdsa-sha2-nistp256-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIIxzuxl4z3uwAIslne8Huft+1n1IhHAlNbWZkQyyECCGAAAAIFOG6kY7Rf4UtCFvPwKgo/BztXck2xC4a2WyA34XtIwZAAAAAAAAAAgAAAACAAAABmp1bGl1cwAAABIAAAAFaG9zdDEAAAAFaG9zdDIAAAAANowB8AAAAABNHmBwAAAAAAAAAAAAAAAAAAAAMwAAAAtzc2gtZWQyNTUxOQAAACBThupGO0X+FLQhbz8CoKPwc7V3JNsQuGtlsgN+F7SMGQAAAFMAAAALc3NoLWVkMjU1MTkAAABABGTn+Bmz86Ajk+iqKCSdP5NClsYzn4alJd0V5bizhP0Kumc/HbqQfSt684J1WdSzih+EjvnTgBhK9jTBKb90AQ=="
+  - "sk-ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQtdjAxQG9wZW5zc2guY29tAAAAIIxzuxl4z3uwAIslne8Huft+1n1IhHAlNbWZkQyyECCGAAAAIFOG6kY7Rf4UtCFvPwKgo/BztXck2xC4a2WyA34XtIwZAAAAAAAAAAgAAAACAAAABmp1bGl1cwAAABIAAAAFaG9zdDEAAAAFaG9zdDIAAAAANowB8AAAAABNHmBwAAAAAAAAAAAAAAAAAAAAMwAAAAtzc2gtZWQyNTUxOQAAACBThupGO0X+FLQhbz8CoKPwc7V3JNsQuGtlsgN+F7SMGQAAAFMAAAALc3NoLWVkMjU1MTkAAABABGTn+Bmz86Ajk+iqKCSdP5NClsYzn4alJd0V5bizhP0Kumc/HbqQfSt684J1WdSzih+EjvnTgBhK9jTBKb90AQ=="
+  - "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QG9wZW5zc2guY29tAAAAICFo/k5LU8863u66YC9eUO2170QduohPURkQnbLa/dczAAAABHNzaDo="
+  - "ssh-xmss@openssh.com AAAAFHNzaC14bXNzQG9wZW5zc2guY29tAAAAFVhNU1NfU0hBMi0yNTZfVzE2X0gxMAAAAECqptWnK94d+Sj2xcdTu8gz+75lawZoLSZFqC5IhbYuT/Z3oBZCim6yt+HAmk6MKldl3Fg+74v4sR/SII0I0Jv/"
+  - "ssh-xmss-cert-v01@openssh.com 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"
+EOF
+
+restart_cloudinit() {
+   name=$1
+
+   lxc exec $name -- DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+   lxc exec $name -- cloud-init clean --logs
+   lxc exec $name -- cloud-init init --local
+   lxc exec $name -- cloud-init init > /dev/null
+   lxc exec $name -- cloud-init modules --mode=config
+   lxc exec $name -- cloud-init modules --mode=final
+   lxc exec $name -- cloud-init status --wait --long
+}
+
+for SERIES in bionic focal xenial; do
+   echo '=== BEGIN ' $SERIES
+   ref=$SERIES-proposed
+   name=test-$SERIES
+   unique_keys="sk-ecdsa-sha2-nistp256@openssh.com sk-ecdsa-sha2-nistp256-cert-v01@openssh.com sk-ssh-ed25519-cert-v01@openssh.com sk-ssh-ed25519@openssh.com ssh-xmss@openssh.com ssh-xmss-cert-v01@openssh.com"
+   lxc delete $name --force 2> /dev/null
+   lxc launch ubuntu-daily:$SERIES $name -c user.user-data="$(cat ssh-data.yaml)"
+
+   echo "###########################################"
+   echo "Expect cloud-init to finish"
+   lxc exec $name -- cloud-init status --wait --long
+   echo -e "###########################################\n"
+
+   authorized_keys=$(lxc exec $name -- cat /home/ubuntu/.ssh/authorized_keys)
+   console_log=$(lxc console --show-log $name)
+   for key in $unique_keys; do
+      check_key=$(echo $authorized_keys | grep -oh $key)
+      check_key_in_log=$(echo $console_log | grep -oh $key)
+
+      if [ -z "$check_key" ]; then
+          echo "SUCCESS: cloud-init 20.2 could not add $key into .ssh/authorized_keys"
+      else
+          echo "FAILURE: cloud-init 20.2 could add $key into .ssh/authorized_keys"
+      fi
+
+      if [ -z "$check_key_in_log" ]; then
+          echo "SUCCESS: cloud-init 20.2 did not show $key in output log"
+      else
+          echo "FAILURE: cloud-init 20.2 showes $key in output log"
+      fi
+   done
+
+   # upgrade cloud-init to proposed
+   echo "###########################################"
+   echo "Update cloud-init"
+   create_setup_dev $SERIES
+   lxc file push setup_dev_proposed.sh $name/var/tmp/
+   lxc exec $name -- bash /var/tmp/setup_dev_proposed.sh
+   echo -e "###########################################\n"
+
+   echo "###########################################"
+   echo "Restart cloud-init"
+   restart_cloudinit $name
+   echo -e "###########################################\n"
+
+   authorized_keys=$(lxc exec $name -- cat /home/ubuntu/.ssh/authorized_keys)
+   console_log=$(lxc console --show-log $name)
+   for key in $unique_keys; do
+      check_key=$(echo $authorized_keys | grep -oh $key)
+      check_key_in_log=$(echo $console_log | grep -oh $key)
+
+      if [ "$check_key" = "$key" ]; then
+          echo "SUCCESS: cloud-init 20.3 could add $key into .ssh/authorized_keys"
+      else
+          echo "FAILURE: cloud-init 20.3 could not add $key into .ssh/authorized_keys"
+      fi
+
+      if [ "$check_key_in_log" = "$key" ]; then
+          echo "SUCCESS: cloud-init 20.3 showed $key in output log"
+      else
+          echo "FAILURE: cloud-init 20.3 did not show $key in output log"
+      fi
+   done
+done
+```
+
+[Regression Potential]
+
+Since we are only adding new types of keys and not touching on existing key types, this should not
+pose a significant regression risk.
+
+
+=== End cloud-init SRU Template ===
+
+=== Verification Log ===
+
+=== BEGIN  bionic
+Creating test-bionic
+Starting test-bionic
+###########################################
+Expect cloud-init to finish
+......................
+status: done
+time: Fri, 11 Sep 2020 16:52:59 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss-cert-v01@openssh.com in output log
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/ssh-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (1.20GB/s)
+deb http://archive.ubuntu.com/ubuntu bionic-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu bionic InRelease
+Get:2 http://security.ubuntu.com/ubuntu bionic-security InRelease [88.7 kB]
+Get:3 http://archive.ubuntu.com/ubuntu bionic-updates InRelease [88.7 kB]
+Get:4 http://security.ubuntu.com/ubuntu bionic-security/main amd64 Packages [849 kB]
+Get:5 http://archive.ubuntu.com/ubuntu bionic-backports InRelease [74.6 kB]
+Get:6 http://archive.ubuntu.com/ubuntu bionic-proposed InRelease [242 kB]
+Get:7 http://security.ubuntu.com/ubuntu bionic-security/universe amd64 Packages [701 kB]
+Get:8 http://security.ubuntu.com/ubuntu bionic-security/universe Translation-en [232 kB]
+Get:9 http://security.ubuntu.com/ubuntu bionic-security/multiverse amd64 Packages [8512 B]
+Get:10 http://security.ubuntu.com/ubuntu bionic-security/multiverse Translation-en [2908 B]
+Get:11 http://archive.ubuntu.com/ubuntu bionic/universe amd64 Packages [8570 kB]
+Get:12 http://archive.ubuntu.com/ubuntu bionic/universe Translation-en [4941 kB]
+Get:13 http://archive.ubuntu.com/ubuntu bionic/multiverse amd64 Packages [151 kB]
+Get:14 http://archive.ubuntu.com/ubuntu bionic/multiverse Translation-en [108 kB]
+Get:15 http://archive.ubuntu.com/ubuntu bionic-updates/main amd64 Packages [1072 kB]
+Get:16 http://archive.ubuntu.com/ubuntu bionic-updates/main Translation-en [356 kB]
+Get:17 http://archive.ubuntu.com/ubuntu bionic-updates/universe amd64 Packages [1107 kB]
+Get:18 http://archive.ubuntu.com/ubuntu bionic-updates/universe Translation-en [344 kB]
+Get:19 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse amd64 Packages [19.6 kB]
+Get:20 http://archive.ubuntu.com/ubuntu bionic-updates/multiverse Translation-en [6768 B]
+Get:21 http://archive.ubuntu.com/ubuntu bionic-backports/main amd64 Packages [7516 B]
+Get:22 http://archive.ubuntu.com/ubuntu bionic-backports/main Translation-en [4764 B]
+Get:23 http://archive.ubuntu.com/ubuntu bionic-backports/universe amd64 Packages [7736 B]
+Get:24 http://archive.ubuntu.com/ubuntu bionic-backports/universe Translation-en [4588 B]
+Get:25 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 Packages [78.4 kB]
+Get:26 http://archive.ubuntu.com/ubuntu bionic-proposed/main Translation-en [29.5 kB]
+Fetched 19.1 MB in 6s (3302 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 16 not upgraded.
+Need to get 434 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~18.04.1 [434 kB]
+Fetched 434 kB in 2s (218 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) over (20.2-45-g5f7825e2-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.32.0-1ubuntu4) ...
+###########################################
+
+###########################################
+Restart cloud-init
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'init-local' at Fri, 11 Sep 2020 16:53:17 +0000. Up 24.09 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'modules:config' at Fri, 11 Sep 2020 16:53:19 +0000. Up 26.06 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 running 'modules:final' at Fri, 11 Sep 2020 16:53:20 +0000. Up 26.94 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~18.04.1 finished at Fri, 11 Sep 2020 16:53:20 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 27.09 seconds
+
+status: done
+time: Fri, 11 Sep 2020 16:53:20 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss-cert-v01@openssh.com in output log
+=== BEGIN  focal
+Creating test-focal
+Starting test-focal
+###########################################
+Expect cloud-init to finish
+.....................................................................................
+status: done
+time: Fri, 11 Sep 2020 16:53:47 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss-cert-v01@openssh.com in output log
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/ssh-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (1.11GB/s)
+deb http://archive.ubuntu.com/ubuntu focal-proposed main
+Get:1 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Hit:2 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [111 kB]
+Get:4 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [56.0 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [29.4 kB]
+Get:6 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [2312 B]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:10 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:11 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:12 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:13 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:14 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:15 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:16 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:17 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:18 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [353 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [165 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [87.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [5424 B]
+Get:22 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [11.6 kB]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [3892 B]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [480 B]
+Get:25 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:27 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [3088 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1448 B]
+Get:29 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [224 B]
+Get:30 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [94.5 kB]
+Get:32 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [37.2 kB]
+Get:33 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [2692 B]
+Fetched 15.7 MB in 6s (2810 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following package was automatically installed and is no longer required:
+  libfreetype6
+Use 'apt autoremove' to remove it.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 29 not upgraded.
+Need to get 429 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~20.04.1 [429 kB]
+Fetched 429 kB in 2s (211 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1.1) ...
+###########################################
+
+###########################################
+Restart cloud-init
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'init-local' at Fri, 11 Sep 2020 16:54:08 +0000. Up 43.34 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'modules:config' at Fri, 11 Sep 2020 16:54:11 +0000. Up 45.43 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 running 'modules:final' at Fri, 11 Sep 2020 16:54:11 +0000. Up 46.26 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~20.04.1 finished at Fri, 11 Sep 2020 16:54:12 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 46.39 seconds
+
+status: done
+time: Fri, 11 Sep 2020 16:54:12 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss-cert-v01@openssh.com in output log
+=== BEGIN  xenial
+Creating test-xenial
+Starting test-xenial
+###########################################
+Expect cloud-init to finish
+................................
+status: done
+time: Fri, 11 Sep 2020 16:54:25 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.2 could not add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.2 did not show ssh-xmss-cert-v01@openssh.com in output log
+###########################################
+Update cloud-init
+Pushing /var/lib/snapd/hostfs/tmp/ssh-test/setup_dev_proposed.sh to /var/tmp/setup_dev_proposed.sh: 100% (939.56MB/s)
+deb http://archive.ubuntu.com/ubuntu xenial-proposed main
+Hit:1 http://archive.ubuntu.com/ubuntu xenial InRelease
+Get:2 http://security.ubuntu.com/ubuntu xenial-security InRelease [109 kB]
+Get:3 http://archive.ubuntu.com/ubuntu xenial-updates InRelease [109 kB]
+Get:4 http://security.ubuntu.com/ubuntu xenial-security/main amd64 Packages [927 kB]
+Get:5 http://archive.ubuntu.com/ubuntu xenial-backports InRelease [107 kB]
+Get:6 http://archive.ubuntu.com/ubuntu xenial-proposed InRelease [260 kB]
+Get:7 http://archive.ubuntu.com/ubuntu xenial/universe amd64 Packages [7532 kB]
+Get:8 http://security.ubuntu.com/ubuntu xenial-security/main Translation-en [343 kB]
+Get:9 http://security.ubuntu.com/ubuntu xenial-security/universe amd64 Packages [502 kB]
+Get:10 http://security.ubuntu.com/ubuntu xenial-security/universe Translation-en [207 kB]
+Get:11 http://security.ubuntu.com/ubuntu xenial-security/multiverse amd64 Packages [6084 B]
+Get:12 http://security.ubuntu.com/ubuntu xenial-security/multiverse Translation-en [2888 B]
+Get:13 http://archive.ubuntu.com/ubuntu xenial/universe Translation-en [4354 kB]
+Get:14 http://archive.ubuntu.com/ubuntu xenial/multiverse amd64 Packages [144 kB]
+Get:15 http://archive.ubuntu.com/ubuntu xenial/multiverse Translation-en [106 kB]
+Get:16 http://archive.ubuntu.com/ubuntu xenial-updates/main amd64 Packages [1199 kB]
+Get:17 http://archive.ubuntu.com/ubuntu xenial-updates/main Translation-en [447 kB]
+Get:18 http://archive.ubuntu.com/ubuntu xenial-updates/universe amd64 Packages [805 kB]
+Get:19 http://archive.ubuntu.com/ubuntu xenial-updates/universe Translation-en [338 kB]
+Get:20 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse amd64 Packages [17.1 kB]
+Get:21 http://archive.ubuntu.com/ubuntu xenial-updates/multiverse Translation-en [8632 B]
+Get:22 http://archive.ubuntu.com/ubuntu xenial-backports/main amd64 Packages [7280 B]
+Get:23 http://archive.ubuntu.com/ubuntu xenial-backports/main Translation-en [4456 B]
+Get:24 http://archive.ubuntu.com/ubuntu xenial-backports/universe amd64 Packages [8316 B]
+Get:25 http://archive.ubuntu.com/ubuntu xenial-backports/universe Translation-en [4476 B]
+Get:26 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 Packages [58.6 kB]
+Get:27 http://archive.ubuntu.com/ubuntu xenial-proposed/main Translation-en [23.0 kB]
+Fetched 17.6 MB in 5s (3193 kB/s)
+Reading package lists...
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages were automatically installed and are no longer required:
+  libfreetype6 motd-news-config
+Use 'apt autoremove' to remove them.
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 15 not upgraded.
+Need to get 439 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1~16.04.1 [439 kB]
+Fetched 439 kB in 1s (269 kB/s)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) over (20.2-45-g5f7825e2-0ubuntu1~16.04.1) ...
+Processing triggers for ureadahead (0.100.0-19.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+###########################################
+
+###########################################
+Restart cloud-init
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'init-local' at Fri, 11 Sep 2020 16:54:41 +0000. Up 24.50 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'modules:config' at Fri, 11 Sep 2020 16:54:43 +0000. Up 26.03 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'modules:final' at Fri, 11 Sep 2020 16:54:43 +0000. Up 26.77 seconds.
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 finished at Fri, 11 Sep 2020 16:54:43 +0000. Datasource DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net].  Up 26.92 seconds
+
+status: done
+time: Fri, 11 Sep 2020 16:54:43 +0000
+detail:
+DataSourceNoCloud [seed=/var/lib/cloud/seed/nocloud-net][dsmode=net]
+###########################################
+
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ecdsa-sha2-nistp256-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ecdsa-sha2-nistp256-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519-cert-v01@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add sk-ssh-ed25519@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed sk-ssh-ed25519@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss@openssh.com in output log
+SUCCESS: cloud-init 20.3 could add ssh-xmss-cert-v01@openssh.com into .ssh/authorized_keys
+SUCCESS: cloud-init 20.3 showed ssh-xmss-cert-v01@openssh.com in output log
