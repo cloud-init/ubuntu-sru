@@ -1,0 +1,474 @@
+=== begin sru template ===
+[impact]
+On a FAT system, a partition label can be stored in both the root directory
+and the boot sector. blkid implementation has changed to not fallback
+to reporting the boot sector label if root directory label is empty, and
+instead has provided a new field for the boot sector called LABEL_FATBOOT.
+This change supports partitions containing no LABEL and a LABEL_FATBOOT.
+
+[test case]
+1. Create a FAT filesystem image with no label in the root directory
+and "cidata" in the boot sector label
+2. Write valid cloud-init meta-data and user-data to the filesystem image
+3. Boot a xenial and bionic instance along with the FAT filesystem and
+verify cloud-init ran as expected. Xenial and Bionic are not affected.
+4. Boot a focal instance and verify:
+ - cloud-init has not run
+ - ds-identify cannot determine cloud type
+5. Install proposed cloud-init
+6. Reboot
+7. Verify:
+ - cloud-init has run
+ - ds-identify correctly determines the nocloud type
+
+
+[regression potential]
+None
+
+[Other Info]
+PRs:
+ - https://github.com/canonical/cloud-init/pull/500
+ - https://github.com/canonical/cloud-init/pull/513
+Upstream commit: https://github.com/canonical/cloud-init/commit/c068f992c3905d07732dafa6eb61c1ae3aa65916
+
+=== end cloud-init sru template ===
+
+=== verification log ===
+# Generate 500K filesystem (20200828/fs.img)
+root@newt:/home/james/tmp_home/images# mount fs.img /mnt
+root@newt:/home/james/tmp_home/images# cd /mnt
+root@newt:/mnt# cat > meta-data <<EOF
+> instance-id: 5be37bc4-195b-4d04-bf83-3f870eccf918
+> EOF
+root@newt:/mnt# cat > user-data <<EOF
+> #cloud-config
+> ssh_pwauth: yes
+> ssh_impord_id: [james]
+> ssh_authorized_keys:
+>  - |
+>   ssh-rsa # rest of ssh key
+> EOF
+root@newt:/mnt# cd -
+/home/james/tmp_home/images
+root@newt:/home/james/tmp_home/images# umount /mnt
+root@newt:/home/james/tmp_home/images# exit
+exit
+
+
+=== BEGIN focal
+# Customize root image to login if cloud-init fails
+newt:images $ sudo virt-customize -a focal-server-cloudimg-amd64.img --root-password password:password
+[sudo] password for james:
+[   0.0] Examining the guest ...
+[   2.0] Setting a random seed
+[   2.0] Setting passwords
+[   3.0] Finishing off
+
+newt:images $ qemu-system-x86_64 -enable-kvm -m 512 \
+-drive "file=./focal-server-cloudimg-amd64.img,if=virtio" \
+-drive "file=./fs.img,format=raw,if=virtio" \
+-net nic -net user,hostfwd=tcp::2222-:22 \
+-nographic
+
+Ubuntu 20.04.1 LTS ubuntu ttyS0
+
+ubuntu login: root
+Password:
+Welcome to Ubuntu 20.04.1 LTS (GNU/Linux 5.4.0-47-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Fri Sep 11 14:47:27 UTC 2020
+
+  System load: 0.39              Memory usage: 31%   Processes:       86
+  Usage of /:  62.8% of 1.96GB   Swap usage:   0%    Users logged in: 0
+
+
+1 update can be installed immediately.
+0 of these updates are security updates.
+To see these additional updates run: apt list --upgradable
+
+Failed to connect to https://changelogs.ubuntu.com/meta-release-lts. Check your Internet connection or proxy settings
+
+
+Last login: Fri Sep 11 13:48:40 UTC 2020 on ttyS0
+root@ubuntu:~# blkid /dev/vdb
+/dev/vdb: SEC_TYPE="msdos" LABEL_FATBOOT="cidata" UUID="355A-4FC2" TYPE="vfat"
+root@ubuntu:~# cloud-init status -l
+status: disabled
+detail:
+Cloud-init disabled by cloud-init-generator
+root@ubuntu:~# ls /run/systemd/generator.late/multi-user.target.wants/*
+/run/systemd/generator.late/multi-user.target.wants/apport.service
+/run/systemd/generator.late/multi-user.target.wants/grub-common.service
+root@ubuntu:~# sudo DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+[up 470.57s] ds-identify --force
+policy loaded: mode=search report=false found=all maybe=all notfound=disabled
+/etc/cloud/cloud.cfg.d/90_dpkg.cfg set datasource_list: [ NoCloud, ConfigDrive, OpenNebula, DigitalOcean, Azure, AltCloud, OV]
+[  470.785124] blk_update_request: I/O error, dev fd0, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio class 0
+DMI_PRODUCT_NAME=Standard PC (i440FX + PIIX, 1996)
+DMI_SYS_VENDOR=QEMU
+DMI_PRODUCT_SERIAL=
+DMI_PRODUCT_UUID=unavailable
+PID_1_PRODUCT_NAME=unavailable
+DMI_CHASSIS_ASSET_TAG=
+FS_LABELS=cloudimg-rootfs,UEFI
+ISO9660_DEVS=
+KERNEL_CMDLINE=BOOT_IMAGE=/boot/vmlinuz-5.4.0-47-generic root=PARTUUID=a97b4610-d527-40a0-8bbf-0df5b5a71b91 ro console=tty1 c0
+VIRT=kvm
+UNAME_KERNEL_NAME=Linux
+UNAME_KERNEL_RELEASE=5.4.0-47-generic
+UNAME_KERNEL_VERSION=#51-Ubuntu SMP Fri Sep 4 19:50:52 UTC 2020
+UNAME_MACHINE=x86_64
+UNAME_NODENAME=ubuntu
+UNAME_OPERATING_SYSTEM=GNU/Linux
+DSNAME=
+DSLIST=NoCloud ConfigDrive OpenNebula DigitalOcean Azure AltCloud OVF MAAS GCE OpenStack CloudSigma SmartOS Bigstep Scaleway e
+MODE=search
+ON_FOUND=all
+ON_MAYBE=all
+ON_NOTFOUND=disabled
+pid=884 ppid=882
+is_container=false
+is_ds_enabled(IBMCloud) = true.
+is_ds_enabled(IBMCloud) = true.
+ec2 platform is 'Unknown'.
+No ds found [mode=search, notfound=disabled]. Disabled cloud-init [1]
+[up 470.73s] returning 1
+
+# Since cloud-init never ran, get our network config
+root@ubuntu:~# cat > /etc/netplan/50-cloud-init.yaml <<EOF
+> network:
+>   ethernets:
+>     ens3:
+>       dhcp4: true
+>       match:
+>         macaddress: '52:54:00:12:34:56'
+>       set-name: ens3
+>   version: 2
+> EOF
+root@ubuntu:~# sudo netplan generate
+root@ubuntu:~# sudo netplan apply
+
+# Upgrade cloud-init
+root@ubuntu:~# mirror=http://archive.ubuntu.com/ubuntu
+root@ubuntu:~# echo deb $mirror $(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.lt
+deb http://archive.ubuntu.com/ubuntu focal-proposed main
+root@ubuntu:~# apt-get update -q
+Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [107 kB]
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [111 kB]
+Get:4 http://archive.ubuntu.com/ubuntu focal-backports InRelease [98.3 kB]
+Get:5 http://security.ubuntu.com/ubuntu focal-security/main amd64 Packages [181 kB]
+Get:6 http://archive.ubuntu.com/ubuntu focal-proposed InRelease [265 kB]
+Get:7 http://security.ubuntu.com/ubuntu focal-security/main Translation-en [64.5 kB]
+Get:8 http://security.ubuntu.com/ubuntu focal-security/main amd64 c-n-f Metadata [4504 B]
+Get:9 http://security.ubuntu.com/ubuntu focal-security/restricted amd64 Packages [34.3 kB]
+Get:10 http://security.ubuntu.com/ubuntu focal-security/restricted Translation-en [8916 B]
+Get:11 http://security.ubuntu.com/ubuntu focal-security/universe amd64 Packages [56.0 kB]
+Get:12 http://security.ubuntu.com/ubuntu focal-security/universe Translation-en [29.4 kB]
+Get:13 http://security.ubuntu.com/ubuntu focal-security/universe amd64 c-n-f Metadata [2312 B]
+Get:14 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 Packages [1172 B]
+Get:15 http://security.ubuntu.com/ubuntu focal-security/multiverse Translation-en [540 B]
+Get:16 http://security.ubuntu.com/ubuntu focal-security/multiverse amd64 c-n-f Metadata [116 B]
+Get:17 http://archive.ubuntu.com/ubuntu focal/universe amd64 Packages [8628 kB]
+Get:18 http://archive.ubuntu.com/ubuntu focal/universe Translation-en [5124 kB]
+Get:19 http://archive.ubuntu.com/ubuntu focal/universe amd64 c-n-f Metadata [265 kB]
+Get:20 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 Packages [144 kB]
+Get:21 http://archive.ubuntu.com/ubuntu focal/multiverse Translation-en [104 kB]
+Get:22 http://archive.ubuntu.com/ubuntu focal/multiverse amd64 c-n-f Metadata [9136 B]
+Get:23 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 Packages [353 kB]
+Get:24 http://archive.ubuntu.com/ubuntu focal-updates/main Translation-en [133 kB]
+Get:25 http://archive.ubuntu.com/ubuntu focal-updates/main amd64 c-n-f Metadata [8968 B]
+Get:26 http://archive.ubuntu.com/ubuntu focal-updates/restricted amd64 Packages [34.5 kB]
+Get:27 http://archive.ubuntu.com/ubuntu focal-updates/restricted Translation-en [8968 B]
+Get:28 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 Packages [165 kB]
+Get:29 http://archive.ubuntu.com/ubuntu focal-updates/universe Translation-en [87.1 kB]
+Get:30 http://archive.ubuntu.com/ubuntu focal-updates/universe amd64 c-n-f Metadata [5424 B]
+Get:31 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 Packages [11.6 kB]
+Get:32 http://archive.ubuntu.com/ubuntu focal-updates/multiverse Translation-en [3892 B]
+Get:33 http://archive.ubuntu.com/ubuntu focal-updates/multiverse amd64 c-n-f Metadata [480 B]
+Get:34 http://archive.ubuntu.com/ubuntu focal-backports/main amd64 c-n-f Metadata [112 B]
+Get:35 http://archive.ubuntu.com/ubuntu focal-backports/restricted amd64 c-n-f Metadata [116 B]
+Get:36 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 Packages [3088 B]
+Get:37 http://archive.ubuntu.com/ubuntu focal-backports/universe Translation-en [1448 B]
+Get:38 http://archive.ubuntu.com/ubuntu focal-backports/universe amd64 c-n-f Metadata [224 B]
+Get:39 http://archive.ubuntu.com/ubuntu focal-backports/multiverse amd64 c-n-f Metadata [116 B]
+Get:40 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 Packages [94.5 kB]
+Get:41 http://archive.ubuntu.com/ubuntu focal-proposed/main Translation-en [37.2 kB]
+Get:42 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 c-n-f Metadata [2692 B]
+Fetched 16.2 MB in 4s (4235 kB/s)
+Reading package lists...
+root@ubuntu:~# apt-get install -qy cloud-init
+Reading package lists...
+Building dependency tree...
+Reading state information...
+The following packages will be upgraded:
+  cloud-init
+1 upgraded, 0 newly installed, 0 to remove and 43 not upgraded.
+Need to get 429 kB of archives.
+After this operation, 75.8 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.3-2-g371b392c-0ubuntu1]
+Fetched 429 kB in 1s (583 kB/s)
+Preconfiguring packages ...
+(Reading database ... 63156 files and directories currently installed.)
+Preparing to unpack .../cloud-init_20.3-2-g371b392c-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) over (20.2-45-g5f7825e2-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Installing new version of config file /etc/cloud/cloud.cfg.d/05_logging.cfg ...
+Installing new version of config file /etc/cloud/templates/hosts.freebsd.tmpl ...
+Processing triggers for rsyslog (8.2001.0-1ubuntu1.1) ...
+root@ubuntu:~# reboot
+# reboot stuff
+Ubuntu 20.04.1 LTS ubuntu ttyS0
+
+ubuntu login: root
+Password:
+Welcome to Ubuntu 20.04.1 LTS (GNU/Linux 5.4.0-47-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Fri Sep 11 16:30:49 UTC 2020
+
+  System load:           0.88
+  Usage of /:            70.7% of 1.96GB
+  Memory usage:          36%
+  Swap usage:            0%
+  Processes:             97
+  Users logged in:       0
+  IPv4 address for ens3: 10.0.2.15
+  IPv6 address for ens3: fec0::5054:ff:fe12:3456
+
+
+49 updates can be installed immediately.
+1 of these updates is a security update.
+To see these additional updates run: apt list --upgradable
+
+Failed to connect to https://changelogs.ubuntu.com/meta-release-lts. Check your Internet connection or prs
+
+
+Last login: Fri Sep 11 16:24:46 UTC 2020 on ttyS0
+root@ubuntu:~# blkid /dev/vdb
+/dev/vdb: SEC_TYPE="msdos" LABEL_FATBOOT="cidata" UUID="355A-4FC2" TYPE="vfat"
+root@ubuntu:~# cloud-init status -l
+status: done
+time: Fri, 11 Sep 2020 16:30:31 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
+root@ubuntu:~# sudo DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+[up 137.87s] ds-identify --force
+policy loaded: mode=search report=false found=all maybe=all notfound=disabled
+/etc/cloud/cloud.cfg.d/90_dpkg.cfg set datasource_list: [ NoCloud, ConfigDrive, OpenNebula, DigitalOcean,]
+[  138.090565] blk_update_request: I/O error, dev fd0, sector 0 op 0x0:(READ) flags 0x0 phys_seg 1 prio c0
+DMI_PRODUCT_NAME=Standard PC (i440FX + PIIX, 1996)
+DMI_SYS_VENDOR=QEMU
+DMI_PRODUCT_SERIAL=
+DMI_PRODUCT_UUID=unavailable
+PID_1_PRODUCT_NAME=unavailable
+DMI_CHASSIS_ASSET_TAG=
+FS_LABELS=cloudimg-rootfs,UEFI,UEFI,cidata
+ISO9660_DEVS=
+KERNEL_CMDLINE=BOOT_IMAGE=/boot/vmlinuz-5.4.0-47-generic root=PARTUUID=a97b4610-d527-40a0-8bbf-0df5b5a71b0
+VIRT=kvm
+UNAME_KERNEL_NAME=Linux
+UNAME_KERNEL_RELEASE=5.4.0-47-generic
+UNAME_KERNEL_VERSION=#51-Ubuntu SMP Fri Sep 4 19:50:52 UTC 2020
+UNAME_MACHINE=x86_64
+UNAME_NODENAME=ubuntu
+UNAME_OPERATING_SYSTEM=GNU/Linux
+DSNAME=
+DSLIST=NoCloud ConfigDrive OpenNebula DigitalOcean Azure AltCloud OVF MAAS GCE OpenStack CloudSigma Smarte
+MODE=search
+ON_FOUND=all
+ON_MAYBE=all
+ON_NOTFOUND=disabled
+pid=1076 ppid=1074
+is_container=false
+check for 'NoCloud' returned found
+is_ds_enabled(IBMCloud) = true.
+is_ds_enabled(IBMCloud) = true.
+ec2 platform is 'Unknown'.
+Found single datasource: NoCloud
+[up 138.03s] returning 0
+
+=== BEGIN bionic
+qemu-system-x86_64 -enable-kvm -m 512 \
+-drive "file=./bionic-server-cloudimg-amd64.img,if=virtio" \
+-drive "file=./fs.img,format=raw,if=virtio" \
+-net nic -net user,hostfwd=tcp::2222-:22 \
+-nographic
+
+newt:images $ ssh ubuntu@localhost -p 2222
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:92LHQO0WwEtBL837YQiGfiULizVBXq4EQI0BGY6B0do.
+Please contact your system administrator.
+Add correct host key in /home/james/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/james/.ssh/known_hosts:68
+  remove with:
+  ssh-keygen -f "/home/james/.ssh/known_hosts" -R "[localhost]:2222"
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+Welcome to Ubuntu 18.04.5 LTS (GNU/Linux 4.15.0-112-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+  System information as of Fri Sep 11 14:38:42 UTC 2020
+
+  System load:  0.98              Processes:           82
+  Usage of /:   52.6% of 1.96GB   Users logged in:     0
+  Memory usage: 23%               IP address for ens3: 10.0.2.15
+  Swap usage:   0%
+
+
+0 packages can be updated.
+0 updates are security updates.
+
+
+
+The programs included with the Ubuntu system are free software;
+the exact distribution terms for each program are described in the
+individual files in /usr/share/doc/*/copyright.
+
+Ubuntu comes with ABSOLUTELY NO WARRANTY, to the extent permitted by
+applicable law.
+
+To run a command as administrator (user "root"), use "sudo <command>".
+See "man sudo_root" for details.
+
+ubuntu@ubuntu:~$ blkid /dev/vdb
+/dev/vdb: SEC_TYPE="msdos" LABEL="cidata" UUID="355A-4FC2" TYPE="vfat"
+ubuntu@ubuntu:~$ cloud-init status -l
+status: done
+time: Fri, 11 Sep 2020 15:00:27 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
+ubuntu@ubuntu:~$ sudo DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+[up 123.40s] ds-identify --force
+policy loaded: mode=search report=false found=all maybe=all notfound=disabled
+/etc/cloud/cloud.cfg.d/90_dpkg.cfg set datasource_list: [ NoCloud, ConfigDrive, OpenNebula, DigitalOcean, Azure, AltCloud, OVF, MAAS, GCE, OpenStack, CloudSigma, SmartOS, Bigstep, Scaleway, AliYun, Ec2, CloudStack, Hetzner, IBMCloud, Exoscale, RbxCloud, None ]
+DMI_PRODUCT_NAME=Standard PC (i440FX + PIIX, 1996)
+DMI_SYS_VENDOR=QEMU
+DMI_PRODUCT_SERIAL=
+DMI_PRODUCT_UUID=unavailable
+PID_1_PRODUCT_NAME=unavailable
+DMI_CHASSIS_ASSET_TAG=
+FS_LABELS=cloudimg-rootfs,UEFI,cidata
+ISO9660_DEVS=
+KERNEL_CMDLINE=BOOT_IMAGE=/boot/vmlinuz-4.15.0-112-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+VIRT=kvm
+UNAME_KERNEL_NAME=Linux
+UNAME_KERNEL_RELEASE=4.15.0-112-generic
+UNAME_KERNEL_VERSION=#113-Ubuntu SMP Thu Jul 9 23:41:39 UTC 2020
+UNAME_MACHINE=x86_64
+UNAME_NODENAME=ubuntu
+UNAME_OPERATING_SYSTEM=GNU/Linux
+DSNAME=
+DSLIST=NoCloud ConfigDrive OpenNebula DigitalOcean Azure AltCloud OVF MAAS GCE OpenStack CloudSigma SmartOS Bigstep Scaleway AliYun Ec2 CloudStack Hetzner IBMCloud Exoscale RbxCloud None
+MODE=search
+ON_FOUND=all
+ON_MAYBE=all
+ON_NOTFOUND=disabled
+pid=1064 ppid=1062
+is_container=false
+check for 'NoCloud' returned found
+is_ds_enabled(IBMCloud) = true.
+is_ds_enabled(IBMCloud) = true.
+ec2 platform is 'Unknown'.
+Found single datasource: NoCloud
+[up 123.55s] returning 0
+
+
+=== BEGIN xenial
+newt:images $ qemu-system-x86_64 -enable-kvm -m 512 \
+-drive "file=./xenial-server-cloudimg-amd64-disk1.img,if=virtio" \
+-drive "file=./fs.img,format=raw,if=virtio" \
+-net nic -net user,hostfwd=tcp::2222-:22 \
+-nographic
+
+newt:images $ ssh ubuntu@localhost -p 2222
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!
+Someone could be eavesdropping on you right now (man-in-the-middle attack)!
+It is also possible that a host key has just been changed.
+The fingerprint for the ECDSA key sent by the remote host is
+SHA256:sPv8UKsAc+7nUdfy1UzCj37DiJSEsHKdmr24atPn78Y.
+Please contact your system administrator.
+Add correct host key in /home/james/.ssh/known_hosts to get rid of this message.
+Offending ECDSA key in /home/james/.ssh/known_hosts:68
+  remove with:
+  ssh-keygen -f "/home/james/.ssh/known_hosts" -R "[localhost]:2222"
+Password authentication is disabled to avoid man-in-the-middle attacks.
+Keyboard-interactive authentication is disabled to avoid man-in-the-middle attacks.
+Welcome to Ubuntu 16.04.7 LTS (GNU/Linux 4.4.0-187-generic x86_64)
+
+ * Documentation:  https://help.ubuntu.com
+ * Management:     https://landscape.canonical.com
+ * Support:        https://ubuntu.com/advantage
+
+
+0 packages can be updated.
+0 updates are security updates.
+
+New release '18.04.5 LTS' available.
+Run 'do-release-upgrade' to upgrade to it.
+
+
+Last login: Fri Sep 11 13:43:18 2020 from 10.0.2.2
+ubuntu@ubuntu:~$ blkid /dev/vdb
+/dev/vdb: SEC_TYPE="msdos" LABEL="cidata" UUID="355A-4FC2" TYPE="vfat"
+ubuntu@ubuntu:~$ cloud-init status -l
+status: done
+time: Fri, 11 Sep 2020 15:04:10 +0000
+detail:
+DataSourceNoCloud [seed=/dev/vdb][dsmode=net]
+ubuntu@ubuntu:~$ sudo DI_LOG=stderr /usr/lib/cloud-init/ds-identify --force
+sudo: unable to resolve host ubuntu: Connection timed out
+[up 118.71s] ds-identify --force
+policy loaded: mode=report report=false found=all maybe=all notfound=enabled
+/etc/cloud/cloud.cfg.d/90_dpkg.cfg set datasource_list: [ NoCloud, ConfigDrive, OpenNebula, DigitalOcean, Azure, AltCloud, OVF, MAAS, GCE, OpenStack, CloudSigma, SmartOS, Bigstep, Scaleway, AliYun, Ec2, CloudStack, Exoscale, RbxCloud, None ]
+DMI_PRODUCT_NAME=Standard PC (i440FX + PIIX, 1996)
+DMI_SYS_VENDOR=QEMU
+DMI_PRODUCT_SERIAL=
+DMI_PRODUCT_UUID=unavailable
+PID_1_PRODUCT_NAME=unavailable
+DMI_CHASSIS_ASSET_TAG=
+FS_LABELS=cloudimg-rootfs,cidata
+ISO9660_DEVS=
+KERNEL_CMDLINE=BOOT_IMAGE=/boot/vmlinuz-4.4.0-187-generic root=LABEL=cloudimg-rootfs ro console=tty1 console=ttyS0
+VIRT=qemu
+UNAME_KERNEL_NAME=Linux
+UNAME_KERNEL_RELEASE=4.4.0-187-generic
+UNAME_KERNEL_VERSION=#217-Ubuntu SMP Tue Jul 21 04:18:15 UTC 2020
+UNAME_MACHINE=x86_64
+UNAME_NODENAME=ubuntu
+UNAME_OPERATING_SYSTEM=GNU/Linux
+DSNAME=
+DSLIST=NoCloud ConfigDrive OpenNebula DigitalOcean Azure AltCloud OVF MAAS GCE OpenStack CloudSigma SmartOS Bigstep Scaleway AliYun Ec2 CloudStack Exoscale RbxCloud None
+MODE=report
+ON_FOUND=all
+ON_MAYBE=all
+ON_NOTFOUND=enabled
+pid=1326 ppid=1325
+is_container=false
+check for 'NoCloud' returned found
+is_ds_enabled(IBMCloud) = false.
+is_ds_enabled(IBMCloud) = false.
+ec2 platform is 'Unknown'.
+check for 'Ec2' returned maybe
+Found single datasource: NoCloud
+[up 118.82s] returning 0
+
