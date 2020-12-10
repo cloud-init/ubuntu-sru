@@ -14,6 +14,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | Bug | Verification Script and Output |
 | -------- |  -------- |
 | [LP: #1898997](http://pad.lv/1898997) | [verification output](bugs/lp-1898997.txt) |
+| [LP: #1900837](http://pad.lv/1900837) | [verification output](bugs/lp-1900837.txt) |
 | Manual vmware test | [verification output](../manual/vmware-sru-20.4.0.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-20.4.0.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-20.4.0.txt) |
