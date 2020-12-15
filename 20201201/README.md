@@ -17,6 +17,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [GH: #570](https://github.com/canonical/cloud-init/commit/6b5c306b537aafeded249fc82a3317fba8214508) | [verification output](../bugs/gh-570.txt) |
 | [GH: #586](https://github.com/canonical/cloud-init/commit/b0e73814) | [verification output](../bugs/gh-586.txt) |
 | [GH: #591](https://github.com/canonical/cloud-init/commit/8ec8c3fc63a59b85888a0b52356b784314a1d4cc) | [verification output](../bugs/gh-591.txt) |
+| [GH: #626](https://github.com/canonical/cloud-init/commit/57349eb7df1c422d9e9558e54b201c85778997ae) | [verification output](../bugs/gh-626.txt) |
 | [GH: #632](https://github.com/canonical/cloud-init/commit/2730521fd566f855863c5ed049a1df26abcd0770) | [verification output](../bugs/gh-632.txt) |
 | [GH: #634](https://github.com/canonical/cloud-init/commit/b46e4a8c) | [verification output](../bugs/gh-634-ipv6-openstack.txt) |
 | [GH: #660](https://github.com/canonical/cloud-init/commit/66b4be8b6da188a0667bd8c86a25155b6f4f3f6c) | [verification output](../bugs/gh-660.txt) |
