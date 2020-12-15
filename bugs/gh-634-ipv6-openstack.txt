@@ -1,0 +1,1501 @@
+https://github.com/canonical/cloud-init/commit/b46e4a8c
+
+=== Begin SRU Template ===
+[Impact]
+IPV6 settings on sysconfig environments needed explicit  IPV6_AUTOCONF and IPV6_FORCE_ACCEPT_RA  for static6 config. Ensure no degredation of service for Ubuntu netplan/ifconfig.
+
+
+[Test Case]
+# Attempt to setup ipv6 network types in openstack and confirm no degredation of behavior for rendered network
+#!/bin/bash
+# Verify ipv6 network configuration support in Ubuntu
+#
+# bash required for arrays and $RANDOM built-ins
+#
+
+SRU_SERIES=${1:-"xenial bionic focal groovy"}
+
+# local values
+LP_USER="chad.smith"
+ADMIN_NET_ID="blackboxsw_admin_net"
+SSH_KEY=mykey
+sshopts=( -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR )
+
+cat > setup_proposed.sh <<EOF
+#/bin/bash
+mirror=http://archive.ubuntu.com/ubuntu
+echo deb \$mirror \$(lsb_release -sc)-proposed main | tee /etc/apt/sources.list.d/proposed.list
+apt-get update -q
+apt-get install -qy cloud-init
+EOF
+
+cat > apply_network_config.cfg <<EOF
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+EOF
+
+IPV6_NETWORKS="ipv6-slaac ipv6-dhcpv6-stateful ipv6-dhcpv6-stateless"
+for ipv6_net in ${IPV6_NETWORKS}; do
+    if ! openstack network list | awk '{print $4}' | grep "^${ipv6_net}$"; then
+        echo "Creating ipv6 network: $ipv6_net"
+        openstack network create $ipv6_net
+        v6_mode=${ipv6_net#ipv6-}
+        subnet=${ipv6_net}-subnet
+        openstack subnet create \
+            --ip-version 6 \
+            --ipv6-ra-mode $v6_mode \
+            --ipv6-address-mode $v6_mode \
+            --subnet-range "fd${RANDOM:0:2}:0:0:1::/64" \
+            --network ${ipv6_net} ${subnet}
+        router=${ipv6_net}-router
+        openstack router create ${router}
+        openstack router add subnet ${router} ${subnet}
+    else
+        echo "Using existing ipv6 network: $ipv6_net"
+    fi
+done
+
+# query image ids
+if [ ! -e "images.json" ]; then
+    openstack image list --property architecture=x86_64 -f json > images.json
+fi
+
+# we iterate over each network-type and release
+for series in $SRU_SERIES; do
+    echo "### BEGIN $series"
+    for ipv6_net in ${IPV6_NETWORKS}; do
+        if [ "$series" = "xenial" ]; then
+          netcfg="/etc/network/interfaces.d/50-cloud-init.cfg"
+        else
+          netcfg="/etc/netplan/50-cloud-init.yaml"
+        fi
+
+        # Determine image, launch instance and attach IP address
+        image=$(cat images.json | jq -r '.[]|select((.Name|contains("disk1.img")) and (.Name|contains("'$series'"))) | .ID' | tail -n 1)
+        server_name="test-$series-$ipv6_net"
+
+        # handle unhappy openstack
+        for ((i=0; i<20; i++)); do
+            openstack server create --flavor m1.small --image $image \
+                --key-name $SSH_KEY \
+                --nic net-id=$ADMIN_NET_ID \
+                --nic net-id=$ipv6_net \
+                $server_name --wait
+            while true; do
+                STATE=$(nova list | awk "/$server_name/ {print \$6}")
+                case $STATE in
+                    ACTIVE|ERROR) break;;
+                esac
+            done
+            if [ "${STATE}" = "ERROR" ]; then
+                openstack server delete test-$series-$ipv6_net
+                sleep 2
+                continue
+            elif [ "$STATE" = "ACTIVE" ]; then
+                break;
+            fi
+        done
+        if [ "$STATE" != "ACTIVE" ]; then
+            echo "Your openstack is not happy, cant launch images"
+            exit 1
+        fi
+        VM_IP=${server_name}
+        sleep 10  # Wait for the instance to boot
+        while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+            sleep 5
+        done
+
+        # Capture current state
+        echo "Current cloud-init version"
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+
+        # enable apply_network_config settings, already enabled on newer than bionic
+        case $series in
+            xenial|bionic)
+                echo "Copying apply_network_config.cfg"
+                scp "${sshopts[@]}" apply_network_config.cfg ubuntu@$VM_IP:.
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cp apply_network_config.cfg /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cat /etc/cloud/cloud.cfg.d/apply_network_config.cfg
+                ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+
+                sleep 10  # Wait for the instance to boot
+                while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+                    sleep 5
+                done
+                ;;
+        esac
+
+        echo 'Networking config with apply_network_config=true'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg | tee net-orig-$series-$ipv6_net.cfg
+
+        # Upgrade to -proposed cloud-init and reboot
+        scp "${sshopts[@]}" setup_proposed.sh ubuntu@$VM_IP:.
+        ssh "${sshopts[@]}" ubuntu@$VM_IP sudo bash ./setup_proposed.sh 2>&1 | egrep 'cloud-init'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- dpkg-query --show cloud-init
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cp $netcfg /home/ubuntu/
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- sudo cloud-init clean --logs --reboot
+
+        sleep 10  # Wait for the instance to actually go down
+        while ! ssh "${sshopts[@]}" ubuntu@$VM_IP -- cloud-init status --wait --long; do
+            sleep 1
+        done
+
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- "grep Trace /var/log/cloud-init*"
+        echo 'After upgrade Networking config (current -> proposed)'
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- diff -u /home/ubuntu/$(basename $netcfg) $netcfg
+        case $ipv6_net in
+          ipv6-slaac)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 auto' and 'dhcp 0'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ auto$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp\ 0$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+           ipv6-dhcpv6-stateful)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 dhcp' and 'accept_ra 1'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ dhcp$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'accept_ra\ 1$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true' and 'accept-ra: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'accept-ra:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+           ipv6-dhcpv6-stateless)
+              case $series in
+                  xenial)
+                      echo "Expect proposed to have 'inet6 auto' and 'dhcp 1'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'inet6\ auto$' $netcfg
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp\ 1$' $netcfg
+                      ;;
+                  bionic|disco|eoan)
+                      echo "Expect proposed to have 'dhcp6: true'"
+                      ssh "${sshopts[@]}" ubuntu@$VM_IP -- grep 'dhcp6:\ true$' $netcfg
+                      ;;
+              esac
+              ;;
+        esac
+        ssh "${sshopts[@]}" ubuntu@$VM_IP -- cat $netcfg | tee net-upgrade-$series-$ipv6_net.cfg
+	echo "--- Check for network config diff across upgrade"
+	diff -urN net-orig-$series-$ipv6_net.cfg net-upgrade-$series-$ipv6_net.cfg && echo "SUCCESS: No network config diff" || echo "FAILURE: found a network config diff"
+	echo "--- Check for network config diff across upgrade"
+        openstack server delete test-$series-$ipv6_net
+    done
+done
+
+
+
+
+[Regression Potential]
+Some common network rendering logic was touched in adding sysconfig support of config keys. Ensure no degradation of service for netplan and /etc/network/interfaces configuration on IPV6 OpenStack vms. Degradation of network configuration would mean inability to setup IPv6 routable hosts on OpenStack.
+
+[Other Info]
+Upstream commit at https://github.com/canonical/cloud-init/commit/b46e4a8c
+
+
+======= SRU Verification Output =====
+ipv6-slaac
+Using existing ipv6 network: ipv6-slaac
+ipv6-dhcpv6-stateful
+Using existing ipv6 network: ipv6-dhcpv6-stateful
+ipv6-dhcpv6-stateless
+Using existing ipv6 network: ipv6-dhcpv6-stateless
+### BEGIN xenial
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T02:59:08.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.20; ipv6-slaac=fd23::1:f816:3eff:feb9:e3df                               |
+| adminPass                   | NmgoKNuFW48q                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T02:58:51Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | 5e3f717e-9138-456c-9d52-3471ed04a33d                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20201118-disk1.img (2e012da0-529e-465c-84a8-137042a2d0d0) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-xenial-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T02:59:08Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-xenial-ipv6-slaac port 22: Connection refused
+.....
+status: done
+time: Tue, 15 Dec 2020 02:59:41 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~16.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119   133.4KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-xenial-ipv6-slaac closed by remote host.
+ssh: connect to host test-xenial-ipv6-slaac port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:00:12 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 auto
+    dhcp 0
+    mtu 8958
+    post-up route add -A inet6 default gw fd23:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd23:0:0:1::1 || true
+setup_proposed.sh                             100%  194   214.4KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.4-0ubuntu1~16.04.1 [451 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~16.04.1) over (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+cloud-init	20.4-0ubuntu1~16.04.1
+Connection to test-xenial-ipv6-slaac closed by remote host.
+ssh: connect to host test-xenial-ipv6-slaac port 22: Connection refused
+......
+status: done
+time: Tue, 15 Dec 2020 03:01:02 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'inet6 auto' and 'dhcp 0'
+iface ens4 inet6 auto
+    dhcp 0
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 auto
+    dhcp 0
+    mtu 8958
+    post-up route add -A inet6 default gw fd23:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd23:0:0:1::1 || true
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T03:01:30.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.24; ipv6-dhcpv6-stateful=fd15:0:0:1::3                                   |
+| adminPass                   | XJFCeqc9ePBG                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T03:01:12Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | 7e648fc6-557b-432f-b6c1-689795da6706                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20201118-disk1.img (2e012da0-529e-465c-84a8-137042a2d0d0) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-xenial-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T03:01:31Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateful port 22: Connection refused
+..........
+status: done
+time: Tue, 15 Dec 2020 03:02:02 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~16.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119   113.0KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-xenial-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateful port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:02:35 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 dhcp
+    accept_ra 1
+    mtu 8958
+    post-up route add -A inet6 default gw fd15:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd15:0:0:1::1 || true
+setup_proposed.sh                             100%  194   147.0KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.4-0ubuntu1~16.04.1 [451 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~16.04.1) over (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+cloud-init	20.4-0ubuntu1~16.04.1
+Connection to test-xenial-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateful port 22: Connection refused
+....
+status: done
+time: Tue, 15 Dec 2020 03:03:32 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'inet6 dhcp' and 'accept_ra 1'
+iface ens4 inet6 dhcp
+    accept_ra 1
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 dhcp
+    accept_ra 1
+    mtu 8958
+    post-up route add -A inet6 default gw fd15:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd15:0:0:1::1 || true
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T03:04:01.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.5; ipv6-dhcpv6-stateless=fd25::1:f816:3eff:fe3e:e213                     |
+| adminPass                   | ja32UnXrN5wL                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T03:03:42Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | f6c9bb02-d9f7-4ee3-943c-2438e81f4499                                                                 |
+| image                       | auto-sync/ubuntu-xenial-daily-amd64-server-20201118-disk1.img (2e012da0-529e-465c-84a8-137042a2d0d0) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-xenial-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T03:04:02Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateless port 22: Connection refused
+............
+status: done
+time: Tue, 15 Dec 2020 03:04:31 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~16.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119   136.7KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-xenial-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateless port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:05:04 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 auto
+    dhcp 1
+    mtu 8958
+    post-up route add -A inet6 default gw fd25:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd25:0:0:1::1 || true
+setup_proposed.sh                             100%  194   202.4KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu xenial-proposed/main amd64 cloud-init all 20.4-0ubuntu1~16.04.1 [451 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~16.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~16.04.1) over (20.3-2-g371b392c-0ubuntu1~16.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~16.04.1) ...
+Leaving 'diversion of /etc/init/ureadahead.conf to /etc/init/ureadahead.conf.disabled by cloud-init'
+cloud-init	20.4-0ubuntu1~16.04.1
+Connection to test-xenial-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-xenial-ipv6-dhcpv6-stateless port 22: Connection refused
+......
+status: done
+time: Tue, 15 Dec 2020 03:05:54 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'inet6 auto' and 'dhcp 1'
+iface ens4 inet6 auto
+    dhcp 1
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+
+auto ens3
+iface ens3 inet dhcp
+    mtu 8958
+
+auto ens4
+iface ens4 inet6 auto
+    dhcp 1
+    mtu 8958
+    post-up route add -A inet6 default gw fd25:0:0:1::1 || true
+    pre-down route del -A inet6 default gw fd25:0:0:1::1 || true
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
+### BEGIN bionic
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T03:06:23.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.15; ipv6-slaac=fd23::1:f816:3eff:fe6d:9d78                               |
+| adminPass                   | k3fN77rvKtDz                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T03:06:04Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | 92cc19de-216e-476f-8fa0-7c356bd9c859                                                                 |
+| image                       | auto-sync/ubuntu-bionic-daily-amd64-server-20201123-disk1.img (08721975-a541-4ea3-86a5-0afaf73198c1) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-bionic-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T03:06:23Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-bionic-ipv6-slaac port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:07:03 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~18.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119   142.8KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-bionic-ipv6-slaac closed by remote host.
+ssh: connect to host test-bionic-ipv6-slaac port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:09:52 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:50:19:af
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:6d:9d:78
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   218.8KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.4-0ubuntu1~18.04.1 [447 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~18.04.1) over (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~18.04.1) ...
+cloud-init	20.4-0ubuntu1~18.04.1
+Connection to test-bionic-ipv6-slaac closed by remote host.
+ssh: connect to host test-bionic-ipv6-slaac port 22: Connection refused
+.......
+status: done
+time: Tue, 15 Dec 2020 03:13:05 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'dhcp6: true'
+            dhcp6: true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:50:19:af
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:6d:9d:78
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T03:13:44.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.14; ipv6-dhcpv6-stateful=fd15:0:0:1::d                                   |
+| adminPass                   | WpDhEMw3ftBj                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T03:13:18Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | 82faa9de-1013-49c0-aca0-e52fd5aa1628                                                                 |
+| image                       | auto-sync/ubuntu-bionic-daily-amd64-server-20201123-disk1.img (08721975-a541-4ea3-86a5-0afaf73198c1) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-bionic-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T03:13:44Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateful port 22: Connection refused
+.....
+status: done
+time: Tue, 15 Dec 2020 03:14:26 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~18.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119    99.9KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-bionic-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateful port 22: Connection refused
+..........................................................................
+status: done
+time: Tue, 15 Dec 2020 03:15:32 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:0b:7c:12
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:58:af:46
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   172.5KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.4-0ubuntu1~18.04.1 [447 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~18.04.1) over (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~18.04.1) ...
+cloud-init	20.4-0ubuntu1~18.04.1
+Connection to test-bionic-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateful port 22: Connection refused
+....................................................................................
+status: done
+time: Tue, 15 Dec 2020 03:17:09 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'dhcp6: true' and 'accept-ra: true'
+            dhcp6: true
+            accept-ra: true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:0b:7c:12
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:58:af:46
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T03:17:40.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.4; ipv6-dhcpv6-stateless=fd25::1:f816:3eff:fefe:c655                     |
+| adminPass                   | ywMaG58H3z3T                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T03:17:21Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                             |
+| id                          | bd095305-2ef9-4c79-be4b-de37ed433d33                                                                 |
+| image                       | auto-sync/ubuntu-bionic-daily-amd64-server-20201123-disk1.img (08721975-a541-4ea3-86a5-0afaf73198c1) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-bionic-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T03:17:41Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateless port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 03:18:25 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~18.04.1
+Copying apply_network_config.cfg
+apply_network_config.cfg                      100%  119   120.3KB/s   00:00
+# Configure OpenStack to apply network configuration from IMDS
+datasource:
+  OpenStack:
+    apply_network_config: true
+Connection to test-bionic-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateless port 22: Connection refused
+............................................................................
+status: done
+time: Tue, 15 Dec 2020 03:19:36 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:ba:1a:fa
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:fe:c6:55
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   192.7KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu bionic-proposed/main amd64 cloud-init all 20.4-0ubuntu1~18.04.1 [447 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~18.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~18.04.1) over (20.3-2-g371b392c-0ubuntu1~18.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~18.04.1) ...
+cloud-init	20.4-0ubuntu1~18.04.1
+Connection to test-bionic-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-bionic-ipv6-dhcpv6-stateless port 22: Connection refused
+........................................................................................
+status: done
+time: Tue, 15 Dec 2020 03:21:13 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+Expect proposed to have 'dhcp6: true'
+            dhcp6: true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:ba:1a:fa
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:fe:c6:55
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
+
+### BEGIN focal
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2020-12-15T00:00:40.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | blackboxsw_admin_net=10.5.0.3; ipv6-slaac=fd23::1:f816:3eff:fef6:880d                               |
+| adminPass                   | uFW58xT5UrX2                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2020-12-15T00:00:15Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                            |
+| id                          | 825bce2f-966d-455e-b650-3b8d6c763784                                                                |
+| image                       | auto-sync/ubuntu-focal-daily-amd64-server-20201117-disk1.img (c189edd5-66bc-45b7-b36c-54c5f2210405) |
+| key_name                    | mykey                                                                                               |
+| name                        | test-focal-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                   |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2020-12-15T00:00:41Z                                                                                |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+ssh: connect to host test-focal-ipv6-slaac port 22: Connection refused
+...........................................................
+status: done
+time: Tue, 15 Dec 2020 00:03:35 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~20.04.1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:ed:99:2a
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:f6:88:0d
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194    77.8KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.04.1 [443 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.04.1) over (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.04.1) ...
+cloud-init	20.4-0ubuntu1~20.04.1
+Connection to test-focal-ipv6-slaac closed by remote host.
+ssh: connect to host test-focal-ipv6-slaac port 22: Connection refused
+.......
+status: done
+time: Tue, 15 Dec 2020 00:06:51 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:ed:99:2a
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:f6:88:0d
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2020-12-15T00:07:18.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | blackboxsw_admin_net=10.5.0.12; ipv6-dhcpv6-stateful=fd15:0:0:1::4                                  |
+| adminPass                   | c2zVhdEjmUY6                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2020-12-15T00:07:00Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                            |
+| id                          | fa2c29af-35c7-4106-957b-ae1787409e59                                                                |
+| image                       | auto-sync/ubuntu-focal-daily-amd64-server-20201117-disk1.img (c189edd5-66bc-45b7-b36c-54c5f2210405) |
+| key_name                    | mykey                                                                                               |
+| name                        | test-focal-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                   |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2020-12-15T00:07:19Z                                                                                |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+ssh: connect to host test-focal-ipv6-dhcpv6-stateful port 22: Connection refused
+.........................................................................................................................................
+status: done
+time: Tue, 15 Dec 2020 00:08:35 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~20.04.1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:d1:10:07
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:37:7a:0e
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194    65.9KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.04.1 [443 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.04.1) over (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.04.1) ...
+cloud-init	20.4-0ubuntu1~20.04.1
+Connection to test-focal-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-focal-ipv6-dhcpv6-stateful port 22: Connection refused
+.......................................................................................
+status: done
+time: Tue, 15 Dec 2020 00:10:18 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:d1:10:07
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:37:7a:0e
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                               |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                              |
+| OS-EXT-AZ:availability_zone | nova                                                                                                |
+| OS-EXT-STS:power_state      | Running                                                                                             |
+| OS-EXT-STS:task_state       | None                                                                                                |
+| OS-EXT-STS:vm_state         | active                                                                                              |
+| OS-SRV-USG:launched_at      | 2020-12-15T00:10:47.000000                                                                          |
+| OS-SRV-USG:terminated_at    | None                                                                                                |
+| accessIPv4                  |                                                                                                     |
+| accessIPv6                  |                                                                                                     |
+| addresses                   | blackboxsw_admin_net=10.5.0.13; ipv6-dhcpv6-stateless=fd25::1:f816:3eff:fe7a:24c7                   |
+| adminPass                   | xP3DwF9JCMQ6                                                                                        |
+| config_drive                |                                                                                                     |
+| created                     | 2020-12-15T00:10:27Z                                                                                |
+| flavor                      | m1.small (2)                                                                                        |
+| hostId                      | b2cb764e8314e18dd2d5b0235fb2a017be52c75768e6c50a9454e71b                                            |
+| id                          | 60dab747-97d7-4ea8-bf87-c179713998dc                                                                |
+| image                       | auto-sync/ubuntu-focal-daily-amd64-server-20201117-disk1.img (c189edd5-66bc-45b7-b36c-54c5f2210405) |
+| key_name                    | mykey                                                                                               |
+| name                        | test-focal-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                   |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                    |
+| properties                  |                                                                                                     |
+| security_groups             | name='default'                                                                                      |
+| status                      | ACTIVE                                                                                              |
+| updated                     | 2020-12-15T00:10:47Z                                                                                |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                    |
+| volumes_attached            |                                                                                                     |
++-----------------------------+-----------------------------------------------------------------------------------------------------+
+ssh: connect to host test-focal-ipv6-dhcpv6-stateless port 22: Connection refused
+............................................................................................................................................................
+status: done
+time: Tue, 15 Dec 2020 00:12:09 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-2-g371b392c-0ubuntu1~20.04.1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:f0:7c:f3
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:7a:24:c7
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194    70.9KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu focal-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.04.1 [443 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.04.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.04.1) over (20.3-2-g371b392c-0ubuntu1~20.04.1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.04.1) ...
+cloud-init	20.4-0ubuntu1~20.04.1
+Connection to test-focal-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-focal-ipv6-dhcpv6-stateless port 22: Connection refused
+.......................................................................................
+status: done
+time: Tue, 15 Dec 2020 00:13:56 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:f0:7c:f3
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:7a:24:c7
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+### BEGIN groovy
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T17:18:39.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.6; ipv6-slaac=fd23::1:f816:3eff:fecb:b84a                                |
+| adminPass                   | JrAPTPMk3Hzt                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T17:18:15Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 398b9576dc1321f744c6dba45eec00ae267f74880199d52eb578ebd3                                             |
+| id                          | 6d7745b1-229f-44dd-98b2-cddac4cdba2f                                                                 |
+| image                       | auto-sync/ubuntu-groovy-daily-amd64-server-20201118-disk1.img (3709d596-ce0d-45ac-976a-9d2f3ce46474) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-groovy-ipv6-slaac                                                                               |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T17:18:39Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-groovy-ipv6-slaac port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 17:19:24 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-15-g6d332e5c-0ubuntu1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:cb:32:6d
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:cb:b8:4a
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   215.0KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu groovy-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.10.1 [432 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.10.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.10.1) over (20.3-15-g6d332e5c-0ubuntu1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.10.1) ...
+cloud-init	20.4-0ubuntu1~20.10.1
+Connection to test-groovy-ipv6-slaac closed by remote host.
+ssh: connect to host test-groovy-ipv6-slaac port 22: Connection refused
+....
+status: done
+time: Tue, 15 Dec 2020 17:20:36 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:cb:32:6d
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:cb:b8:4a
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T17:21:30.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.6; ipv6-dhcpv6-stateful=fd15:0:0:1::3                                    |
+| adminPass                   | gHcpns4B8FLB                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T17:20:45Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 43c3592a02d83f37eaaa768fd2eef3ba8fbe9abb23501acaeae034c3                                             |
+| id                          | ef7b6105-6bf8-4a47-8133-8138f014a34c                                                                 |
+| image                       | auto-sync/ubuntu-groovy-daily-amd64-server-20201118-disk1.img (3709d596-ce0d-45ac-976a-9d2f3ce46474) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-groovy-ipv6-dhcpv6-stateful                                                                     |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T17:21:31Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-groovy-ipv6-dhcpv6-stateful port 22: Connection refused
+............................................................................
+status: done
+time: Tue, 15 Dec 2020 17:22:23 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-15-g6d332e5c-0ubuntu1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:b7:02:bb
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:02:4d:1d
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   250.0KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu groovy-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.10.1 [432 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.10.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.10.1) over (20.3-15-g6d332e5c-0ubuntu1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.10.1) ...
+cloud-init	20.4-0ubuntu1~20.10.1
+Connection to test-groovy-ipv6-dhcpv6-stateful closed by remote host.
+ssh: connect to host test-groovy-ipv6-dhcpv6-stateful port 22: Connection refused
+.......................................................................................
+status: done
+time: Tue, 15 Dec 2020 17:23:44 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:b7:02:bb
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            accept-ra: true
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:02:4d:1d
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| Field                       | Value                                                                                                |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+| OS-DCF:diskConfig           | MANUAL                                                                                               |
+| OS-EXT-AZ:availability_zone | nova                                                                                                 |
+| OS-EXT-STS:power_state      | Running                                                                                              |
+| OS-EXT-STS:task_state       | None                                                                                                 |
+| OS-EXT-STS:vm_state         | active                                                                                               |
+| OS-SRV-USG:launched_at      | 2020-12-15T17:24:08.000000                                                                           |
+| OS-SRV-USG:terminated_at    | None                                                                                                 |
+| accessIPv4                  |                                                                                                      |
+| accessIPv6                  |                                                                                                      |
+| addresses                   | blackboxsw_admin_net=10.5.0.5; ipv6-dhcpv6-stateless=fd25::1:f816:3eff:fe87:b0de                     |
+| adminPass                   | usg3e46iJ67Y                                                                                         |
+| config_drive                |                                                                                                      |
+| created                     | 2020-12-15T17:23:52Z                                                                                 |
+| flavor                      | m1.small (2)                                                                                         |
+| hostId                      | 75997a892fa2e186b4df8aac0c3ce3954a9a138b6464dab5fb8fe6d0                                             |
+| id                          | cbe507b9-de95-4b7b-91a9-2f126a4e90c1                                                                 |
+| image                       | auto-sync/ubuntu-groovy-daily-amd64-server-20201118-disk1.img (3709d596-ce0d-45ac-976a-9d2f3ce46474) |
+| key_name                    | mykey                                                                                                |
+| name                        | test-groovy-ipv6-dhcpv6-stateless                                                                    |
+| progress                    | 0                                                                                                    |
+| project_id                  | 3354f8a4ec5e4fbd827a6999c311f5d1                                                                     |
+| properties                  |                                                                                                      |
+| security_groups             | name='default'                                                                                       |
+| status                      | ACTIVE                                                                                               |
+| updated                     | 2020-12-15T17:24:08Z                                                                                 |
+| user_id                     | cb723de24b094ed7959d73ce7a95d291                                                                     |
+| volumes_attached            |                                                                                                      |
++-----------------------------+------------------------------------------------------------------------------------------------------+
+ssh: connect to host test-groovy-ipv6-dhcpv6-stateless port 22: Connection refused
+
+status: done
+time: Tue, 15 Dec 2020 17:24:42 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+Current cloud-init version
+cloud-init	20.3-15-g6d332e5c-0ubuntu1
+Networking config with apply_network_config=true
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:6a:b4:4d
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:87:b0:de
+            mtu: 8958
+            set-name: ens4
+setup_proposed.sh                             100%  194   193.0KB/s   00:00
+  cloud-init
+Get:1 http://archive.ubuntu.com/ubuntu groovy-proposed/main amd64 cloud-init all 20.4-0ubuntu1~20.10.1 [432 kB]
+Preparing to unpack .../cloud-init_20.4-0ubuntu1~20.10.1_all.deb ...
+Unpacking cloud-init (20.4-0ubuntu1~20.10.1) over (20.3-15-g6d332e5c-0ubuntu1) ...
+Setting up cloud-init (20.4-0ubuntu1~20.10.1) ...
+cloud-init	20.4-0ubuntu1~20.10.1
+Connection to test-groovy-ipv6-dhcpv6-stateless closed by remote host.
+ssh: connect to host test-groovy-ipv6-dhcpv6-stateless port 22: Connection refused
+...
+status: done
+time: Tue, 15 Dec 2020 17:25:35 +0000
+detail:
+DataSourceOpenStackLocal [net,ver=2]
+After upgrade Networking config (current -> proposed)
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    version: 2
+    ethernets:
+        ens3:
+            dhcp4: true
+            match:
+                macaddress: fa:16:3e:6a:b4:4d
+            mtu: 8958
+            set-name: ens3
+        ens4:
+            dhcp6: true
+            match:
+                macaddress: fa:16:3e:87:b0:de
+            mtu: 8958
+            set-name: ens4
+--- Check for network config diff across upgrade
+SUCCESS: No network config diff
+--- Check for network config diff across upgrade
+
