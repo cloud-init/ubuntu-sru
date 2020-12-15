@@ -22,9 +22,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [GH: #660](https://github.com/canonical/cloud-init/commit/66b4be8b6da188a0667bd8c86a25155b6f4f3f6c) | [verification output](../bugs/gh-660.txt) |
 | [GH: #671](https://github.com/canonical/cloud-init/commit/eea754492f074e00b601cf77aa278e3623857c5a) | [verification output](../bugs/gh-671.txt) |
 | [LP: #1813396](https://github.com/canonical/cloud-init/commit/a925b5a0ca4aa3e63b084c0f6664fe815c2c9db0) | [verification output](../bugs/lp-1813396.txt) |
-| [LP: #1897099](http://pad.lv/1897099) | [verification output](bugs/lp-1897099.txt) |
-| [LP: #1898997](http://pad.lv/1898997) | [verification output](bugs/lp-1898997.txt) |
-| [LP: #1900837](http://pad.lv/1900837) | [verification output](bugs/lp-1900837.txt) |
+| [LP: #1897099](http://pad.lv/1897099) | [verification output](../bugs/lp-1897099.txt) |
+| [LP: #1898997](http://pad.lv/1898997) | [verification output](../bugs/lp-1898997.txt) |
+| [LP: #1900837](http://pad.lv/1900837) | [verification output](../bugs/lp-1900837.txt) |
 | Manual vmware test | [verification output](../manual/vmware-sru-20.4.0.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-20.4.0.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-20.4.0.txt) |
