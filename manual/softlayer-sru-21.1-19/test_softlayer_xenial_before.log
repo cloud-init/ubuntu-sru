@@ -1,0 +1,394 @@
+===== dpkg-query --show cloud-init =====
+cloud-init      20.3-2-g371b392c-0ubuntu1~16.04.1
+
+
+===== cat /run/cloud-init/result.json =====
+{
+ "v1": {
+  "datasource": "DataSourceIBMCloud [OS-Code/Live /dev/xvdh]",
+  "errors": []
+ }
+}
+
+
+===== cloud-init init =====
+Cloud-init v. 20.3-2-g371b392c-0ubuntu1~16.04.1 running 'init' at Fri, 26 Mar 2021 18:00:40 +0000. Up 4665.02 seconds.
+ci-info: +++++++++++++++++++++++++++++++++++++++Net device info++++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+-----------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |       Mask      | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+-----------------+--------+-------------------+
+ci-info: |  eth0  | True |         10.37.91.241        | 255.255.255.192 | global | 06:38:bf:9a:64:29 |
+ci-info: |  eth0  | True | fe80::438:bfff:fe9a:6429/64 |        .        |  link  | 06:38:bf:9a:64:29 |
+ci-info: |  eth1  | True |        67.228.112.98        | 255.255.255.240 | global | 06:bd:d0:14:26:fd |
+ci-info: |  eth1  | True | fe80::4bd:d0ff:fe14:26fd/64 |        .        |  link  | 06:bd:d0:14:26:fd |
+ci-info: |   lo   | True |          127.0.0.1          |    255.0.0.0    |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |        .        |  host  |         .         |
+ci-info: +--------+------+-----------------------------+-----------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++++Route IPv4 info++++++++++++++++++++++++++++++++
+ci-info: +-------+---------------+---------------+-----------------+-----------+-------+
+ci-info: | Route |  Destination  |    Gateway    |     Genmask     | Interface | Flags |
+ci-info: +-------+---------------+---------------+-----------------+-----------+-------+
+ci-info: |   0   |    0.0.0.0    | 67.228.112.97 |     0.0.0.0     |    eth1   |   UG  |
+ci-info: |   1   |    10.0.0.0   |  10.37.91.193 |    255.0.0.0    |    eth0   |   UG  |
+ci-info: |   2   |  10.37.91.192 |    0.0.0.0    | 255.255.255.192 |    eth0   |   U   |
+ci-info: |   3   | 67.228.112.96 |    0.0.0.0    | 255.255.255.240 |    eth1   |   U   |
+ci-info: |   4   |   161.26.0.0  |  10.37.91.193 |   255.255.0.0   |    eth0   |   UG  |
+ci-info: |   5   |   166.8.0.0   |  10.37.91.193 |   255.252.0.0   |    eth0   |   UG  |
+ci-info: +-------+---------------+---------------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   0   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   1   |  fe80::/64  |    ::   |    eth1   |   U   |
+ci-info: |   6   |   ff00::/8  |    ::   |    eth0   |   U   |
+ci-info: |   7   |   ff00::/8  |    ::   |    eth1   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+
+
+===== grep Trace /var/log/cloud-init.log =====
+
+
+===== cloud-id =====
+ibmcloud
+
+
+===== cat /etc/netplan/50-cloud-init.yaml =====
+cat: /etc/netplan/50-cloud-init.yaml: No such file or directory
+
+
+===== cat /etc/network/interfaces.d/50-cloud-init.cfg =====
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+auto lo
+iface lo inet loopback
+    dns-nameservers 10.0.80.11 10.0.80.12
+
+auto eth0
+iface eth0 inet static
+    address 10.37.91.241/26
+    post-up route add -net 10.0.0.0/8 gw 10.37.91.193 || true
+    pre-down route del -net 10.0.0.0/8 gw 10.37.91.193 || true
+    post-up route add -net 166.8.0.0/14 gw 10.37.91.193 || true
+    pre-down route del -net 166.8.0.0/14 gw 10.37.91.193 || true
+    post-up route add -net 161.26.0.0/16 gw 10.37.91.193 || true
+    pre-down route del -net 161.26.0.0/16 gw 10.37.91.193 || true
+
+auto eth1
+iface eth1 inet static
+    address 67.228.112.98/28
+    post-up route add default gw 67.228.112.97 || true
+    pre-down route del default gw 67.228.112.97 || true
+
+
+===== systemd-analyze =====
+Startup finished in 7.148s (kernel) + 3min 3.781s (userspace) = 3min 10.929s
+
+
+===== systemd-analyze blame =====
+          6.924s cloud-config.service
+          6.850s pollinate.service
+          5.158s dev-xvda2.device
+          1.521s cloud-init-local.service
+          1.338s lvm2-monitor.service
+          1.310s apparmor.service
+          1.046s snapd.service
+           899ms cloud-init.service
+           895ms keyboard-setup.service
+           878ms kmod-static-nodes.service
+           805ms systemd-remount-fs.service
+           722ms cloud-final.service
+           705ms lxd-containers.service
+           685ms xe-daemon.service
+           681ms console-setup.service
+           668ms sys-kernel-debug.mount
+           641ms snapd.seeded.service
+           568ms accounts-daemon.service
+           506ms dev-hugepages.mount
+           450ms iscsid.service
+           443ms mdadm.service
+           429ms systemd-modules-load.service
+           365ms rc-local.service
+           364ms resolvconf.service
+           343ms dev-mqueue.mount
+           314ms systemd-tmpfiles-setup.service
+           304ms ufw.service
+           288ms apport.service
+           234ms plymouth-read-write.service
+           233ms systemd-journald.service
+           232ms systemd-udev-trigger.service
+           218ms networking.service
+           208ms grub-common.service
+           169ms systemd-machine-id-commit.service
+           163ms systemd-sysctl.service
+           157ms rsyslog.service
+           151ms irqbalance.service
+           148ms proc-xen.mount
+           137ms polkitd.service
+           135ms systemd-journal-flush.service
+           133ms systemd-timesyncd.service
+           118ms systemd-random-seed.service
+           116ms systemd-tmpfiles-setup-dev.service
+           112ms sys-fs-fuse-connections.mount
+           107ms systemd-update-utmp.service
+           100ms lxd.socket
+            98ms systemd-logind.service
+            90ms systemd-udevd.service
+            90ms snapd.socket
+            85ms open-iscsi.service
+            74ms systemd-tmpfiles-clean.service
+            60ms plymouth-quit.service
+            56ms ssh.service
+            55ms systemd-user-sessions.service
+            46ms boot.mount
+            31ms setvtrgb.service
+            29ms snapd.apparmor.service
+            27ms user@0.service
+            20ms ondemand.service
+            11ms plymouth-quit-wait.service
+             6ms systemd-update-utmp-runlevel.service
+
+
+===== cloud-init analyze show =====
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00400s +00.00000s
+|`->found local data from DataSourceIBMCloud @00.01600s +00.17300s
+Finished stage: (init-local) 00.30800 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @00.92700s +00.00300s
+|`->setting up datasource @00.98500s +00.00100s
+|`->reading and applying user-data @00.99200s +00.00100s
+|`->reading and applying vendor-data @00.99400s +00.00200s
+|`->activating datasource @01.01900s +00.00100s
+|`->config-migrator ran successfully @01.04900s +00.00000s
+|`->config-seed_random ran successfully @01.05000s +00.00100s
+|`->config-bootcmd ran successfully @01.05200s +00.00000s
+|`->config-write-files ran successfully @01.05200s +00.00100s
+|`->config-growpart ran successfully @01.05400s +00.08400s
+|`->config-resizefs ran successfully @01.13800s +00.03600s
+|`->config-disk_setup ran successfully @01.17500s +00.00400s
+|`->config-mounts ran successfully @01.18000s +00.07600s
+|`->config-set_hostname ran successfully @01.25700s +00.00100s
+|`->config-update_hostname ran successfully @01.25800s +00.00100s
+|`->config-update_etc_hosts ran successfully @01.25900s +00.00100s
+|`->config-ca-certs ran successfully @01.26000s +00.00100s
+|`->config-rsyslog ran successfully @01.26100s +00.00000s
+|`->config-users-groups ran successfully @01.26100s +00.02600s
+|`->config-ssh ran successfully @01.28700s +00.22400s
+Finished stage: (init-network) 00.59900 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @04.11800s +00.00000s
+|`->config-snap ran successfully @04.11900s +00.00100s
+|`->config-ssh-import-id ran successfully @04.12000s +00.00200s
+|`->config-locale ran successfully @04.12200s +00.96900s
+|`->config-set-passwords ran successfully @05.09200s +00.00200s
+|`->config-grub-dpkg ran successfully @05.09500s +00.40300s
+|`->config-apt-pipelining ran successfully @05.49900s +00.00200s
+|`->config-apt-configure ran successfully @05.50100s +05.11300s
+|`->config-ubuntu-advantage ran successfully @10.61400s +00.00200s
+|`->config-ntp ran successfully @10.61600s +00.00100s
+|`->config-timezone ran successfully @10.61700s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @10.61900s +00.00000s
+|`->config-runcmd ran successfully @10.61900s +00.00100s
+|`->config-byobu ran successfully @10.62000s +00.00100s
+Finished stage: (modules-config) 06.54100 seconds
+
+Starting stage: modules-final
+|`->config-package-update-upgrade-install ran successfully @11.00100s +00.00100s
+|`->config-fan ran successfully @11.00300s +00.00100s
+|`->config-landscape ran successfully @11.00500s +00.00000s
+|`->config-lxd ran successfully @11.00600s +00.00100s
+|`->config-ubuntu-drivers ran successfully @11.00700s +00.00100s
+|`->config-puppet ran successfully @11.00900s +00.00100s
+|`->config-chef ran successfully @11.01000s +00.00000s
+|`->config-mcollective ran successfully @11.01100s +00.00100s
+|`->config-salt-minion ran successfully @11.01200s +00.00100s
+|`->config-rightscale_userdata ran successfully @11.01300s +00.00100s
+|`->config-scripts-vendor ran successfully @11.01400s +00.02200s
+|`->config-scripts-per-once ran successfully @11.03700s +00.00200s
+|`->config-scripts-per-boot ran successfully @11.03900s +00.00100s
+|`->config-scripts-per-instance ran successfully @11.04000s +00.00100s
+|`->config-scripts-user ran successfully @11.04200s +00.00100s
+|`->config-ssh-authkey-fingerprints ran successfully @11.04400s +00.00900s
+|`->config-keys-to-console ran successfully @11.05400s +00.14900s
+|`->config-phone-home ran successfully @11.20300s +00.00200s
+|`->config-final-message ran successfully @11.20500s +00.00500s
+|`->config-power-state-change ran successfully @11.21000s +00.00100s
+Finished stage: (modules-final) 00.24700 seconds
+
+Total Time: 7.69500 seconds
+
+-- Boot Record 02 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @00.01300s +00.00300s
+|`->setting up datasource @00.06900s +00.00000s
+|`->reading and applying user-data @00.07300s +00.00200s
+|`->reading and applying vendor-data @00.07500s +00.00200s
+|`->activating datasource @00.10100s +00.00100s
+|`->config-migrator ran successfully @00.11000s +00.00100s
+|`->config-seed_random previously ran @00.11100s +00.00000s
+|`->config-bootcmd ran successfully @00.11100s +00.00000s
+|`->config-write-files previously ran @00.11200s +00.00000s
+|`->config-growpart ran successfully @00.11200s +00.02300s
+|`->config-resizefs ran successfully @00.13500s +00.00800s
+|`->config-disk_setup previously ran @00.14400s +00.00000s
+|`->config-mounts previously ran @00.14500s +00.00000s
+|`->config-set_hostname previously ran @00.14500s +00.00000s
+|`->config-update_hostname ran successfully @00.14500s +00.00100s
+|`->config-update_etc_hosts ran successfully @00.14600s +00.00000s
+|`->config-ca-certs previously ran @00.14700s +00.00000s
+|`->config-rsyslog previously ran @00.14700s +00.00000s
+|`->config-users-groups previously ran @00.14700s +00.00000s
+|`->config-ssh previously ran @00.14700s +00.00100s
+Finished stage: (init-network) 00.14800 seconds
+
+Total Time: 0.14800 seconds
+
+-- Boot Record 03 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceIBMCloud [OS-Code/Live /dev/xvdh] @00.01200s +00.00300s
+|`->setting up datasource @00.06800s +00.00000s
+|`->reading and applying user-data @00.07200s +00.00200s
+|`->reading and applying vendor-data @00.07400s +00.00300s
+|`->activating datasource @00.10100s +00.00100s
+|`->config-migrator ran successfully @00.11100s +00.00100s
+|`->config-seed_random previously ran @00.11200s +00.00000s
+|`->config-bootcmd ran successfully @00.11200s +00.00000s
+|`->config-write-files previously ran @00.11200s +00.00000s
+|`->config-growpart ran successfully @00.11300s +00.02400s
+|`->config-resizefs ran successfully @00.13700s +00.00800s
+|`->config-disk_setup previously ran @00.14500s +00.00100s
+|`->config-mounts previously ran @00.14700s +00.00000s
+|`->config-set_hostname previously ran @00.14700s +00.00000s
+|`->config-update_hostname ran successfully @00.14700s +00.00100s
+|`->config-update_etc_hosts ran successfully @00.14800s +00.00000s
+|`->config-ca-certs previously ran @00.14900s +00.00000s
+|`->config-rsyslog previously ran @00.14900s +00.00000s
+|`->config-users-groups previously ran @00.14900s +00.00000s
+|`->config-ssh previously ran @00.15000s +00.00000s
+Finished stage: (init-network) 00.15100 seconds
+
+Total Time: 0.15100 seconds
+
+3 boot records analyzed
+
+
+===== cloud-init analyze blame =====
+-- Boot Record 01 --
+     05.11300s (modules-config/config-apt-configure)
+     00.96900s (modules-config/config-locale)
+     00.40300s (modules-config/config-grub-dpkg)
+     00.22400s (init-network/config-ssh)
+     00.17300s (init-local/search-IBMCloud)
+     00.14900s (modules-final/config-keys-to-console)
+     00.08400s (init-network/config-growpart)
+     00.07600s (init-network/config-mounts)
+     00.03600s (init-network/config-resizefs)
+     00.02600s (init-network/config-users-groups)
+     00.02200s (modules-final/config-scripts-vendor)
+     00.00900s (modules-final/config-ssh-authkey-fingerprints)
+     00.00500s (modules-final/config-final-message)
+     00.00400s (init-network/config-disk_setup)
+     00.00300s (init-network/check-cache)
+     00.00200s (modules-final/config-scripts-per-once)
+     00.00200s (modules-final/config-phone-home)
+     00.00200s (modules-config/config-ubuntu-advantage)
+     00.00200s (modules-config/config-ssh-import-id)
+     00.00200s (modules-config/config-set-passwords)
+     00.00200s (modules-config/config-apt-pipelining)
+     00.00200s (init-network/consume-vendor-data)
+     00.00100s (modules-final/config-ubuntu-drivers)
+     00.00100s (modules-final/config-scripts-user)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-scripts-per-boot)
+     00.00100s (modules-final/config-salt-minion)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-puppet)
+     00.00100s (modules-final/config-power-state-change)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-mcollective)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (init-network/setup-datasource)
+     00.00100s (init-network/consume-user-data)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-set_hostname)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (modules-final/config-landscape)
+     00.00000s (modules-final/config-chef)
+     00.00000s (modules-config/config-emit_upstart)
+     00.00000s (modules-config/config-disable-ec2-metadata)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-migrator)
+     00.00000s (init-network/config-bootcmd)
+     00.00000s (init-local/check-cache)
+
+-- Boot Record 02 --
+     00.02300s (init-network/config-growpart)
+     00.00800s (init-network/config-resizefs)
+     00.00300s (init-network/check-cache)
+     00.00200s (init-network/consume-vendor-data)
+     00.00200s (init-network/consume-user-data)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-ssh)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-write-files)
+     00.00000s (init-network/config-users-groups)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-set_hostname)
+     00.00000s (init-network/config-seed_random)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-mounts)
+     00.00000s (init-network/config-disk_setup)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-network/config-bootcmd)
+
+-- Boot Record 03 --
+     00.02400s (init-network/config-growpart)
+     00.00800s (init-network/config-resizefs)
+     00.00300s (init-network/consume-vendor-data)
+     00.00300s (init-network/check-cache)
+     00.00200s (init-network/consume-user-data)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/activate-datasource)
+     00.00000s (init-network/setup-datasource)
+     00.00000s (init-network/config-write-files)
+     00.00000s (init-network/config-users-groups)
+     00.00000s (init-network/config-update_etc_hosts)
+     00.00000s (init-network/config-ssh)
+     00.00000s (init-network/config-set_hostname)
+     00.00000s (init-network/config-seed_random)
+     00.00000s (init-network/config-rsyslog)
+     00.00000s (init-network/config-mounts)
+     00.00000s (init-network/config-ca-certs)
+     00.00000s (init-network/config-bootcmd)
+
+3 boot records analyzed
