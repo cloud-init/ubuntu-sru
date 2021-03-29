@@ -1,11 +1,11 @@
-Ubuntu SRU xenial, bionic, focal, groovy (post-freeze): 03/<day>/2021
+Ubuntu SRU xenial, bionic, focal, groovy (post-freeze): 03/19/2021
 =====
-This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on 03/<day>/2021
+This Readme hosts the manual SRU verification logs for bugs related to the cloud-init SRU started on 03/19/2021
 
 Given [cloud-init's exception process](https://wiki.ubuntu.com/CloudinitUpdates), Ubuntu SRUs will from this point forward create an general SRU process bug which will describe related bugs/features fixed in the given cloud-init SRU. A readme like this will exist to capture any manual SRU validation performed for specific bugs or features fixed in the SRU. Generally most of the features and bugs should be covered by cloud-init's conituous integration at https://jenkins.ubuntu.com/server/view/cloud-init/.
 
 
-03/<day>/2021 SRU: [launchpad process bug:#<bug_number>](https://pad.lv/<bug_number>)
+03/19/2021 SRU: [launchpad process bug:#1920272](https://pad.lv/1920272)
 
 
 The links listed below are to bugs fixed in this SRU and the verification of those bugs.
@@ -20,9 +20,9 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [LP: #1835584](http://pad.lv/1835584) | [verification output](../bugs/lp-1835584.txt) |
 | [LP: #1901011](http://pad.lv/1901011) | [verification output](../bugs/lp-1901011.txt) |
 | [LP: #1915460](http://pad.lv/1915460) | [verification output](../bugs/lp-1915460.txt) |
-| Manual softlayer test | [verification output](../manual/softlayer-sru-21.1.0.txt) |
-| Manual azure test | [verification output](../manual/azure-sru-21.1.0.txt) |
-| Manual openstack test | [verification output](../manual/openstack-sru-21.1.0.txt) |
-| Manual oracle test | [verification output](../manual/oracle-sru-21.1.0.txt) |
-| Manual gce test | [verification output](../manual/gce-sru-21.1.0.txt) |
-| Manual ec2 test | [verification output](../manual/ec2-sru-21.1.0.txt) |
+| Manual softlayer test | [verification output](../manual/softlayer-sru-21.1-19.txt) |
+| Manual azure test | [verification output](../manual/azure-sru-21.1-19.txt) |
+| Manual openstack test | [verification output](../manual/openstack-sru-21.1-19.txt) |
+| Manual oracle test | [verification output](../manual/oracle-sru-21.1-19.txt) |
+| Manual gce test | [verification output](../manual/gce-sru-21.1-19.txt) |
+| Manual ec2 test | [verification output](../manual/ec2-sru-21.1-19.txt) |
