@@ -17,8 +17,8 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [GH: #668](https://github.com/canonical/cloud-init/commit/9a258eebd96aa5ad4486dba1fe86bea5bcf00c2f) | [verification output](../bugs/gh-668.txt) |
 | [GH: #760](https://github.com/canonical/cloud-init/commit/4f62ae8d01e8caca9039af067280ca2adad6ab6d) | [verification output](../bugs/gh-760.txt) |
 | [GH: #783](https://github.com/canonical/cloud-init/commit/36ddf1ebed3f264fa86ef4f657dce29244c2e068) | [verification output](../bugs/gh-783.txt) |
-| [GH: #800](https://github.com/canonical/cloud-init/commit/a64b73808857fa7b4f262422ce2c87eedbce10d5) | [verification output](../bugs/gh-800.txt) |
 | [LP: #1835584](http://pad.lv/1835584) | [verification output](../bugs/lp-1835584.txt) |
+| [LP: #1901011](http://pad.lv/1901011) | [verification output](../bugs/lp-1901011.txt) |
 | [LP: #1915460](http://pad.lv/1915460) | [verification output](../bugs/lp-1915460.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-21.1.0.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-21.1.0.txt) |
