@@ -20,6 +20,7 @@ The links listed below are to bugs fixed in this SRU and the verification of tho
 | [LP: #1835584](http://pad.lv/1835584) | [verification output](../bugs/lp-1835584.txt) |
 | [LP: #1901011](http://pad.lv/1901011) | [verification output](../bugs/lp-1901011.txt) |
 | [LP: #1915460](http://pad.lv/1915460) | [verification output](../bugs/lp-1915460.txt) |
+| [LP: #1918303](http://pad.lv/1918303) | [verification output](../bugs/lp-1918303.txt) |
 | Manual softlayer test | [verification output](../manual/softlayer-sru-21.1-19.txt) |
 | Manual azure test | [verification output](../manual/azure-sru-21.1-19.txt) |
 | Manual openstack test | [verification output](../manual/openstack-sru-21.1-19.txt) |
