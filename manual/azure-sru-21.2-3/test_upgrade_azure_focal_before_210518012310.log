@@ -1,0 +1,533 @@
+===== hostname =====
+SRU-worked
+===== dpkg-query --show cloud-init =====
+cloud-init	21.1-19-gbad84ad4-0ubuntu1~20.04.2
+===== cat /run/cloud-init/result.json =====
+{
+ "v1": {
+  "datasource": "DataSourceAzure [seed=/dev/sr0]",
+  "errors": []
+ }
+}
+===== cloud-init init =====
+Cloud-init v. 21.1-19-gbad84ad4-0ubuntu1~20.04.2 running 'init' at Tue, 18 May 2021 06:31:44 +0000. Up 38.45 seconds.
+ci-info: ++++++++++++++++++++++++++++++++++++++Net device info+++++++++++++++++++++++++++++++++++++++
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: | Device |  Up  |           Address           |      Mask     | Scope  |     Hw-Address    |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: |  eth0  | True |           10.0.0.4          | 255.255.255.0 | global | 00:0d:3a:3e:81:e0 |
+ci-info: |  eth0  | True | fe80::20d:3aff:fe3e:81e0/64 |       .       |  link  | 00:0d:3a:3e:81:e0 |
+ci-info: |   lo   | True |          127.0.0.1          |   255.0.0.0   |  host  |         .         |
+ci-info: |   lo   | True |           ::1/128           |       .       |  host  |         .         |
+ci-info: +--------+------+-----------------------------+---------------+--------+-------------------+
+ci-info: ++++++++++++++++++++++++++++++Route IPv4 info+++++++++++++++++++++++++++++++
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: | Route |   Destination   | Gateway  |     Genmask     | Interface | Flags |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: |   0   |     0.0.0.0     | 10.0.0.1 |     0.0.0.0     |    eth0   |   UG  |
+ci-info: |   1   |     10.0.0.0    | 0.0.0.0  |  255.255.255.0  |    eth0   |   U   |
+ci-info: |   2   |  168.63.129.16  | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: |   3   | 169.254.169.254 | 10.0.0.1 | 255.255.255.255 |    eth0   |  UGH  |
+ci-info: +-------+-----------------+----------+-----------------+-----------+-------+
+ci-info: +++++++++++++++++++Route IPv6 info+++++++++++++++++++
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: | Route | Destination | Gateway | Interface | Flags |
+ci-info: +-------+-------------+---------+-----------+-------+
+ci-info: |   1   |  fe80::/64  |    ::   |    eth0   |   U   |
+ci-info: |   3   |    local    |    ::   |    eth0   |   U   |
+ci-info: |   4   |  multicast  |    ::   |    eth0   |   U   |
+ci-info: +-------+-------------+---------+-----------+-------+
+===== grep Trace /var/log/cloud-init.log =====
+
+===== cloud-id =====
+azure
+===== cat /etc/netplan/50-cloud-init.yaml =====
+# This file is generated from information provided by the datasource.  Changes
+# to it will not persist across an instance reboot.  To disable cloud-init's
+# network configuration capabilities, write a file
+# /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg with the following:
+# network: {config: disabled}
+network:
+    ethernets:
+        eth0:
+            dhcp4: true
+            dhcp4-overrides:
+                route-metric: 100
+            dhcp6: false
+            match:
+                driver: hv_netvsc
+                macaddress: 00:0d:3a:3e:81:e0
+            set-name: eth0
+    version: 2
+===== systemd-analyze =====
+Startup finished in 2.563s (kernel) + 33.972s (userspace) = 36.535s 
+graphical.target reached after 32.321s in userspace
+===== systemd-analyze blame =====
+11.212s cloud-init.service                                   
+ 5.322s snapd.seeded.service                                 
+ 3.678s snapd.service                                        
+ 2.908s snapd.apparmor.service                               
+ 2.273s cloud-config.service                                 
+ 2.258s cloud-init-local.service                             
+ 2.180s lvm2-monitor.service                                 
+ 2.131s pollinate.service                                    
+ 1.926s systemd-networkd-wait-online.service                 
+ 1.862s dev-sdb1.device                                      
+ 1.861s accounts-daemon.service                              
+ 1.745s systemd-udev-settle.service                          
+ 1.610s cloud-final.service                                  
+  982ms networkd-dispatcher.service                          
+  972ms apparmor.service                                     
+  836ms systemd-logind.service                               
+  833ms grub-common.service                                  
+  804ms apport.service                                       
+  752ms chrony.service                                       
+  658ms snap.lxd.activate.service                            
+  557ms atd.service                                          
+  466ms e2scrub_reap.service                                 
+  343ms dev-hugepages.mount                                  
+  335ms dev-mqueue.mount                                     
+  328ms sys-kernel-debug.mount                               
+  321ms sys-kernel-tracing.mount                             
+  321ms rsyslog.service                                      
+  292ms keyboard-setup.service                               
+  271ms systemd-journald.service                             
+  269ms kmod-static-nodes.service                            
+  248ms user@1000.service                                    
+  232ms systemd-resolved.service                             
+  222ms systemd-udev-trigger.service                         
+  207ms polkit.service                                       
+  185ms systemd-user-sessions.service                        
+  183ms modprobe@drm.service                                 
+  165ms grub-initrd-fallback.service                         
+  142ms dev-loop1.device                                     
+  138ms ssh.service                                          
+  125ms systemd-fsck-root.service                            
+  124ms systemd-networkd.service                             
+  123ms systemd-tmpfiles-setup.service                       
+  116ms systemd-remount-fs.service                           
+  115ms systemd-modules-load.service                         
+  114ms systemd-machine-id-commit.service                    
+  109ms systemd-fsck@dev-disk-by\x2duuid-EAE8\x2dEF10.service
+  105ms plymouth-read-write.service                          
+  104ms dev-loop0.device                                     
+  104ms snap-snapd-11841.mount                               
+   99ms finalrd.service                                      
+   91ms ufw.service                                          
+   89ms console-setup.service                                
+   85ms snapd.socket                                         
+   80ms sys-kernel-config.mount                              
+   78ms sys-fs-fuse-connections.mount                        
+   77ms multipathd.service                                   
+   70ms user-runtime-dir@1000.service                        
+   67ms systemd-sysusers.service                             
+   66ms dev-loop2.device                                     
+   63ms boot-efi.mount                                       
+   60ms systemd-sysctl.service                               
+   59ms snap-core18-1997.mount                               
+   57ms snap-lxd-20326.mount                                 
+   57ms setvtrgb.service                                     
+   55ms plymouth-quit.service                                
+   54ms ephemeral-disk-warning.service                       
+   49ms plymouth-quit-wait.service                           
+   45ms systemd-update-utmp-runlevel.service                 
+   41ms systemd-journal-flush.service                        
+   38ms blk-availability.service                             
+   31ms systemd-udevd.service                                
+   26ms systemd-update-utmp.service                          
+   25ms systemd-random-seed.service                          
+   13ms systemd-tmpfiles-setup-dev.service
+===== cloud-init analyze show =====
+-- Boot Record 01 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: init-local
+|`->no cache found @00.00800s +00.00200s
+Starting stage: init-local/search-Azure
+Starting stage: azure-ds/_get_data
+|`->found azure asset tag @00.06200s +00.00000s
+|`->get_boot_telemetry @00.06300s +00.02500s
+|`->get_system_info @00.08900s +00.00000s
+Starting stage: azure-ds/crawl_metadata
+|`->list_possible_azure_ds_devs @00.08900s +00.09300s
+|`->load_azure_ds_dir @00.18200s +00.00000s
+Starting stage: azure-ds/load_azure_ds_dir
+Starting stage: azure-ds/read_azure_ovf
+|`->load_azure_ovf_pubkeys @00.31200s +00.00000s
+Starting stage: azure-ds/_get_preprovisioning_cfgs
+|`->_get_preprovisionedvm_cfg_value @00.31600s +00.00100s
+|`->_get_preprovisionedvmtype_cfg_value @00.31700s +00.00000s
+Finished stage: (azure-ds/_get_preprovisioning_cfgs) 00.00500 seconds
+
+Finished stage: (azure-ds/read_azure_ovf) 00.00900 seconds
+
+Finished stage: (azure-ds/load_azure_ds_dir) 00.01400 seconds
+
+Starting stage: azure-ds/get_imds_data_with_api_fallback
+Starting stage: azure-ds/get_metadata_from_imds
+|`->obtain dhcp lease @00.35900s +00.19500s
+|`->_get_metadata_from_imds @00.55500s +00.01700s
+Finished stage: (azure-ds/get_metadata_from_imds) 00.24600 seconds
+
+Finished stage: (azure-ds/get_imds_data_with_api_fallback) 00.24700 seconds
+
+|`->_get_random_seed @00.60500s +00.00000s
+Finished stage: (azure-ds/crawl_metadata) 00.51700 seconds
+
+|`->maybe_remove_ubuntu_network_config_scripts @00.60600s +00.00300s
+|`->write_files @00.60900s +00.00400s
+Finished stage: (azure-ds/_get_data) 00.55300 seconds
+
+|`->get_public_ssh_keys @00.61500s +00.00100s
+Finished stage: (init-local/search-Azure) 00.56400 seconds
+
+Starting stage: azure-ds/parse_network_config
+|`->_generate_network_config_from_imds_metadata @00.73400s +00.00200s
+Finished stage: (azure-ds/parse_network_config) 00.00200 seconds
+
+Finished stage: (init-local) 01.06400 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/dev/sr0] @03.79200s +00.02300s
+Total Time: 3.22100 seconds
+
+-- Boot Record 02 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: azure-ds/parse_network_config
+|`->_generate_network_config_from_imds_metadata @00.00000s +00.00100s
+Finished stage: (azure-ds/parse_network_config) 00.00100 seconds
+
+Starting stage: init-network/setup-datasource
+Starting stage: azure-ds/setup
+Starting stage: azure-ds/_negotiate
+Starting stage: azure-ds/bounce_network_with_azure_hostname
+|`->temporary_hostname @00.01200s +00.00000s
+Finished stage: (azure-ds/bounce_network_with_azure_hostname) 00.00300 seconds
+
+Starting stage: azure-ds/get_metadata_from_fabric
+Starting stage: azure-ds/register_with_azure_and_fetch_data
+|`->generate_certificate @00.01600s +00.08100s
+Starting stage: azure-ds/_fetch_goal_state_from_azure
+Starting stage: azure-ds/_get_raw_goal_state_xml_from_azure
+Starting stage: azure-ds/find_endpoint
+|`->_networkd_get_value_from_leases @00.09800s +00.00100s
+Finished stage: (azure-ds/find_endpoint) 00.00100 seconds
+
+Starting stage: azure-ds/goalstate-retrieval
+|`->http_with_retries @00.09900s +00.01100s
+Finished stage: (azure-ds/goalstate-retrieval) 00.01200 seconds
+
+Finished stage: (azure-ds/_get_raw_goal_state_xml_from_azure) 00.01300 seconds
+
+Starting stage: azure-ds/_parse_raw_goal_state_xml
+Starting stage: azure-ds/get-certificates-xml
+|`->http_with_retries @00.11200s +00.01200s
+Finished stage: (azure-ds/get-certificates-xml) 00.01200 seconds
+
+Finished stage: (azure-ds/_parse_raw_goal_state_xml) 00.01400 seconds
+
+Finished stage: (azure-ds/_fetch_goal_state_from_azure) 00.02700 seconds
+
+Starting stage: azure-ds/_get_user_pubkeys
+Starting stage: azure-ds/parse_certificates
+|`->_decrypt_certs_from_xml @00.12600s +00.01400s
+Starting stage: azure-ds/_get_ssh_key_from_cert
+|`->_run_x509_action @00.14100s +00.00800s
+Finished stage: (azure-ds/_get_ssh_key_from_cert) 00.04000 seconds
+
+Starting stage: azure-ds/_get_fingerprint_from_cert
+|`->_run_x509_action @00.18200s +00.00700s
+Finished stage: (azure-ds/_get_fingerprint_from_cert) 00.00700 seconds
+
+Finished stage: (azure-ds/parse_certificates) 00.06300 seconds
+
+Finished stage: (azure-ds/_get_user_pubkeys) 00.06400 seconds
+
+Starting stage: azure-ds/send_ready_signal
+Starting stage: azure-ds/_post_health_report
+Starting stage: azure-ds/push_log_to_kvp
+|`->get_last_log_byte_pushed_to_kvp_index @00.19000s +00.00000s
+Finished stage: (azure-ds/push_log_to_kvp) 00.02000 seconds
+
+|`->http_with_retries @00.21100s +02.90700s
+Finished stage: (azure-ds/_post_health_report) 02.92800 seconds
+
+Finished stage: (azure-ds/send_ready_signal) 02.92900 seconds
+
+Finished stage: (azure-ds/register_with_azure_and_fetch_data) 03.10300 seconds
+
+Finished stage: (azure-ds/get_metadata_from_fabric) 03.10300 seconds
+
+Finished stage: (azure-ds/_negotiate) 03.10800 seconds
+
+Finished stage: (azure-ds/setup) 03.10800 seconds
+
+Finished stage: (init-network/setup-datasource) 03.10900 seconds
+
+|`->reading and applying user-data @03.12900s +00.00400s
+|`->reading and applying vendor-data @03.13300s +00.00000s
+|`->reading and applying vendor-data2 @03.13300s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @03.17100s +00.13700s
+Starting stage: azure-ds/mount-ntfs-and-count
+|`->count_files @03.39000s +00.00100s
+Finished stage: (azure-ds/mount-ntfs-and-count) 00.09600 seconds
+
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.24000 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.24200 seconds
+
+Total Time: 22.24300 seconds
+
+-- Boot Record 03 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: azure-ds/push_log_to_kvp
+|`->get_last_log_byte_pushed_to_kvp_index @00.00000s +00.00000s
+Finished stage: (azure-ds/push_log_to_kvp) 00.01500 seconds
+
+Finished stage: (azure-ds/activate) 00.26100 seconds
+
+Finished stage: (init-network/activate-datasource) 00.26300 seconds
+
+|`->config-migrator ran successfully @00.05100s +00.00100s
+|`->config-seed_random ran successfully @00.05300s +00.00100s
+|`->config-bootcmd ran successfully @00.05400s +00.00100s
+|`->config-write-files ran successfully @00.05500s +00.00100s
+|`->config-growpart ran successfully @00.05600s +00.77300s
+|`->config-resizefs ran successfully @00.83200s +02.17400s
+|`->config-disk_setup ran successfully @03.00700s +03.00500s
+|`->config-mounts ran successfully @06.01600s +00.32500s
+|`->config-set_hostname ran successfully @06.34600s +00.00900s
+|`->config-update_hostname ran successfully @06.35600s +00.00400s
+|`->config-update_etc_hosts ran successfully @06.36200s +00.00100s
+|`->config-ca-certs ran successfully @06.36300s +00.00100s
+|`->config-rsyslog ran successfully @06.36400s +00.00300s
+Starting stage: init-network/config-users-groups
+|`->get_public_ssh_keys @06.36900s +00.00300s
+Finished stage: (init-network/config-users-groups) 00.35500 seconds
+
+Starting stage: init-network/config-ssh
+|`->get_public_ssh_keys @07.13800s +00.00100s
+Finished stage: (init-network/config-ssh) 00.42100 seconds
+
+Finished stage: (init-network) 10.63200 seconds
+
+Starting stage: modules-config
+|`->config-emit_upstart ran successfully @17.91800s +00.00100s
+|`->config-snap ran successfully @17.91900s +00.00100s
+|`->config-ssh-import-id ran successfully @17.92200s +00.00100s
+|`->config-locale ran successfully @17.92300s +00.04300s
+|`->config-set-passwords ran successfully @17.96700s +00.00200s
+|`->config-grub-dpkg ran successfully @17.96900s +01.04100s
+|`->config-apt-pipelining ran successfully @19.01500s +00.00100s
+|`->config-apt-configure ran successfully @19.01700s +00.23600s
+|`->config-ubuntu-advantage ran successfully @19.25400s +00.00500s
+|`->config-ntp ran successfully @19.25900s +00.00100s
+|`->config-timezone ran successfully @19.26100s +00.00100s
+|`->config-disable-ec2-metadata ran successfully @19.26200s +00.00300s
+|`->config-runcmd ran successfully @19.26600s +00.00100s
+|`->config-byobu ran successfully @19.26700s +00.00100s
+Finished stage: (modules-config) 01.38000 seconds
+
+Starting stage: modules-final
+|`->config-package-update-upgrade-install ran successfully @20.45900s +00.00100s
+|`->config-fan ran successfully @20.46200s +00.00100s
+|`->config-landscape ran successfully @20.46400s +00.00300s
+|`->config-lxd ran successfully @20.46700s +00.00100s
+|`->config-ubuntu-drivers ran successfully @20.47100s +00.00000s
+|`->config-puppet ran successfully @20.47200s +00.00600s
+|`->config-chef ran successfully @20.47900s +00.00000s
+|`->config-mcollective ran successfully @20.48000s +00.00000s
+|`->config-salt-minion ran successfully @20.48100s +00.00500s
+|`->config-reset_rmc ran successfully @20.48700s +00.00100s
+|`->config-refresh_rmc_and_interface ran successfully @20.48800s +00.00100s
+|`->config-rightscale_userdata ran successfully @20.48900s +00.00100s
+|`->config-scripts-vendor ran successfully @20.49500s +00.00000s
+|`->config-scripts-per-once ran successfully @20.49600s +00.00100s
+|`->config-scripts-per-boot ran successfully @20.49800s +00.00000s
+|`->config-scripts-per-instance ran successfully @20.50000s +00.00100s
+|`->config-scripts-user ran successfully @20.50100s +00.00500s
+|`->config-ssh-authkey-fingerprints ran successfully @20.50700s +00.08900s
+|`->config-keys-to-console ran successfully @20.59800s +00.29100s
+|`->config-phone-home ran successfully @20.89000s +00.00500s
+|`->config-final-message ran successfully @20.89500s +00.00900s
+|`->config-power-state-change ran successfully @20.90500s +00.00000s
+Finished stage: (modules-final) 00.48900 seconds
+
+Starting stage: init-network
+|`->restored from cache with run check: DataSourceAzure [seed=/dev/sr0] @23.04100s +00.02300s
+Starting stage: init-network/setup-datasource
+|`->setup @23.12300s +00.00000s
+Finished stage: (init-network/setup-datasource) 00.00100 seconds
+
+|`->reading and applying user-data @23.13000s +00.00400s
+|`->reading and applying vendor-data @23.13400s +00.00000s
+|`->reading and applying vendor-data2 @23.13400s +00.00100s
+Starting stage: init-network/activate-datasource
+Starting stage: azure-ds/activate
+Starting stage: azure-ds/address_ephemeral_resize
+Starting stage: azure-ds/can_dev_be_reformatted
+|`->_has_ntfs_filesystem @23.16100s +00.09300s
+Finished stage: (azure-ds/can_dev_be_reformatted) 00.09300 seconds
+
+Finished stage: (azure-ds/address_ephemeral_resize) 00.09300 seconds
+
+Total Time: 14.00300 seconds
+
+-- Boot Record 04 --
+The total time elapsed since completing an event is printed after the "@" character.
+The time the event takes is printed after the "+" character.
+
+Starting stage: azure-ds/push_log_to_kvp
+|`->get_last_log_byte_pushed_to_kvp_index @00.00000s +00.00100s
+Finished stage: (azure-ds/push_log_to_kvp) 00.01200 seconds
+
+Finished stage: (azure-ds/activate) 00.10600 seconds
+
+Finished stage: (init-network/activate-datasource) 00.10900 seconds
+
+|`->config-migrator ran successfully @00.02600s +00.00100s
+|`->config-seed_random previously ran @00.02800s +00.00100s
+|`->config-bootcmd ran successfully @00.02900s +00.00000s
+|`->config-write-files previously ran @00.03000s +00.00000s
+|`->config-growpart ran successfully @00.03100s +00.03000s
+|`->config-resizefs ran successfully @00.06100s +00.29800s
+|`->config-disk_setup previously ran @00.36000s +00.00100s
+|`->config-mounts previously ran @00.36100s +00.00100s
+|`->config-set_hostname previously ran @00.36200s +00.00000s
+|`->config-update_hostname ran successfully @00.36300s +00.00100s
+|`->config-update_etc_hosts ran successfully @00.36400s +00.00100s
+|`->config-ca-certs previously ran @00.36500s +00.00100s
+|`->config-rsyslog previously ran @00.36600s +00.00100s
+|`->config-users-groups previously ran @00.36700s +00.00000s
+|`->config-ssh previously ran @00.36800s +00.00000s
+Finished stage: (init-network) 00.60200 seconds
+
+Total Time: 0.82900 seconds
+
+4 boot records analyzed
+===== cloud-init analyze blame =====
+-- Boot Record 01 --
+     00.19500s (azure-ds/obtain-dhcp-lease)
+     00.09300s (azure-ds/list_possible_azure_ds_devs)
+     00.02500s (azure-ds/get_boot_telemetry)
+     00.02300s (init-network/check-cache)
+     00.01700s (azure-ds/_get_metadata_from_imds)
+     00.00400s (azure-ds/write_files)
+     00.00300s (azure-ds/maybe_remove_ubuntu_network_config_scripts)
+     00.00200s (init-local/check-cache)
+     00.00200s (azure-ds/_generate_network_config_from_imds_metadata)
+     00.00100s (azure-ds/get_public_ssh_keys)
+     00.00100s (azure-ds/_get_preprovisionedvm_cfg_value)
+     00.00000s (azure-ds/load_azure_ovf_pubkeys)
+     00.00000s (azure-ds/load_azure_ds_dir)
+     00.00000s (azure-ds/get_system_info)
+     00.00000s (azure-ds/check-platform-viability)
+     00.00000s (azure-ds/_get_random_seed)
+     00.00000s (azure-ds/_get_preprovisionedvmtype_cfg_value)
+
+-- Boot Record 02 --
+     02.90700s (azure-ds/http_with_retries)
+     00.13700s (azure-ds/_has_ntfs_filesystem)
+     00.08100s (azure-ds/generate_certificate)
+     00.01400s (azure-ds/_decrypt_certs_from_xml)
+     00.01200s (azure-ds/http_with_retries)
+     00.01100s (azure-ds/http_with_retries)
+     00.00800s (azure-ds/_run_x509_action)
+     00.00700s (azure-ds/_run_x509_action)
+     00.00400s (init-network/consume-user-data)
+     00.00100s (init-network/consume-vendor-data2)
+     00.00100s (azure-ds/count_files)
+     00.00100s (azure-ds/_networkd_get_value_from_leases)
+     00.00100s (azure-ds/_generate_network_config_from_imds_metadata)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (azure-ds/temporary_hostname)
+     00.00000s (azure-ds/get_last_log_byte_pushed_to_kvp_index)
+
+-- Boot Record 03 --
+     03.00500s (init-network/config-disk_setup)
+     02.17400s (init-network/config-resizefs)
+     01.04100s (modules-config/config-grub-dpkg)
+     00.77300s (init-network/config-growpart)
+     00.32500s (init-network/config-mounts)
+     00.29100s (modules-final/config-keys-to-console)
+     00.23600s (modules-config/config-apt-configure)
+     00.09300s (azure-ds/_has_ntfs_filesystem)
+     00.08900s (modules-final/config-ssh-authkey-fingerprints)
+     00.04300s (modules-config/config-locale)
+     00.02300s (init-network/check-cache)
+     00.00900s (modules-final/config-final-message)
+     00.00900s (init-network/config-set_hostname)
+     00.00600s (modules-final/config-puppet)
+     00.00500s (modules-final/config-scripts-user)
+     00.00500s (modules-final/config-salt-minion)
+     00.00500s (modules-final/config-phone-home)
+     00.00500s (modules-config/config-ubuntu-advantage)
+     00.00400s (init-network/consume-user-data)
+     00.00400s (init-network/config-update_hostname)
+     00.00300s (modules-final/config-landscape)
+     00.00300s (modules-config/config-disable-ec2-metadata)
+     00.00300s (init-network/config-rsyslog)
+     00.00300s (azure-ds/get_public_ssh_keys)
+     00.00200s (modules-config/config-set-passwords)
+     00.00100s (modules-final/config-scripts-per-once)
+     00.00100s (modules-final/config-scripts-per-instance)
+     00.00100s (modules-final/config-rightscale_userdata)
+     00.00100s (modules-final/config-reset_rmc)
+     00.00100s (modules-final/config-refresh_rmc_and_interface)
+     00.00100s (modules-final/config-package-update-upgrade-install)
+     00.00100s (modules-final/config-lxd)
+     00.00100s (modules-final/config-fan)
+     00.00100s (modules-config/config-timezone)
+     00.00100s (modules-config/config-ssh-import-id)
+     00.00100s (modules-config/config-snap)
+     00.00100s (modules-config/config-runcmd)
+     00.00100s (modules-config/config-ntp)
+     00.00100s (modules-config/config-emit_upstart)
+     00.00100s (modules-config/config-byobu)
+     00.00100s (modules-config/config-apt-pipelining)
+     00.00100s (init-network/consume-vendor-data2)
+     00.00100s (init-network/config-write-files)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (init-network/config-bootcmd)
+     00.00100s (azure-ds/get_public_ssh_keys)
+     00.00000s (modules-final/config-ubuntu-drivers)
+     00.00000s (modules-final/config-scripts-vendor)
+     00.00000s (modules-final/config-scripts-per-boot)
+     00.00000s (modules-final/config-power-state-change)
+     00.00000s (modules-final/config-mcollective)
+     00.00000s (modules-final/config-chef)
+     00.00000s (init-network/consume-vendor-data)
+     00.00000s (azure-ds/setup)
+     00.00000s (azure-ds/get_last_log_byte_pushed_to_kvp_index)
+
+-- Boot Record 04 --
+     00.29800s (init-network/config-resizefs)
+     00.03000s (init-network/config-growpart)
+     00.00100s (init-network/config-update_hostname)
+     00.00100s (init-network/config-update_etc_hosts)
+     00.00100s (init-network/config-seed_random)
+     00.00100s (init-network/config-rsyslog)
+     00.00100s (init-network/config-mounts)
+     00.00100s (init-network/config-migrator)
+     00.00100s (init-network/config-disk_setup)
+     00.00100s (init-network/config-ca-certs)
+     00.00100s (azure-ds/get_last_log_byte_pushed_to_kvp_index)
+     00.00000s (init-network/config-write-files)
+     00.00000s (init-network/config-users-groups)
+     00.00000s (init-network/config-ssh)
+     00.00000s (init-network/config-set_hostname)
+     00.00000s (init-network/config-bootcmd)
+
+4 boot records analyzed
